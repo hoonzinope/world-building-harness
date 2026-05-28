@@ -1,0 +1,27 @@
+# macOS
+.DS_Store
+
+# Editor and IDE metadata
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs and temporary files
+*.log
+*.tmp
+*.bak
+*.orig
+
+# Word temporary/lock files
+~$*
+
+# Local environment files
+.env
+.env.*
+!.env.example
+
+# Runtime caches
+.cache/
+tmp/
+temp/
