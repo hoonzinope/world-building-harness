@@ -18,6 +18,7 @@ OpenCrab은 사용자 입장에서는 세계관 빌딩 하네스의 얼굴이지
 - 결과 요약 메시지 반환
 - 승인/반려 인터랙션 제공
 - content accept 이후 search/index/cache 재색인
+- Codex SDK thread/job 상태 추적
 
 ### world-harness가 책임지는 것
 - 세계관 context 로딩
@@ -32,7 +33,7 @@ OpenCrab은 content 파일을 직접 수정하지 않는다.
 OpenCrab DB, search index, cache는 canon source of truth가 아니다. canon은 world root의 content Markdown이다.
 
 ## 3. 기본 호출 방식
-OpenCrab은 같은 배포 아티팩트에 포함된 world-harness CLI를 subprocess로 호출한다. 사용자 입력은 shell string으로 조합하지 않고 argv 배열로 전달한다.
+OpenCrab은 같은 배포 아티팩트에 포함된 world-harness CLI를 subprocess로 호출한다. 사용자 입력은 shell string으로 조합하지 않고 argv 배열로 전달한다. world-harness 내부 Agent Runner의 기본값은 Codex SDK이며, Codex CLI fallback과 OpenAI API SDK server-mode runner를 둘 수 있다.
 
 ```bash
 world genesis "북부 제국 설정을 만들어줘" --root /workspace/world --json
@@ -151,7 +152,33 @@ OpenCrab은 accept 버튼 또는 명령을 숨기지 말고, conflict 상태와 
 ### malformed JSON
 OpenCrab은 raw stdout을 그대로 사용자에게 보내지 않고 오류 메시지와 run id를 제공한다.
 
-## 10. 확장
+## 10. Codex Runner 운영
+권장 기본값은 Codex SDK runner다.
+
+```text
+OpenCrab job
+→ world genesis --root /workspace/world --runner codex-sdk
+→ world-harness CodexSdkRunner
+→ local Codex agent thread.run(...)
+→ drafts/와 runs/ 후보 artifact 생성
+→ world-harness validator가 재검증
+```
+
+Codex CLI runner는 SDK 사용이 어려울 때 fallback으로 사용한다.
+
+```bash
+codex exec \
+  --cwd /workspace/world \
+  --sandbox workspace-write \
+  --output-last-message runs/20260529-001/codex-final.txt \
+  "Create a draft under drafts/ only. Do not modify content/."
+```
+
+Codex SDK/CLI는 ChatGPT 계정 기반 Codex 사용량을 활용할 수 있는 개인용 운영에 적합하다. OpenAI API SDK runner는 별도 API billing을 전제로 하므로, 서버형 운영이나 사용자별 quota가 필요할 때 선택한다.
+
+Codex runner 출력은 최종 결과가 아니라 후보 결과다. world-harness는 생성된 markdown과 JSON을 다시 파싱하고 validate한 뒤에만 summary를 반환한다.
+
+## 11. 확장
 MVP 이후 OpenCrab은 버튼 기반 approval, diff 미리보기, 최근 draft 목록, validation report 보기, graph 관계 조회를 제공할 수 있다.
 
 Codex SDK를 사용할 경우 OpenCrab은 long-running Codex job을 생성하고 상태를 추적할 수 있다. 단, Codex job은 draft 생성과 semantic validation 후보 생성에만 사용하며, accept와 content write는 world-harness CLI가 수행한다.

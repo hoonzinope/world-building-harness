@@ -16,6 +16,7 @@ OpenCrab은 사용자 입장에서는 세계관 빌딩 하네스처럼 보일 �
 - 모든 실행 과정과 결과를 runs/에 남긴다.
 - 여러 세계관 root를 동일한 CLI와 workflow로 다룰 수 있게 한다.
 - OpenCrab, CLI, Codex SDK, Claude, Gemini 등 외부 실행 환경에서 동일한 workflow를 호출할 수 있게 한다.
+- 개인용/구독 기반 사용에서는 Codex SDK runner를 기본 Agent Runner로 사용하고, Codex CLI runner를 fallback으로 둔다.
 
 ## 3. 비목표
 - 소설 본문 자동 집필 플랫폼을 만들지 않는다.
@@ -45,7 +46,9 @@ OpenCrab은 사용자 입장에서는 세계관 빌딩 하네스처럼 보일 �
 ## 6. 초기 통합 기능
 - OpenCrab은 여러 world root registry를 관리한다.
 - OpenCrab은 world-harness CLI를 같은 배포 아티팩트 또는 per-world job container에서 argv subprocess로 호출한다.
-- Codex SDK 또는 다른 LLM runner는 draft 생성, context 요약, semantic validation step에만 사용한다.
+- Codex SDK runner는 draft 생성, context 요약, semantic validation step에만 사용한다.
+- Codex CLI runner는 SDK 사용이 어려운 환경을 위한 fallback이다.
+- OpenAI API SDK runner는 서버형 운영, 다중 사용자, 정밀 사용량 계측이 필요한 경우의 선택지다.
 - accept와 content write는 deterministic world-harness workflow가 수행한다.
 
 ## 7. 성공 기준
@@ -60,7 +63,7 @@ OpenCrab은 사용자 입장에서는 세계관 빌딩 하네스처럼 보일 �
 - content Markdown은 canon source of truth다.
 - OpenCrab은 core가 아니라 host/backend/adapter다.
 - world-harness가 workflow의 주체다.
-- LLM은 실행 엔진이지 최종 결정권자가 아니다.
+- Codex SDK/CLI와 LLM은 실행 엔진이지 최종 결정권자가 아니다.
 - content는 canon이다.
 - drafts는 후보 설정이다.
 - archive는 active canon이나 pending draft가 아니다.

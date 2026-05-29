@@ -68,8 +68,9 @@ Adapter는 파일 구조, canon 규칙, validation 규칙을 직접 구현하지
 - file repository
 - markdown parser
 - frontmatter parser
-- LLM provider
 - Codex SDK runner
+- Codex CLI runner
+- OpenAI API SDK runner
 - git client
 - graph storage
 
@@ -84,9 +85,16 @@ Adapter는 파일 구조, canon 규칙, validation 규칙을 직접 구현하지
 요청과 관련된 content, drafts, graph, 최근 runs를 로딩한다. 관련 문서 검색은 파일 경로, 태그, id, graph 관계를 기반으로 시작하고, 이후 semantic search를 붙일 수 있다.
 
 ### Agent Runner
-OpenAI API, Codex SDK, Claude API, Gemini API, Codex CLI, Claude Code, OpenCode 같은 실행 엔진을 추상화한다. Core는 특정 LLM에 종속되지 않는다.
+Codex SDK, Codex CLI, OpenAI API SDK, Claude API, Gemini API, Claude Code, OpenCode 같은 실행 엔진을 추상화한다. Core는 특정 runner에 종속되지 않는다.
 
 Agent Runner는 draft 생성, context 요약, semantic validation 같은 비결정적 step만 수행한다. content 승격, archive 이동, graph 확정 업데이트, git commit은 Agent Runner가 직접 수행하지 않는다.
+
+권장 runner 우선순위:
+1. Codex SDK runner: 개인용/구독 기반 사용의 기본값. local Codex agent를 programmatic하게 제어하고 thread/run 상태를 OpenCrab job과 연결한다.
+2. Codex CLI runner: SDK를 쓰기 어려운 환경의 fallback. `codex exec` 비대화형 실행을 사용하되, 출력은 항상 world-harness가 다시 파싱하고 검증한다.
+3. OpenAI API SDK runner: 서버형 운영, 다중 사용자, 정밀 과금/쿼터 제어가 필요한 경우 사용한다. ChatGPT 구독과 별도 API billing을 전제로 한다.
+
+Codex SDK/CLI runner가 생성한 구조화 출력은 신뢰 경계 밖의 후보로 본다. JSON schema나 markdown 형식이 맞아 보이더라도 validator와 frontmatter normalizer를 반드시 통과해야 한다.
 
 ### Validator
 LLM 결과를 canon으로 믿지 않고 충돌 후보를 탐지한다. validator 결과는 확정 판정이 아니라 사람이 검토할 근거다.

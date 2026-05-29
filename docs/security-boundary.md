@@ -73,7 +73,8 @@ OpenCrab과 world CLI가 같은 컨테이너에 있더라도 이 경계는 유�
 MVP에서는 world-harness core가 임의 네트워크 요청을 수행하지 않는다.
 
 허용:
-- 설정된 LLM provider API 호출
+- Codex SDK/CLI가 수행하는 인증된 Codex 호출
+- OpenAI API SDK runner를 명시적으로 선택한 경우의 설정된 provider API 호출
 
 금지:
 - LLM이 임의 URL을 요청하게 하는 기능
@@ -92,6 +93,10 @@ API key, bot token, OAuth token은 다음 위치에 저장하지 않는다.
 
 환경변수를 로그로 출력하지 않는다. 에러 메시지에도 secret 값을 포함하지 않는다.
 
+Codex SDK/CLI runner는 가능하면 Codex의 기존 로그인 상태 또는 별도 Codex home을 사용한다. job container에 credential을 전달해야 한다면 read-only secret mount나 제한된 `CODEX_HOME`을 사용하고, world root에는 credential 파일을 두지 않는다.
+
+OpenAI API SDK runner를 사용할 때만 `OPENAI_API_KEY` 같은 API key가 필요하다. API key 기반 runner는 ChatGPT 구독 한도가 아니라 Platform API billing을 사용한다.
+
 ## 8. LLM Output Boundary
 LLM은 다음을 직접 수행할 수 없다.
 - content 직접 수정
@@ -103,7 +108,7 @@ LLM은 다음을 직접 수행할 수 없다.
 - 다른 world root 접근
 
 LLM은 후보 결과만 생성한다.
-Codex SDK runner도 동일한 제한을 받는다.
+Codex SDK runner와 Codex CLI runner도 동일한 제한을 받는다.
 
 ## 9. Approval Boundary
 draft가 content로 승격되려면 accept workflow를 통과해야 한다.

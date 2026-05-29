@@ -147,7 +147,7 @@ OpenCrab DB나 search index와 content가 불일치하면 content를 우선한�
 
 LLM validator 결과는 warning 또는 conflict candidate로만 취급한다.
 
-Codex SDK 또는 다른 Agent Runner는 semantic validation 후보를 생성할 수 있지만, validation status 확정과 accept 차단 여부는 world-harness validator가 결정한다.
+Codex SDK, Codex CLI 또는 다른 Agent Runner는 semantic validation 후보를 생성할 수 있지만, validation status 확정과 accept 차단 여부는 world-harness validator가 결정한다. Runner가 반환한 structured output은 schema-valid처럼 보이더라도 신뢰하지 않고 재파싱한다.
 
 ## 10. Accept Blocking Rules
 기본적으로 다음 상태는 accept를 차단한다.

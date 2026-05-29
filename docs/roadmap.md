@@ -3,7 +3,7 @@
 # World-Building Harness Roadmap
 
 ## 1. 방향
-로드맵은 거대한 멀티 에이전트 시스템을 바로 만드는 것이 아니라, content Markdown을 canon source of truth로 고정한 안전한 단일 workflow에서 시작해 OpenCrab 연동, 승인 플로우, 그래프 인덱스, Codex SDK runner, 멀티 에이전트로 점진 확장하는 방식으로 진행한다.
+로드맵은 거대한 멀티 에이전트 시스템을 바로 만드는 것이 아니라, content Markdown을 canon source of truth로 고정한 안전한 단일 workflow에서 시작해 OpenCrab 연동, Codex SDK runner, 승인 플로우, 그래프 인덱스, 멀티 에이전트로 점진 확장하는 방식으로 진행한다.
 
 ## 2. Phase 0: 문서화와 결정 고정
 ### 목표
@@ -92,39 +92,28 @@ OpenCrab에서 같은 배포 아티팩트의 world CLI를 호출하고 여러 wo
 - harness job은 선택된 world root 밖 파일을 볼 수 없음
 - OpenCrab DB/index가 비어도 content Markdown에서 복구 가능함
 
-## 6. Phase 4: Graph Store
+## 6. Phase 4: Codex SDK Runner
 ### 목표
-content 기반 graph 인덱스를 생성한다.
-
-### 기능
-- nodes.json 생성
-- edges.json 생성
-- graph rebuild
-- graph check
-- orphan report
-
-### 완료 기준
-- content 전체를 기준으로 graph를 재생성할 수 있음
-- graph가 원천 진실이 아니라 재생성 가능한 인덱스로 유지됨
-
-## 7. Phase 5: Codex SDK Runner
-### 목표
-Codex SDK를 Agent Runner backend로 붙여 draft 생성과 semantic validation 품질을 높인다.
+Codex SDK를 기본 Agent Runner backend로 붙여 ChatGPT/Codex 구독 기반 개인용 하네스를 먼저 완성한다.
 
 ### 기능
 - codex-sdk-runner
+- codex-cli-runner fallback
 - context manifest 전달
 - draft generation job
 - semantic validation candidate job
 - timeout/retry/status handling
+- Codex thread/job id 추적
 - runs log에 runner metadata 기록
 
 ### 완료 기준
 - Codex SDK runner로 draft를 생성할 수 있음
+- Codex CLI runner fallback으로 동일 workflow를 실행할 수 있음
 - Codex SDK runner가 content를 직접 수정하지 않음
 - accept는 deterministic CLI workflow로만 수행됨
+- runner 출력은 validator가 재파싱하고 검증함
 
-## 8. Phase 6: Approval UX
+## 7. Phase 5: Approval UX
 ### 목표
 Telegram 또는 OpenCrab UI에서 생성 결과를 검토하고 승인/반려할 수 있게 한다.
 
@@ -138,6 +127,21 @@ Telegram 또는 OpenCrab UI에서 생성 결과를 검토하고 승인/반려할
 ### 완료 기준
 - 사용자가 원격에서 draft를 검토하고 승인할 수 있음
 - conflict 상태에서는 승인 전에 경고가 표시됨
+
+## 8. Phase 6: Graph Store
+### 목표
+content 기반 graph 인덱스를 생성한다.
+
+### 기능
+- nodes.json 생성
+- edges.json 생성
+- graph rebuild
+- graph check
+- orphan report
+
+### 완료 기준
+- content 전체를 기준으로 graph를 재생성할 수 있음
+- graph가 원천 진실이 아니라 재생성 가능한 인덱스로 유지됨
 
 ## 9. Phase 7: Storylet & Exporter
 ### 목표
@@ -203,9 +207,10 @@ oh-my-codex식 workflow layer 위에 역할별 agent를 추가한다.
 3. runs log
 4. accept workflow
 5. OpenCrab same-deployment integration
+6. Codex SDK runner
 
 나중:
-1. Codex SDK runner 고도화
+1. OpenAI API SDK runner
 2. multi-agent
 3. graph visualization
 4. web dashboard

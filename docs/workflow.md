@@ -5,7 +5,7 @@
 ## 1. 원칙
 모든 workflow는 요청을 바로 canon에 반영하지 않는다. 생성 결과는 draft에 저장되고, validate를 통과하거나 충돌 후보를 검토한 뒤 accept 단계에서만 content로 승격된다. `content/` Markdown은 canon source of truth이며 OpenCrab DB, graph, search index는 이를 보조한다.
 
-LLM 또는 Codex SDK runner는 특정 step의 실행 엔진일 뿐 workflow 전체를 결정하지 않는다. workflow 순서, permission boundary, content write 여부는 world-harness core가 결정한다.
+Codex SDK runner, Codex CLI runner, LLM API runner는 특정 step의 실행 엔진일 뿐 workflow 전체를 결정하지 않는다. workflow 순서, permission boundary, content write 여부는 world-harness core가 결정한다.
 
 ## 2. Orchestration 책임 분리
 ```text
@@ -22,7 +22,8 @@ world-harness
   - runs log 작성
 
 Agent Runner
-  - draft 생성
+  - Codex SDK runner를 기본값으로 draft 생성
+  - Codex CLI runner를 fallback으로 사용
   - context 요약
   - semantic validation 후보 생성
 ```
@@ -57,7 +58,7 @@ receive request
 4. 관련 content 문서 검색
 5. 관련 graph node/edge 검색
 6. 필요한 경우 사용자에게 추가 질문 생성
-7. Agent Runner로 draft 생성
+7. Agent Runner로 draft 생성. 기본값은 Codex SDK runner이며, 환경에 따라 Codex CLI runner 또는 OpenAI API SDK runner를 사용할 수 있다.
 8. frontmatter 보정
 9. drafts/에 markdown 저장
 10. canon validation 실행
@@ -186,6 +187,11 @@ runs/
 
 ## 11. Workflow 설정 예시
 ```yaml
+agent_runners:
+  default: codex-sdk
+  fallback: codex-cli
+  server_mode: openai-api
+
 workflows:
   genesis:
     steps:
