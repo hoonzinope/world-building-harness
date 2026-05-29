@@ -1,6 +1,6 @@
 # schema.md
 
-# World-Building Harness Schema
+# OpenCrabs World Tools Schema
 
 ## 1. 목적
 schema는 세계관 문서의 표준 frontmatter와 본문 섹션을 정의한다. LLM 생성 결과를 일정한 구조로 정리하고 validator가 검사할 기준을 제공한다.
@@ -422,4 +422,4 @@ Canon Notes는 설정의 불변 조건, 아직 모호한 부분, 향후 검증�
 - status가 canon인 문서는 content/에 있어야 한다.
 - status가 draft인 문서는 drafts/ 또는 archive/에 있을 수 있다.
 - archive/accepted/의 draft 원본은 active validation과 context loading에서 제외한다.
-- OpenCrab DB나 graph는 content Markdown에서 재생성 가능한 보조 데이터다.
+- OpenCrabs DB나 graph는 content Markdown에서 재생성 가능한 보조 데이터다.

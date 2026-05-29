@@ -1,134 +1,130 @@
 # architecture.md
 
-# World-Building Harness Architecture
+# OpenCrabs World-Building Architecture
 
 ## 1. 개요
-World-Building Harness는 Markdown 세계관 root를 대상으로 동작하는 core workflow engine과 외부 입력 채널을 연결하는 adapter/host layer로 구성된다. `content/` Markdown은 canon source of truth이며, graph나 OpenCrab DB는 재생성 가능한 인덱스 또는 운영 상태 저장소로 취급한다.
+최종 구조는 OpenCrabs를 세계관 빌딩 하네스로 사용하고, 이 레포가 OpenCrabs에 설치할 skill, dynamic tools, Go 기반 `world-tool` CLI를 제공하는 방식이다.
 
-OpenCrab은 사용자 입장에서는 세계관 빌딩 하네스처럼 보이지만, 구현 관점에서는 world-harness CLI를 호출하고 승인 UX와 job 관리를 제공하는 host/backend다. OpenCrab과 world-harness CLI는 같은 이미지나 배포 아티팩트에 포함될 수 있으나, core는 OpenCrab 내부 구현에 의존하지 않는다. 운영 환경에서는 OpenCrab이 target world root만 마운트한 job container를 실행하는 방식을 권장한다.
+OpenCrabs가 Codex provider를 통해 판단과 생성을 수행하고, `world-tool`이 파일 시스템 변경과 validation을 deterministic하게 처리한다.
 
 ## 2. 전체 구조
 ```text
 User
   ↓
-CLI / OpenCrab / Codex / Claude / Web UI
+OpenCrabs TUI / Telegram / Discord / Slack
   ↓
-Adapter / Host Layer
+OpenCrabs Codex provider
   ↓
-World Harness Core
+world-building Skill
   ↓
-Workflow Runner / State Machine
+OpenCrabs Dynamic Tools
   ↓
-Context Loader / Agent Runner / Validator / Writer
+world-tool Go CLI
   ↓
-Markdown World Root + Graph Store + Runs Log
-```
-
-OpenCrab과 world CLI를 같은 이미지로 배포하는 경우의 물리 구조:
-
-```text
-opencrab server
-  ↓ starts job
-world-harness job container
-├── world CLI
-├── world-harness library/core
-└── /workspace/world  # only one target world root is mounted
+World Root: content / drafts / runs / archive / graph
 ```
 
 ## 3. 레이어 구분
-### Adapter Layer
-외부 입력을 world-harness 명령으로 변환한다. OpenCrab은 adapter이면서 동시에 world registry, job queue, approval UX를 제공하는 host/backend 역할을 한다.
-- CLI adapter
-- OpenCrab adapter
-- Telegram adapter
-- Codex/Claude command adapter
-- future Web UI adapter
+### OpenCrabs Layer
+대화, provider 선택, tool 호출, 채널 응답, 승인 UX를 담당한다.
 
-Adapter는 파일 구조, canon 규칙, validation 규칙을 직접 구현하지 않는다. OpenCrab은 여러 world root의 경로와 사용자 권한을 관리할 수 있지만, content write 가능 여부는 world-harness core가 최종 판단한다.
+- Codex OAuth / Codex CLI provider
+- `/skills`로 world-building skill 실행
+- `~/.opencrabs/tools.toml` dynamic tools 로딩
+- 사용자 승인과 대화 흐름 관리
 
-### Core Layer
-세계관 생성, 검증, 승인 흐름을 책임지는 deterministic workflow layer다.
-- command router
-- workflow runner
-- state manager
-- permission guard
-- run logger
+### Skill Layer
+`opencrabs/skills/world-building/SKILL.md`가 OpenCrabs/Codex에게 세계관 작업 규칙을 제공한다.
 
-### Domain Services
-세계관 도메인에 특화된 작업을 수행한다.
-- Genesis service
-- Canon validation service
-- Storylet generation service
-- Markdown export service
-- Graph update service
-- Archive service
+- `content/` 직접 수정 금지
+- draft 우선 생성
+- validation 후 accept
+- conflict 시 사용자 확인
+- tool 출력 기반으로 다음 행동 결정
 
-### Infrastructure Services
-파일 시스템, LLM 호출, git, graph 저장소 같은 외부 의존성을 감싼다.
-- file repository
-- markdown parser
-- frontmatter parser
-- Codex SDK runner
-- Codex CLI runner
-- OpenAI API SDK runner
-- git client
-- graph storage
+### Tool Layer
+`opencrabs/tools/world-tools.toml`이 OpenCrabs dynamic tools를 정의한다. 각 tool은 shell executor로 `world-tool`을 호출한다.
 
-## 4. 핵심 컴포넌트
-### Command Router
-`world genesis`, `world validate`, `world accept`, `world status` 같은 명령을 해석해 적절한 workflow를 호출한다.
+dynamic tool은 `opencrab_exec_shell` 같은 범용 명령이 아니라 의미 단위 작업이어야 한다.
 
-### Workflow Runner
-코드 또는 설정에 정의된 step 목록을 순서대로 실행한다. 각 step은 입력과 출력을 명확히 가진다. MVP에서는 코드 기반 state machine으로 시작하고, 필요해지면 YAML workflow 정의를 추가할 수 있다.
+- `world_list`
+- `world_status`
+- `world_search_docs`
+- `world_read_doc`
+- `world_create_draft`
+- `world_update_draft`
+- `world_validate_draft`
+- `world_diff_draft`
+- `world_accept_draft`
+- `world_reject_draft`
+- `world_get_run`
 
-### Context Loader
-요청과 관련된 content, drafts, graph, 최근 runs를 로딩한다. 관련 문서 검색은 파일 경로, 태그, id, graph 관계를 기반으로 시작하고, 이후 semantic search를 붙일 수 있다.
+### world-tool Layer
+Go 단일 바이너리다. OpenCrabs와 독립적으로 실행 가능해야 하며, 모든 출력은 `--json`을 지원한다.
 
-### Agent Runner
-Codex SDK, Codex CLI, OpenAI API SDK, Claude API, Gemini API, Claude Code, OpenCode 같은 실행 엔진을 추상화한다. Core는 특정 runner에 종속되지 않는다.
+- world registry 해석
+- path boundary 검사
+- markdown/frontmatter 파싱
+- draft/content/archive 파일 조작
+- validation
+- diff 생성
+- runs/audit log 작성
 
-Agent Runner는 draft 생성, context 요약, semantic validation 같은 비결정적 step만 수행한다. content 승격, archive 이동, graph 확정 업데이트, git commit은 Agent Runner가 직접 수행하지 않는다.
-
-권장 runner 우선순위:
-1. Codex SDK runner: 개인용/구독 기반 사용의 기본값. local Codex agent를 programmatic하게 제어하고 thread/run 상태를 OpenCrab job과 연결한다.
-2. Codex CLI runner: SDK를 쓰기 어려운 환경의 fallback. `codex exec` 비대화형 실행을 사용하되, 출력은 항상 world-harness가 다시 파싱하고 검증한다.
-3. OpenAI API SDK runner: 서버형 운영, 다중 사용자, 정밀 과금/쿼터 제어가 필요한 경우 사용한다. ChatGPT 구독과 별도 API billing을 전제로 한다.
-
-Codex SDK/CLI runner가 생성한 구조화 출력은 신뢰 경계 밖의 후보로 본다. JSON schema나 markdown 형식이 맞아 보이더라도 validator와 frontmatter normalizer를 반드시 통과해야 한다.
-
-### Validator
-LLM 결과를 canon으로 믿지 않고 충돌 후보를 탐지한다. validator 결과는 확정 판정이 아니라 사람이 검토할 근거다.
-
-### Writer
-draft 작성, validation report 작성, graph candidate 작성, content 승격, accepted draft archive를 담당한다. content 변경은 accept workflow에서만 허용된다.
-
-### Run Logger
-각 실행마다 runs/{run_id}/ 아래에 입력, 컨텍스트, 계획, 결과, 검증 결과, diff를 저장한다.
+## 4. 추천 레포 구조
+```text
+world-harness/
+├── cmd/
+│   └── world-tool/
+│       └── main.go
+├── internal/
+│   ├── world/
+│   ├── docs/
+│   ├── drafts/
+│   ├── validate/
+│   ├── diff/
+│   ├── audit/
+│   └── config/
+├── opencrabs/
+│   ├── skills/
+│   │   └── world-building/
+│   │       └── SKILL.md
+│   └── tools/
+│       └── world-tools.toml
+├── schema/
+└── docs/
+```
 
 ## 5. 데이터 저장소
-### Markdown World Root
-사람이 읽고 수정하는 원본 저장소다. 각 world root는 독립적인 content, drafts, runs, graph, schema를 가진다.
+### World Root
+각 세계관은 독립적인 root를 가진다.
+
+```text
+world-root/
+├── content/
+├── drafts/
+├── runs/
+├── archive/
+├── graph/
+├── schema/
+└── harness.yaml
+```
 
 ### content/
-canon source of truth다. OpenCrab DB나 graph가 손실되어도 content Markdown에서 canon을 복구할 수 있어야 한다.
+canon source of truth다. OpenCrabs DB나 index가 손실되어도 content Markdown에서 canon을 복구할 수 있어야 한다.
 
-### Graph Store
-content 문서에서 추출한 entity와 relationship의 보조 인덱스다. canon의 원천 진실은 Markdown이며, graph는 재생성 가능해야 한다.
+### drafts/
+pending 후보 설정이다. OpenCrabs/Codex가 생성한 설정은 먼저 drafts에 저장된다.
 
-### Runs Log
-하네스 실행 기록이다. 디버깅, 회귀 검증, 이전 판단 추적에 사용한다.
+### runs/
+모든 write workflow의 입력, 결과, validation, diff, actor, timestamp를 기록한다.
 
-### OpenCrab Backend Store
-world registry, 사용자 권한, job 상태, approval 상태, search index/cache를 저장한다. canon source of truth가 아니며, content Markdown을 기준으로 재색인할 수 있어야 한다.
+### archive/
+accepted/rejected/deprecated draft를 보관한다. archive는 active validation과 id 중복 검사 기본 대상에서 제외한다.
 
 ## 6. 권한 경계
-- core는 선택된 world root 밖 파일을 읽거나 쓰지 않는다.
-- content/는 accept 단계에서만 수정된다.
-- drafts/와 runs/는 생성 단계에서 수정 가능하다.
-- archive/accepted/는 승인된 draft 원본 보관소이며 기본 context loading, id 중복 검사, validation 대상에서 제외된다.
-- graph/는 accept 또는 graph rebuild 단계에서 갱신된다.
-- OpenCrab은 직접 content를 수정하지 않고 world CLI를 argv subprocess로 호출한다.
-- 강한 격리가 필요한 운영 환경에서는 CLI 실행 컨테이너에 선택된 world root 하나만 `/workspace/world`로 마운트한다.
-
-## 7. 확장 방향
-MVP 이후 multi-agent runner, semantic index, Telegram approval UI, graph visualization, automatic regression validation을 추가할 수 있다.
+- OpenCrabs는 world 작업에 `world_*` tools를 사용한다.
+- `world-tool`은 선택된 world root 밖을 읽거나 쓰지 않는다.
+- `content/`는 `world_accept_draft`에서만 변경된다.
+- `accept`는 validation을 재실행한다.
+- `force accept`는 reason이 필수이며 runs log에 남긴다.
+- Docker 사용 시 job container에는 선택된 world root 하나만 마운트한다.

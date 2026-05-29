@@ -1,18 +1,18 @@
 # security-boundary.md
 
-# World-Building Harness Security Boundary
+# OpenCrabs World Tools Security Boundary
 
 ## 1. 목적
-world-harness는 LLM이 파일을 읽고 쓰는 구조이므로 명확한 보안 경계가 필요하다. 목표는 세계관 저장소 외부 파일, 환경변수, 인증 토큰, 호스트 시스템이 LLM 또는 adapter에 의해 오염되거나 유출되지 않도록 하는 것이다.
+OpenCrabs/Codex가 세계관 파일을 다루는 구조에서는 명확한 보안 경계가 필요하다. 목표는 world root 밖 파일, secret, host system이 tool 호출로 노출되거나 변경되지 않게 하는 것이다.
 
 ## 2. 기본 원칙
-- 하네스는 선택된 world root 밖 파일을 읽거나 쓰지 않는다.
-- content는 accept workflow에서만 변경된다.
+- 세계관 파일 작업은 `world_*` dynamic tools로 수행한다.
+- dynamic tools는 `world-tool` Go CLI를 호출한다.
+- `world-tool`은 선택된 world root 밖 파일을 읽거나 쓰지 않는다.
+- `content/`는 accept tool에서만 변경된다.
 - draft 생성과 canon 승격은 분리한다.
-- OpenCrab은 host/backend + adapter이며 content를 직접 수정하지 않는다.
-- LLM 출력은 신뢰하지 않고 validator와 approval을 거친다.
+- OpenCrabs/Codex 출력은 후보이며 tool validation을 통과해야 한다.
 - 모든 write 작업은 runs log에 기록한다.
-- content Markdown은 canon source of truth다.
 
 ## 3. 파일 시스템 경계
 ### 허용 경로
@@ -22,7 +22,6 @@ world-harness는 LLM이 파일을 읽고 쓰는 구조이므로 명확한 보안
 - drafts/
 - raw/
 - graph/
-- prompts/
 - schema/
 - runs/
 - archive/
@@ -32,122 +31,113 @@ world-harness는 LLM이 파일을 읽고 쓰는 구조이므로 명확한 보안
 - world root 상위 디렉토리
 - 다른 world root
 - 사용자의 home directory
-- .ssh/
-- .git-credentials
-- .env 중 민감 값
+- `.ssh/`
+- `.git-credentials`
+- secret이 담긴 `.env`
 - Docker socket
 - system path
 
 ## 4. Path Traversal 방지
-사용자 입력으로 들어온 파일 경로는 반드시 normalize 후 world root 내부인지 검사한다.
+사용자 입력으로 들어온 path는 반드시 normalize 후 world root 내부인지 검사한다.
 
 금지 예시:
+
 ```text
 ../../.ssh/id_rsa
 ~/private.txt
 /var/run/docker.sock
 ```
 
-## 5. Command Execution Boundary
-world-harness가 외부 명령을 실행할 경우 allowlist를 사용한다.
+## 5. Dynamic Tool Boundary
+나쁜 tool:
 
-허용 후보:
-- git diff
-- git status
-- git add
-- git commit
-- world-harness 내부 subcommand
+```toml
+[[tools]]
+name = "world_exec_shell"
+executor = "shell"
+command = "{{command}}"
+```
 
-금지 후보:
-- rm -rf
-- curl arbitrary URL
-- docker run
-- docker socket 접근
-- shell eval
-- 사용자 입력을 그대로 shell에 붙이는 방식
+좋은 tool:
 
-OpenCrab은 shell string 대신 argv 배열로 실행해야 한다.
-OpenCrab과 world CLI가 같은 컨테이너에 있더라도 이 경계는 유지한다.
+```toml
+[[tools]]
+name = "world_accept_draft"
+executor = "shell"
+command = "world-tool accept draft --world {{world_id}} --draft {{draft_path}} --reason {{reason}} --json"
+```
+
+tool은 의미 단위 작업이어야 하며 shell 권한을 넓게 열지 않는다.
 
 ## 6. Network Boundary
-MVP에서는 world-harness core가 임의 네트워크 요청을 수행하지 않는다.
+`world-tool` MVP는 임의 네트워크 요청을 수행하지 않는다.
 
-허용:
-- Codex SDK/CLI가 수행하는 인증된 Codex 호출
-- OpenAI API SDK runner를 명시적으로 선택한 경우의 설정된 provider API 호출
-
-금지:
-- LLM이 임의 URL을 요청하게 하는 기능
-- 사용자가 입력한 URL을 자동 fetch
-- 외부 repo 자동 clone
-
-필요한 경우 explicit allowlist를 둔다.
+OpenCrabs provider가 Codex/OpenAI/Claude/Gemini 등으로 네트워크를 사용하는 것은 OpenCrabs 설정의 책임이다. world 파일 작업 tool은 외부 URL fetch, repo clone, arbitrary curl을 수행하지 않는다.
 
 ## 7. Secret Handling
-API key, bot token, OAuth token은 다음 위치에 저장하지 않는다.
+API key, OAuth token, bot token은 다음 위치에 저장하지 않는다.
+
 - runs/
 - drafts/
 - content/
 - validation report
 - graph/
+- world root 내부
 
-환경변수를 로그로 출력하지 않는다. 에러 메시지에도 secret 값을 포함하지 않는다.
-
-Codex SDK/CLI runner는 가능하면 Codex의 기존 로그인 상태 또는 별도 Codex home을 사용한다. job container에 credential을 전달해야 한다면 read-only secret mount나 제한된 `CODEX_HOME`을 사용하고, world root에는 credential 파일을 두지 않는다.
-
-OpenAI API SDK runner를 사용할 때만 `OPENAI_API_KEY` 같은 API key가 필요하다. API key 기반 runner는 ChatGPT 구독 한도가 아니라 Platform API billing을 사용한다.
+OpenCrabs credential은 OpenCrabs의 credential store나 별도 secret mount로 관리한다. `world-tool`은 provider API key를 필요로 하지 않는다.
 
 ## 8. LLM Output Boundary
-LLM은 다음을 직접 수행할 수 없다.
-- content 직접 수정
-- accept 자동 실행
-- graph 확정 업데이트
-- git commit
-- OpenCrab 설정 변경
-- harness.yaml 보안 옵션 변경
-- 다른 world root 접근
+OpenCrabs/Codex는 다음을 직접 수행하지 않는다.
 
-LLM은 후보 결과만 생성한다.
-Codex SDK runner와 Codex CLI runner도 동일한 제한을 받는다.
+- content 직접 수정
+- accept 우회
+- validation 생략
+- graph 확정 업데이트
+- 다른 world root 접근
+- OpenCrabs 보안 설정 변경
+
+LLM은 후보 markdown과 판단을 만들 수 있지만, 파일 상태 변경은 `world-tool`이 수행한다.
 
 ## 9. Approval Boundary
-draft가 content로 승격되려면 accept workflow를 통과해야 한다.
+draft가 content로 승격되려면 `world_accept_draft`를 통과해야 한다.
 
 기본 차단 조건:
 - validation error
 - validation conflict
 - id 중복
-- content path 충돌
+- content target path 충돌
 - required field 누락
+- draft가 active drafts/ 밖에 있음
 
 force accept는 가능하지만 reason이 필수다.
 
 ## 10. Docker Boundary
 권장 컨테이너 실행 원칙:
-- harness job container에는 선택된 world root 하나만 마운트한다.
+- per-world tool container에는 선택된 world root 하나만 마운트한다.
 - 여러 world root를 한 컨테이너에 동시에 마운트하지 않는다.
 - docker.sock을 마운트하지 않는다.
 - read-only root filesystem을 고려한다.
-- OpenCrab과 world CLI는 같은 이미지에 포함할 수 있지만, 운영 환경에서는 OpenCrab이 per-world job container로 CLI를 실행한다.
 - 네트워크 권한은 최소화한다.
 - 컨테이너 유저는 root가 아닌 전용 유저를 사용한다.
 
 예시:
-```yaml
+
+```bash
 docker run --rm \
   --user 1000:1000 \
   --network none \
   --read-only \
   --tmpfs /tmp \
   -v /host/worlds/ashen-continent:/workspace/world \
-  opencrab-world:latest \
-  world validate drafts/nations/northern-empire.md --root /workspace/world --json
+  world-tool:latest \
+  world-tool validate draft --root /workspace/world --draft drafts/nations/northern-empire.md --json
 ```
 
 ## 11. Audit Log
-모든 write workflow는 다음을 기록한다.
+모든 write tool은 다음을 기록한다.
+
 - run id
-- command
+- tool name
 - input summary
 - modified files
 - validation status
@@ -158,27 +148,24 @@ docker run --rm \
 ## 12. 위험 시나리오
 ### LLM이 canon을 오염시키는 경우
 방어:
-- content 직접 write 금지
-- accept workflow 강제
+- content 직접 write tool 제공 금지
+- accept tool 강제
 - validation report 생성
 
-### 사용자 입력이 path traversal을 시도하는 경우
+### path traversal
 방어:
 - path normalize
 - root 내부 검사
+- symlink resolution
 
-### OpenCrab이 너무 많은 권한을 갖는 경우
+### dynamic tool이 너무 넓은 권한을 갖는 경우
 방어:
-- adapter 역할 제한
-- command allowlist
-- subprocess argv 실행
-- content write는 world CLI만 수행
+- `world_exec_shell` 금지
+- 의미 단위 `world_*` tools만 제공
+- command template에서 path와 인자를 제한
 
 ### runs log에 secret이 남는 경우
 방어:
 - secret masking
 - env dump 금지
 - 에러 메시지 scrub
-
-## 13. 보안 관련 비목표
-MVP에서 완전한 sandbox 보안, RBAC, multi-user permission model, remote execution isolation은 구현하지 않는다. 단, 나중에 확장 가능하도록 core와 adapter를 분리한다.

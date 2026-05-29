@@ -1,11 +1,11 @@
 # validation-rules.md
 
-# World-Building Harness Validation Rules
+# OpenCrabs World Tools Validation Rules
 
 ## 1. 목적
 validation은 LLM이 생성한 설정을 canon으로 믿지 않고, 기존 세계관과의 충돌 후보를 탐지하기 위한 안전장치다. validator의 결과는 최종 판정이 아니라 사람이 검토할 근거다.
 
-검증의 기준 canon은 `content/` Markdown이다. OpenCrab DB, graph, search index는 보조 자료로 사용할 수 있지만 source of truth로 취급하지 않는다.
+검증의 기준 canon은 `content/` Markdown이다. OpenCrabs DB, graph, search index는 보조 자료로 사용할 수 있지만 source of truth로 취급하지 않는다.
 
 ## 2. Validation Status
 ### pass
@@ -132,11 +132,11 @@ draft 내용이 기존 canon의 핵심 사실을 변경하려면 explicit overri
 ### VR-504: archive 비활성화
 archive 아래 문서는 canon 또는 pending draft로 취급하지 않는다. accepted draft 원본은 추적용 보관물이며 content 문서가 canon이다.
 
-### VR-505: OpenCrab index 비권위성
-OpenCrab DB나 search index와 content가 불일치하면 content를 우선한다. OpenCrab 쪽 데이터는 재색인 대상으로 기록한다.
+### VR-505: OpenCrabs index 비권위성
+OpenCrabs DB나 search index와 content가 불일치하면 content를 우선한다. OpenCrabs 쪽 데이터는 재색인 대상으로 기록한다.
 
-## 9. LLM-based Validation
-정적 rule로 잡기 어려운 부분은 LLM validator가 검토한다.
+## 9. LLM-assisted Validation
+정적 rule로 잡기 어려운 부분은 OpenCrabs/Codex가 후보 검토를 도울 수 있다.
 
 검토 항목:
 - 세계관 톤 불일치
@@ -145,9 +145,9 @@ OpenCrab DB나 search index와 content가 불일치하면 content를 우선한�
 - 이미 존재하는 설정의 중복 변형
 - canon을 과도하게 확정하는 문장
 
-LLM validator 결과는 warning 또는 conflict candidate로만 취급한다.
+LLM-assisted 결과는 warning 또는 conflict candidate로만 취급한다.
 
-Codex SDK, Codex CLI 또는 다른 Agent Runner는 semantic validation 후보를 생성할 수 있지만, validation status 확정과 accept 차단 여부는 world-harness validator가 결정한다. Runner가 반환한 structured output은 schema-valid처럼 보이더라도 신뢰하지 않고 재파싱한다.
+OpenCrabs/Codex는 semantic validation 후보를 생성할 수 있지만, validation status 확정과 accept 차단 여부는 `world-tool` validator가 결정한다. OpenCrabs가 반환한 structured output은 schema-valid처럼 보이더라도 신뢰하지 않고 재파싱한다.
 
 ## 10. Accept Blocking Rules
 기본적으로 다음 상태는 accept를 차단한다.

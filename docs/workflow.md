@@ -1,214 +1,132 @@
 # workflow.md
 
-# World-Building Harness Workflow
+# OpenCrabs World-Building Workflow
 
 ## 1. 원칙
-모든 workflow는 요청을 바로 canon에 반영하지 않는다. 생성 결과는 draft에 저장되고, validate를 통과하거나 충돌 후보를 검토한 뒤 accept 단계에서만 content로 승격된다. `content/` Markdown은 canon source of truth이며 OpenCrab DB, graph, search index는 이를 보조한다.
+OpenCrabs가 하네스와 오케스트레이터 역할을 한다. 판단과 생성은 OpenCrabs의 Codex provider가 수행하고, 실제 파일 변경은 OpenCrabs dynamic tool이 호출하는 `world-tool` Go CLI가 수행한다.
 
-Codex SDK runner, Codex CLI runner, LLM API runner는 특정 step의 실행 엔진일 뿐 workflow 전체를 결정하지 않는다. workflow 순서, permission boundary, content write 여부는 world-harness core가 결정한다.
+`content/` Markdown은 canon source of truth다. 생성물은 `drafts/`에 먼저 저장되고, validation과 사용자 승인을 거친 뒤에만 `content/`로 승격된다.
 
-## 2. Orchestration 책임 분리
+## 2. 책임 분리
 ```text
-OpenCrab
-  - world registry 관리
-  - 사용자/채널/승인 UX 관리
-  - long-running job 상태 관리
-  - world CLI를 argv subprocess로 호출
+OpenCrabs
+  - 사용자 대화
+  - Codex provider를 통한 판단/생성
+  - skill 실행
+  - dynamic tool 호출
 
-world-harness
-  - workflow state machine 실행
-  - context loading / validation / writer 수행
-  - content write와 archive 정책 집행
-  - runs log 작성
+world-building skill
+  - 작업 순서와 안전 규칙 안내
+  - 어떤 tool을 언제 써야 하는지 지시
+  - accept 전 사용자 승인 요구
 
-Agent Runner
-  - Codex SDK runner를 기본값으로 draft 생성
-  - Codex CLI runner를 fallback으로 사용
-  - context 요약
-  - semantic validation 후보 생성
+world-tool
+  - 파일 읽기/쓰기
+  - validation
+  - diff
+  - accept/reject
+  - runs/audit log
 ```
 
 ## 3. 공통 실행 단계
 ```text
-receive request
-→ create run id
-→ load harness config
-→ check permission boundary
-→ load context
-→ run workflow steps
-→ write outputs
-→ write run log
-→ return summary
+receive user request in OpenCrabs
+→ world-building skill rules apply
+→ inspect world state with world_* tools
+→ OpenCrabs/Codex drafts candidate content
+→ call world_create_draft
+→ call world_validate_draft
+→ return summary and available actions
 ```
 
-모든 workflow는 `runs/{run_id}/events.jsonl`에 step 상태를 append한다. 기존 run id로 이어 실행하는 경우에도 기존 artifact를 덮어쓰기보다 새 event와 결과 artifact를 추가한다.
-
-## 4. Genesis Workflow
+## 4. Draft 생성 Workflow
 목적: 자연어 요청을 기반으로 새로운 세계관 설정 draft를 생성한다.
 
-### 입력
-- 사용자 자연어 요청
-- optional target type: character, nation, event, magic, organization, place, timeline
-- optional related entity ids
-
 ### 단계
-1. run id 생성
-2. 요청 의도 분석
-3. target type 추론
-4. 관련 content 문서 검색
-5. 관련 graph node/edge 검색
-6. 필요한 경우 사용자에게 추가 질문 생성
-7. Agent Runner로 draft 생성. 기본값은 Codex SDK runner이며, 환경에 따라 Codex CLI runner 또는 OpenAI API SDK runner를 사용할 수 있다.
-8. frontmatter 보정
-9. drafts/에 markdown 저장
-10. canon validation 실행
-11. graph candidates 생성
-12. runs/{run_id}/에 request, context, result, validation 저장
-13. 요약 반환
+1. `world_status`로 world root 상태 확인
+2. `world_search_docs` 또는 `world_read_doc`으로 관련 canon 로딩
+3. OpenCrabs/Codex가 draft markdown 후보 생성
+4. `world_create_draft` 호출
+5. `world_validate_draft` 호출
+6. validation summary와 draft path 반환
 
-### 출력
-- drafts/{type}/{slug}.md
-- runs/{run_id}/result.md
-- runs/{run_id}/validation.md
-- runs/{run_id}/graph-candidates.json
+### 정책
+- OpenCrabs/Codex는 `content/`에 직접 쓰지 않는다.
+- draft body가 길면 stdin 또는 temp file 기반 tool 호출을 사용한다.
+- tool output의 `draft_id`, `run_id`, `validation_status`를 사용자에게 보여준다.
 
 ## 5. Validate Workflow
-목적: draft 또는 content 후보가 기존 canon과 충돌하는지 검사한다.
-
-### 입력
-- draft path
-- optional validation level: light, normal, strict
+목적: draft가 schema와 canon 규칙을 만족하는지 검사한다.
 
 ### 단계
-1. 대상 draft 읽기
-2. frontmatter 파싱
-3. 필수 필드 검사
-4. id 중복 검사
-5. 관련 canon 문서 로딩
-6. timeline 검사
-7. entity relationship 검사
-8. terminology 중복/불일치 검사
-9. optional semantic validation 실행
-10. validation report 생성
-11. runs/{run_id}/validation.md 저장
+1. `world_validate_draft` 호출
+2. frontmatter, id, type, required fields 검사
+3. timeline, relationship, terminology 검사
+4. validation report 저장
+5. pass/warning/conflict/error 반환
 
 ### 출력
-- validation status: pass, warning, conflict, error
-- conflict candidates
-- recommended fix
+- validation status
+- issues
+- recommended fixes
+- available actions
 
 ## 6. Accept Workflow
-목적: 사람이 승인한 draft를 content로 승격한다.
-
-### 입력
-- draft path
-- optional commit message
+목적: 사용자가 승인한 draft를 canon content로 승격한다.
 
 ### 단계
-1. draft 존재 확인
-2. validate 재실행
-3. conflict가 있으면 기본적으로 중단
-4. content target path 계산
-5. git diff 또는 파일 diff 생성
-6. content 문서 생성 또는 갱신
-7. content frontmatter status를 canon으로 갱신
-8. accepted draft 원본을 archive/accepted/로 이동
-9. graph 업데이트
-10. runs log 업데이트
-11. OpenCrab index/cache 재색인 이벤트 제공
-12. optional git commit
-13. 결과 요약 반환
+1. OpenCrabs가 사용자에게 명시적 승인 확인
+2. `world_diff_draft`로 변경 내용 표시
+3. `world_accept_draft` 호출
+4. tool 내부에서 validation 재실행
+5. conflict/error면 중단
+6. content 생성 또는 갱신
+7. accepted draft를 `archive/accepted/`로 이동
+8. runs log와 result JSON 저장
 
 ### 정책
-- conflict 상태에서는 `--force` 없이는 accept 불가
-- `--force`를 사용하더라도 runs log에 강제 승인 사유를 남긴다
-- accept 이후 draft는 archive/accepted/로 이동하며 active context, id 중복 검사, validation 대상에서 제외한다
-- accept workflow는 deterministic하게 실행하며 Agent Runner가 직접 수행하지 않는다
+- accept는 tool이 강제하는 deterministic workflow다.
+- `force`는 reason이 없으면 실패한다.
+- accept 이후 OpenCrabs는 content/index/cache를 다시 읽거나 재색인할 수 있다.
 
-## 7. Storylet Workflow
-목적: 기존 세계관을 기반으로 짧은 사건, 갈등, 퀘스트, 장면 씨앗을 생성한다.
-
-### 단계
-1. 요청 분석
-2. 관련 canon 로딩
-3. 등장 entity 후보 선정
-4. 갈등 구조 생성
-5. canon 침범 여부 검사
-6. drafts/storylets/에 저장
-
-### 정책
-storylet은 canon이 아니라 creative candidate다. content 승격은 별도의 accept가 필요하다.
-
-## 8. Export Workflow
-목적: LLM 출력 또는 raw note를 표준 Markdown 문서로 변환한다.
+## 7. Reject Workflow
+목적: 사용자가 승인하지 않은 draft를 반려한다.
 
 ### 단계
-1. 입력 문서 읽기
-2. target schema 선택
-3. frontmatter 생성
-4. 섹션 정규화
-5. 관련 문서 링크 후보 생성
-6. markdown 저장
+1. 반려 사유 확인
+2. `world_reject_draft` 호출
+3. draft를 `archive/rejected/`로 이동
+4. runs log에 reason 기록
 
-## 9. Rebuild Graph Workflow
-목적: content 전체를 기준으로 graph store를 재생성한다.
+## 8. Run Log
+예시:
 
-### 단계
-1. content/**/*.md 스캔
-2. frontmatter id 수집
-3. 문서 내 relationship 파싱
-4. nodes.json 생성
-5. edges.json 생성
-6. orphan link report 생성
-
-## 10. Run Log 예시
 ```text
 runs/
-└── 20260529-001/
+└── 20260530-001/
     ├── request.json
-    ├── context-manifest.json
-    ├── context.md
+    ├── tool-call.json
     ├── draft.md
     ├── validation.json
     ├── validation.md
-    ├── graph-candidates.json
     ├── diff.patch
     ├── events.jsonl
     └── result.json
 ```
 
 `events.jsonl` 예시:
+
 ```json
-{"step":"create_run","status":"completed","time":"2026-05-29T10:00:00+09:00"}
-{"step":"load_context","status":"completed","time":"2026-05-29T10:00:02+09:00"}
-{"step":"generate_draft","status":"completed","runner":"codex-sdk"}
+{"step":"create_draft","status":"completed","actor":"opencrabs","time":"2026-05-30T10:00:00+09:00"}
 {"step":"validate_draft","status":"completed","validation_status":"warning"}
+{"step":"accept_draft","status":"blocked","reason":"validation conflict"}
 ```
 
-## 11. Workflow 설정 예시
-```yaml
-agent_runners:
-  default: codex-sdk
-  fallback: codex-cli
-  server_mode: openai-api
+## 9. Skill 지침 요약
+world-building skill은 다음을 강제하도록 지시한다.
 
-workflows:
-  genesis:
-    steps:
-      - create_run
-      - load_context
-      - generate_draft
-      - write_draft
-      - validate_canon
-      - write_graph_candidates
-      - write_run_log
-
-  accept:
-    steps:
-      - validate_canon
-      - create_diff
-      - promote_draft
-      - archive_accepted_draft
-      - update_graph
-      - write_run_log
-```
+- 모든 세계관 파일 작업은 `world_*` tools를 사용한다.
+- `content/` 직접 수정 요청은 거절하고 draft workflow로 전환한다.
+- validation 없이 accept하지 않는다.
+- conflict/error 상태에서는 사용자에게 이유를 설명하고 수정안을 제안한다.
+- tool output을 source of truth로 삼아 다음 행동을 결정한다.
