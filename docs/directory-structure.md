@@ -3,6 +3,8 @@
 # World-Building Harness Directory Structure
 
 ## 1. 기본 구조
+아래 구조는 하나의 world root 예시다. `world-lore/`는 하네스 없이도 존재할 수 있는 세계관 저장소 이름이며, world-harness 코드 저장소를 뜻하지 않는다.
+
 ```text
 world-lore/
 ├── content/
@@ -52,20 +54,22 @@ world-lore/
 ```
 
 ## 2. content/
-확정된 canon 문서를 저장한다. 사람이 읽는 공개 위키의 원천 데이터로 사용할 수 있다.
+확정된 canon 문서를 저장한다. 사람이 읽는 공개 위키의 원천 데이터로 사용할 수 있으며, world-harness에서 canon source of truth로 취급한다.
 
 정책:
 - content는 accept workflow에서만 수정한다.
 - LLM 생성 결과가 바로 content에 들어가면 안 된다.
 - 모든 content 문서는 frontmatter id를 가져야 한다.
+- OpenCrab DB, graph, search index는 content에서 재생성 가능해야 한다.
 
 ## 3. drafts/
-생성 후보 문서를 저장한다.
+생성 후보 문서를 저장한다. drafts는 pending 후보만 담는 active 작업 공간이다.
 
 정책:
 - genesis, storylet, export 결과는 기본적으로 drafts에 저장한다.
 - draft는 canon이 아니다.
 - draft는 validate와 accept를 거쳐야 content로 이동한다.
+- accept 이후 draft 원본은 archive/accepted/로 이동하고 drafts/에는 남기지 않는다.
 
 ## 4. raw/
 정리되지 않은 아이디어, 메모, 대화 로그, 외부 자료를 저장한다.
@@ -110,15 +114,17 @@ LLM 실행에 사용하는 프롬프트 템플릿을 저장한다.
 예시:
 ```text
 runs/
-└── 20260528-001/
-    ├── request.md
+└── 20260529-001/
+    ├── request.json
+    ├── context-manifest.json
     ├── context.md
-    ├── plan.md
-    ├── result.md
+    ├── draft.md
+    ├── validation.json
     ├── validation.md
     ├── graph-candidates.json
     ├── diff.patch
-    └── metadata.json
+    ├── events.jsonl
+    └── result.json
 ```
 
 정책:
@@ -128,6 +134,13 @@ runs/
 
 ## 9. archive/
 승인, 반려, 폐기된 draft를 보관한다.
+
+정책:
+- archive/accepted/는 승인 당시 draft 원본을 보존한다.
+- archive/rejected/는 반려된 draft와 반려 사유를 보존한다.
+- archive/deprecated/는 더 이상 쓰지 않는 draft나 이전 canon 후보를 보존한다.
+- archive 아래 문서는 기본 context loading, active validation, id 중복 검사 대상에서 제외한다.
+- 추적은 content frontmatter의 source_run_id와 runs log를 우선 사용한다.
 
 ## 10. harness.yaml
 하네스 설정 파일이다.
@@ -147,3 +160,5 @@ security:
   deny_outside_root: true
   allow_network: false
 ```
+
+OpenCrab은 여러 world root를 별도 registry로 관리하고, CLI 호출 시 registry의 root path를 `--root`로 전달한다. 이 registry는 world root 내부 파일일 필요가 없으며 canon source of truth가 아니다.

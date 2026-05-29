@@ -6,15 +6,18 @@
 world-harness는 LLM이 파일을 읽고 쓰는 구조이므로 명확한 보안 경계가 필요하다. 목표는 세계관 저장소 외부 파일, 환경변수, 인증 토큰, 호스트 시스템이 LLM 또는 adapter에 의해 오염되거나 유출되지 않도록 하는 것이다.
 
 ## 2. 기본 원칙
-- 하네스는 world root 밖 파일을 읽거나 쓰지 않는다.
+- 하네스는 선택된 world root 밖 파일을 읽거나 쓰지 않는다.
 - content는 accept workflow에서만 변경된다.
 - draft 생성과 canon 승격은 분리한다.
-- OpenCrab은 adapter이며 content를 직접 수정하지 않는다.
+- OpenCrab은 host/backend + adapter이며 content를 직접 수정하지 않는다.
 - LLM 출력은 신뢰하지 않고 validator와 approval을 거친다.
 - 모든 write 작업은 runs log에 기록한다.
+- content Markdown은 canon source of truth다.
 
 ## 3. 파일 시스템 경계
 ### 허용 경로
+선택된 world root 내부에서만 허용한다.
+
 - content/
 - drafts/
 - raw/
@@ -27,6 +30,7 @@ world-harness는 LLM이 파일을 읽고 쓰는 구조이므로 명확한 보안
 
 ### 금지 경로
 - world root 상위 디렉토리
+- 다른 world root
 - 사용자의 home directory
 - .ssh/
 - .git-credentials
@@ -63,6 +67,7 @@ world-harness가 외부 명령을 실행할 경우 allowlist를 사용한다.
 - 사용자 입력을 그대로 shell에 붙이는 방식
 
 OpenCrab은 shell string 대신 argv 배열로 실행해야 한다.
+OpenCrab과 world CLI가 같은 컨테이너에 있더라도 이 경계는 유지한다.
 
 ## 6. Network Boundary
 MVP에서는 world-harness core가 임의 네트워크 요청을 수행하지 않는다.
@@ -95,8 +100,10 @@ LLM은 다음을 직접 수행할 수 없다.
 - git commit
 - OpenCrab 설정 변경
 - harness.yaml 보안 옵션 변경
+- 다른 world root 접근
 
 LLM은 후보 결과만 생성한다.
+Codex SDK runner도 동일한 제한을 받는다.
 
 ## 9. Approval Boundary
 draft가 content로 승격되려면 accept workflow를 통과해야 한다.
@@ -112,25 +119,24 @@ force accept는 가능하지만 reason이 필수다.
 
 ## 10. Docker Boundary
 권장 컨테이너 실행 원칙:
-- world-lore 볼륨만 마운트한다.
+- harness job container에는 선택된 world root 하나만 마운트한다.
+- 여러 world root를 한 컨테이너에 동시에 마운트하지 않는다.
 - docker.sock을 마운트하지 않는다.
 - read-only root filesystem을 고려한다.
-- OpenCrab과 world-harness를 분리한다.
+- OpenCrab과 world CLI는 같은 이미지에 포함할 수 있지만, 운영 환경에서는 OpenCrab이 per-world job container로 CLI를 실행한다.
 - 네트워크 권한은 최소화한다.
 - 컨테이너 유저는 root가 아닌 전용 유저를 사용한다.
 
 예시:
 ```yaml
-services:
-  world-harness:
-    image: world-harness:latest
-    user: "1000:1000"
-    volumes:
-      - ./world-lore:/workspace/world-lore
-    working_dir: /workspace/world-lore
-    read_only: true
-    tmpfs:
-      - /tmp
+docker run --rm \
+  --user 1000:1000 \
+  --network none \
+  --read-only \
+  --tmpfs /tmp \
+  -v /host/worlds/ashen-continent:/workspace/world \
+  opencrab-world:latest \
+  world validate drafts/nations/northern-empire.md --root /workspace/world --json
 ```
 
 ## 11. Audit Log
@@ -161,6 +167,7 @@ services:
 - adapter 역할 제한
 - command allowlist
 - subprocess argv 실행
+- content write는 world CLI만 수행
 
 ### runs log에 secret이 남는 경우
 방어:
