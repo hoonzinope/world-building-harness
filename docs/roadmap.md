@@ -5,6 +5,8 @@
 ## 1. 방향
 로드맵은 별도 agent runtime을 만드는 것이 아니라, OpenCrabs에 세계관 빌딩 skill과 dynamic tools를 얹는 방식으로 진행한다. deterministic 파일 작업은 Go 단일 바이너리 `world-tool`이 담당한다.
 
+현재 레포는 문서와 설계 중심의 MVP 준비 단계다. 실제 Go CLI, `opencrabs/skills/`, `opencrabs/tools/`, 샘플 world root는 아직 구현 대상으로 남아 있다.
+
 ## 2. Phase 0: 결정 고정
 ### 목표
 제품 경계와 MVP 범위를 확정한다.
@@ -29,6 +31,12 @@ OpenCrabs 없이도 로컬 CLI로 파일 관리와 validation을 수행할 수 �
 - `world-tool accept draft`
 - `world-tool reject draft`
 
+### 구현 주의
+- path boundary와 symlink resolution을 가장 먼저 구현한다.
+- Markdown parser와 YAML frontmatter parser는 round-trip 안정성을 기준으로 선택한다.
+- 긴 draft body와 reason은 command-line argument가 아니라 `--body-file`, `--reason-file`, stdin으로 받는다.
+- 모든 command는 stdout JSON과 non-zero exit code 정책을 일관되게 지킨다.
+
 ### 완료 기준
 - draft markdown 생성 가능
 - content는 accept 전까지 변경되지 않음
@@ -48,6 +56,8 @@ OpenCrabs/Codex 생성물을 안정적으로 검사할 rule 기반 validator를 
 - relationship 검사
 - orphan related id 검사
 - validation report 생성
+- world별 validation strictness 설정
+- Canon Notes/source_run_id 기반 retcon 추적
 
 ### 완료 기준
 - 구조 오류를 error로 탐지
@@ -64,6 +74,7 @@ OpenCrabs에서 세계관 작업 규칙을 재사용 가능한 skill로 제공�
 - accept 전 사용자 승인 지침
 - tool 사용 우선순위 지침
 - 응답 format 지침
+- validation warning 무시 또는 accept 유도 요청에 대한 대응 지침
 
 ### 완료 기준
 - OpenCrabs `/skills`에서 world-building skill을 실행할 수 있음
@@ -90,6 +101,7 @@ OpenCrabs가 `world-tool`을 의미 단위 tool로 호출하게 한다.
 - OpenCrabs에서 dynamic tools가 로드됨
 - 각 tool은 stdout JSON을 반환함
 - 범용 shell tool 없이 세계관 workflow를 수행할 수 있음
+- 긴 markdown body를 file/stdin 기반으로 전달하는 tool이 동작함
 
 ## 7. Phase 5: OpenCrabs Integration UX
 ### 목표
@@ -107,7 +119,25 @@ OpenCrabs 대화에서 draft 생성, 검증, 승인 흐름이 자연스럽게 �
 - conflict 상태에서는 승인 전 경고가 표시됨
 - accept는 명시적 사용자 승인 후에만 실행됨
 
-## 8. Phase 6: Graph Store
+## 8. Phase 6: Sample World E2E
+### 목표
+샘플 world root로 end-to-end 흐름을 검증한다.
+
+### 기능
+- `examples/worlds/ashen-continent`
+- 최소 canon 문서 3개 이상
+- draft 생성 fixture
+- validation conflict fixture
+- accept/reject fixture
+- OpenCrabs skill + tools 수동 테스트 스크립트
+
+### 완료 기준
+- init → draft create → validate → diff → accept가 샘플 world에서 동작함
+- conflict draft가 accept에서 차단됨
+- accepted draft가 archive/accepted/로 이동함
+- runs artifact가 재현 가능한 형태로 남음
+
+## 9. Phase 7: Graph Store
 ### 목표
 content 기반 graph 인덱스를 생성한다.
 
@@ -122,7 +152,7 @@ content 기반 graph 인덱스를 생성한다.
 - content 전체를 기준으로 graph를 재생성할 수 있음
 - graph가 원천 진실이 아니라 재생성 가능한 인덱스로 유지됨
 
-## 9. Phase 7: Storylet & Exporter
+## 10. Phase 8: Storylet & Exporter
 ### 목표
 세계관 설정 외에 사건 후보와 raw note 정리 기능을 추가한다.
 
@@ -135,7 +165,7 @@ content 기반 graph 인덱스를 생성한다.
 - raw 메모를 draft로 정리 가능
 - 기존 canon 기반 storylet 생성 가능
 
-## 10. 우선순위
+## 11. 우선순위
 최우선:
 1. Go `world-tool` CLI
 2. validation report
@@ -143,6 +173,7 @@ content 기반 graph 인덱스를 생성한다.
 4. accept workflow
 5. OpenCrabs skill
 6. OpenCrabs dynamic tools
+7. sample world end-to-end test
 
 나중:
 1. graph rebuild/check
@@ -151,7 +182,7 @@ content 기반 graph 인덱스를 생성한다.
 4. dashboard
 5. OpenCrabs native extension 또는 deeper integration
 
-## 11. 리스크
+## 12. 리스크
 ### skill만으로 규칙을 강제하려는 위험
 Skill은 지침일 뿐이다. content 보호, validation, accept 차단은 tool에서 강제해야 한다.
 
@@ -163,3 +194,12 @@ OpenCrabs DB나 graph를 canon 원본처럼 다루면 content Markdown과 불일
 
 ### validator 과신
 validator는 확정 판정기가 아니라 충돌 후보 탐지기다.
+
+### OpenCrabs tool calling 안정성
+Tool 호출 실패, malformed JSON, timeout에 따라 UX가 흔들릴 수 있다. 모든 tool은 명확한 error JSON을 반환하고 OpenCrabs skill은 실패 시 재시도보다 사용자에게 상태를 설명해야 한다.
+
+### warning 무시 유도
+사용자가 “warning 무시하고 accept”를 요청할 수 있다. conflict/error는 tool에서 차단하고, force는 reason과 audit log를 필수로 한다.
+
+### archive storage 증가
+accepted/rejected archive가 계속 쌓일 수 있다. archive pruning, compression, export 정책을 나중 phase에서 추가한다.

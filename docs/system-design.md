@@ -254,9 +254,36 @@ internal/audit
 8. `accept/reject draft`
 9. `opencrabs/skills/world-building/SKILL.md`
 10. `opencrabs/tools/world-tools.toml`
+11. sample world root와 end-to-end smoke test
 
 ## 12. 설계 판단
 - OpenCrabs가 이미 provider, skill, dynamic tools, channel UX를 제공하므로 별도 agent runtime을 만들지 않는다.
 - `world-tool`은 AI SDK를 품지 않는다. AI 판단은 OpenCrabs/Codex가 한다.
 - safety-critical 로직은 skill이 아니라 Go tool에서 강제한다.
 - dynamic tools는 command template quoting 문제를 피하기 위해 긴 body와 reason을 file/stdin 기반으로 전달한다.
+
+## 13. MVP 준비 상태
+현재 문서는 구현 전 설계 기준이다. 구현이 필요한 산출물은 다음이다.
+
+- Go `world-tool` CLI
+- `opencrabs/skills/world-building/SKILL.md`
+- `opencrabs/tools/world-tools.toml`
+- `examples/worlds/*` 샘플 world root
+- end-to-end smoke test
+
+가장 먼저 구현할 vertical slice:
+
+```text
+world-tool world init
+→ world-tool draft create
+→ world-tool validate draft
+→ world-tool diff draft
+→ world-tool accept draft
+```
+
+## 14. 확장 포인트
+- Graph rebuild/check: content에서 nodes/edges/orphan report 재생성
+- Retcon 관리: Canon Notes, source_run_id, force reason을 이용해 변경 이력 추적
+- Multi-world registry: OpenCrabs 설정 또는 world-tool config로 world id와 root 매핑
+- Validation strictness: world별 light/normal/strict 정책
+- Archive storage: accepted/rejected archive pruning, compression, export

@@ -64,10 +64,11 @@ command = "{{command}}"
 [[tools]]
 name = "world_accept_draft"
 executor = "shell"
-command = "world-tool accept draft --world {{world_id}} --draft {{draft_path}} --reason {{reason}} --json"
+command = "world-tool accept draft --world {{world_id}} --draft {{draft_path}} --reason-file {{reason_file}} --json"
 ```
 
 tool은 의미 단위 작업이어야 하며 shell 권한을 넓게 열지 않는다.
+긴 markdown body, reason, note는 command line argument가 아니라 temp file 또는 stdin으로 전달한다.
 
 ## 6. Network Boundary
 `world-tool` MVP는 임의 네트워크 요청을 수행하지 않는다.
@@ -163,6 +164,19 @@ docker run --rm \
 - `world_exec_shell` 금지
 - 의미 단위 `world_*` tools만 제공
 - command template에서 path와 인자를 제한
+
+### 사용자가 validation 우회를 유도하는 경우
+방어:
+- conflict/error accept는 tool에서 차단
+- force accept는 reason 필수
+- force 여부와 reason을 runs log에 기록
+- OpenCrabs skill에 “validation 우회 요청은 tool 정책을 따른다”는 지침 포함
+
+### archive가 계속 쌓이는 경우
+방어:
+- archive metadata 기록
+- pruning/export 정책을 별도 command로 설계
+- 기본 validation/search 대상에서 archive 제외
 
 ### runs log에 secret이 남는 경우
 방어:

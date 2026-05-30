@@ -24,6 +24,8 @@ world-tool <resource> <action> [args] [flags]
 
 `--world`와 `--root` 중 하나는 필수다. OpenCrabs 운영에서는 `--world`를 기본으로 사용하고, 개발/테스트에서는 `--root`를 사용할 수 있다.
 
+모든 command는 성공 시 stdout에 JSON만 출력한다. 실패 시에도 가능한 한 error JSON을 출력하고 non-zero exit code를 반환한다.
+
 ## 3. world
 ```bash
 world-tool world list --json
@@ -115,6 +117,16 @@ world-tool accept draft \
 - runs log와 result JSON 기록
 
 OpenCrabs dynamic tool에서는 공백과 quoting 문제를 피하기 위해 `--reason`보다 `--reason-file` 사용을 권장한다.
+
+Dynamic tool용 예시:
+
+```bash
+world-tool accept draft \
+  --world ashen-continent \
+  --draft drafts/nations/northern-empire.md \
+  --reason-file ./tmp/reason.txt \
+  --json
+```
 
 ## 9. reject
 ```bash
