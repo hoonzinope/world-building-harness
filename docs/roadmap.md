@@ -7,6 +7,8 @@
 
 현재 레포는 문서와 설계 중심의 MVP 준비 단계다. 실제 Go CLI, `opencrabs/skills/`, `opencrabs/tools/`, 샘플 world root는 아직 구현 대상으로 남아 있다.
 
+구체적인 구현 이정표와 완료 기준은 `docs/implementation-plan.md`를 따른다. 이 문서는 제품 phase를 설명하고, implementation plan은 실제 작업 순서를 추적한다.
+
 ## 2. Phase 0: 결정 고정
 ### 목표
 제품 경계와 MVP 범위를 확정한다.
@@ -166,6 +168,8 @@ content 기반 graph 인덱스를 생성한다.
 - 기존 canon 기반 storylet 생성 가능
 
 ## 11. 우선순위
+세부 체크리스트는 `docs/implementation-plan.md`의 milestone 순서를 기준으로 한다.
+
 최우선:
 1. Go `world-tool` CLI
 2. validation report
