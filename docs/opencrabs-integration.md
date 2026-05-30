@@ -3,7 +3,7 @@
 # OpenCrabs Integration
 
 ## 1. 역할 정의
-OpenCrabs는 이 구조에서 하네스이자 오케스트레이터다. 사용자는 OpenCrabs와 대화하고, OpenCrabs는 Codex provider를 통해 판단/생성을 수행하며, 세계관 파일 작업은 dynamic tools가 호출하는 `world-tool`이 수행한다.
+OpenCrabs는 이 구조에서 하네스이자 오케스트레이터다. 사용자는 OpenCrabs와 대화하고, OpenCrabs는 Codex OAuth provider를 통해 판단/생성을 수행하며, 세계관 파일 작업은 dynamic tools가 호출하는 `world-tool`이 수행한다. Codex CLI provider는 fallback으로만 사용한다.
 
 이 레포는 OpenCrabs를 확장하기 위한 다음 자산을 제공한다.
 
@@ -14,7 +14,8 @@ OpenCrabs는 이 구조에서 하네스이자 오케스트레이터다. 사용�
 
 ## 2. OpenCrabs가 책임지는 것
 - 사용자 대화와 승인 확인
-- Codex OAuth 또는 Codex CLI provider 사용
+- Codex OAuth provider 기본 사용
+- Codex CLI provider fallback
 - world-building skill 실행
 - dynamic tool 호출
 - tool 결과를 바탕으로 다음 행동 판단
@@ -118,6 +119,15 @@ world-tool: validation 재실행 후 content 승격
 ```
 
 ## 8. Docker 운영
+권장 운영 방식은 OpenCrabs와 `world-tool`을 같은 이미지에 넣고, OpenCrabs credential/config volume과 world root volume을 분리해 마운트하는 것이다. Codex OAuth provider를 사용하므로 컨테이너 안에 Codex CLI를 설치하거나 `~/.codex`를 마운트하는 것은 기본 요구사항이 아니다.
+
+```bash
+docker run --rm \
+  -v opencrabs-config:/home/opencrabs/.opencrabs \
+  -v /host/worlds/ashen-continent:/workspace/world \
+  opencrabs-world:latest
+```
+
 강한 격리가 필요하면 OpenCrabs 자체는 host에서 실행하되, dynamic tool command가 per-world container에서 `world-tool`을 실행하도록 구성할 수 있다.
 
 ```bash
@@ -132,6 +142,8 @@ docker run --rm \
 ```
 
 개발 단계에서는 host에 설치된 `world-tool`을 직접 호출해도 된다.
+
+Codex CLI provider fallback을 사용할 때만 컨테이너에 `codex` CLI와 별도 Codex auth volume이 필요하다. 이 경우에도 Codex auth volume은 `/workspace/world` 안에 두지 않는다.
 
 ## 9. 실패 처리
 ### malformed JSON

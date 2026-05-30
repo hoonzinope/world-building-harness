@@ -6,7 +6,7 @@
 OpenCrabs가 하네스와 오케스트레이터 역할을 하고, 이 레포는 OpenCrabs가 세계관을 안전하게 관리하도록 `world-building` skill, dynamic tools, Go `world-tool` CLI를 제공한다.
 
 ```text
-판단과 대화: OpenCrabs + Codex provider
+판단과 대화: OpenCrabs + Codex OAuth provider
 작업 규칙: world-building skill
 상태 변경: world-tool Go CLI
 원천 데이터: world root의 content/ Markdown
@@ -16,7 +16,7 @@ OpenCrabs가 하네스와 오케스트레이터 역할을 하고, 이 레포는 
 ```mermaid
 flowchart TD
     U["User"] --> OC["OpenCrabs"]
-    OC --> CP["Codex provider"]
+    OC --> CP["Codex OAuth provider"]
     OC --> SK["world-building skill"]
     SK --> OC
     OC --> DT["Dynamic tools (world_*)"]
@@ -32,7 +32,7 @@ flowchart TD
 ## 3. 실행 책임
 ### OpenCrabs
 - 사용자와 대화한다.
-- Codex provider로 요청을 해석하고 draft 내용을 생성한다.
+- Codex OAuth provider로 요청을 해석하고 draft 내용을 생성한다.
 - `world-building` skill의 규칙을 따른다.
 - `world_*` dynamic tools를 호출한다.
 - tool output을 보고 다음 행동을 사용자에게 제안한다.
@@ -103,7 +103,7 @@ sequenceDiagram
     OpenCrabs->>Tool: world_search_docs(query)
     Tool->>WT: world-tool doc search --json
     WT-->>OpenCrabs: related docs
-    OpenCrabs->>OpenCrabs: Codex provider drafts markdown
+    OpenCrabs->>OpenCrabs: Codex OAuth provider drafts markdown
     OpenCrabs->>Tool: world_create_draft(body_file)
     Tool->>WT: world-tool draft create --json
     WT->>World: write drafts/ and runs/
@@ -261,6 +261,8 @@ internal/audit
 - `world-tool`은 AI SDK를 품지 않는다. AI 판단은 OpenCrabs/Codex가 한다.
 - safety-critical 로직은 skill이 아니라 Go tool에서 강제한다.
 - dynamic tools는 command template quoting 문제를 피하기 위해 긴 body와 reason을 file/stdin 기반으로 전달한다.
+- 기본 provider는 Codex OAuth다. Codex CLI provider는 OAuth provider를 사용할 수 없는 환경에서만 fallback으로 둔다.
+- OpenCrabs credential/config volume은 world root volume과 분리한다.
 
 ## 13. MVP 준비 상태
 현재 문서는 구현 전 설계 기준이다. 구현이 필요한 산출물은 다음이다.

@@ -73,7 +73,7 @@ tool은 의미 단위 작업이어야 하며 shell 권한을 넓게 열지 않�
 ## 6. Network Boundary
 `world-tool` MVP는 임의 네트워크 요청을 수행하지 않는다.
 
-OpenCrabs provider가 Codex/OpenAI/Claude/Gemini 등으로 네트워크를 사용하는 것은 OpenCrabs 설정의 책임이다. world 파일 작업 tool은 외부 URL fetch, repo clone, arbitrary curl을 수행하지 않는다.
+OpenCrabs provider가 Codex OAuth/OpenAI/Claude/Gemini 등으로 네트워크를 사용하는 것은 OpenCrabs 설정의 책임이다. world 파일 작업 tool은 외부 URL fetch, repo clone, arbitrary curl을 수행하지 않는다.
 
 ## 7. Secret Handling
 API key, OAuth token, bot token은 다음 위치에 저장하지 않는다.
@@ -85,7 +85,23 @@ API key, OAuth token, bot token은 다음 위치에 저장하지 않는다.
 - graph/
 - world root 내부
 
-OpenCrabs credential은 OpenCrabs의 credential store나 별도 secret mount로 관리한다. `world-tool`은 provider API key를 필요로 하지 않는다.
+OpenCrabs credential은 OpenCrabs의 credential store나 별도 secret mount로 관리한다. 기본 provider는 Codex OAuth이며, `world-tool`은 provider API key를 필요로 하지 않는다.
+
+Credential/config volume과 world root volume은 분리한다.
+
+좋음:
+```text
+opencrabs-config -> /home/opencrabs/.opencrabs
+/host/worlds/ashen-continent -> /workspace/world
+```
+
+나쁨:
+```text
+/host/worlds/ashen-continent -> /home/opencrabs
+/host/worlds/ashen-continent -> /home/opencrabs/.opencrabs
+```
+
+Codex CLI provider fallback을 사용할 때만 별도 Codex auth volume이 필요하다. 이 경우에도 Codex auth는 world root 내부에 두지 않는다.
 
 ## 8. LLM Output Boundary
 OpenCrabs/Codex는 다음을 직접 수행하지 않는다.
@@ -114,6 +130,7 @@ force accept는 가능하지만 reason이 필수다.
 
 ## 10. Docker Boundary
 권장 컨테이너 실행 원칙:
+- OpenCrabs credential/config volume과 world root volume을 분리한다.
 - per-world tool container에는 선택된 world root 하나만 마운트한다.
 - 여러 world root를 한 컨테이너에 동시에 마운트하지 않는다.
 - docker.sock을 마운트하지 않는다.

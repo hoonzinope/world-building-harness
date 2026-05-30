@@ -5,7 +5,7 @@
 ## 1. 개요
 최종 구조는 OpenCrabs를 세계관 빌딩 하네스로 사용하고, 이 레포가 OpenCrabs에 설치할 skill, dynamic tools, Go 기반 `world-tool` CLI를 제공하는 방식이다.
 
-OpenCrabs가 Codex provider를 통해 판단과 생성을 수행하고, `world-tool`이 파일 시스템 변경과 validation을 deterministic하게 처리한다.
+OpenCrabs가 Codex OAuth provider를 통해 판단과 생성을 수행하고, `world-tool`이 파일 시스템 변경과 validation을 deterministic하게 처리한다. Codex CLI provider는 OAuth provider를 사용할 수 없는 환경의 fallback이다.
 
 구체적인 컴포넌트 다이어그램과 sequence는 [system-design.md](system-design.md)를 기준으로 한다.
 
@@ -15,7 +15,7 @@ User
   ↓
 OpenCrabs TUI / Telegram / Discord / Slack
   ↓
-OpenCrabs Codex provider
+OpenCrabs Codex OAuth provider
   ↓
 world-building Skill
   ↓
@@ -30,7 +30,8 @@ World Root: content / drafts / runs / archive / graph
 ### OpenCrabs Layer
 대화, provider 선택, tool 호출, 채널 응답, 승인 UX를 담당한다.
 
-- Codex OAuth / Codex CLI provider
+- Codex OAuth provider 기본 사용
+- Codex CLI provider fallback
 - `/skills`로 world-building skill 실행
 - `~/.opencrabs/tools.toml` dynamic tools 로딩
 - 사용자 승인과 대화 흐름 관리
@@ -130,3 +131,4 @@ accepted/rejected/deprecated draft를 보관한다. archive는 active validation
 - `accept`는 validation을 재실행한다.
 - `force accept`는 reason이 필수이며 runs log에 남긴다.
 - Docker 사용 시 job container에는 선택된 world root 하나만 마운트한다.
+- OpenCrabs credential/config volume과 world root volume은 분리한다.

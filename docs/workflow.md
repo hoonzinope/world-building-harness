@@ -3,7 +3,7 @@
 # OpenCrabs World-Building Workflow
 
 ## 1. 원칙
-OpenCrabs가 하네스와 오케스트레이터 역할을 한다. 판단과 생성은 OpenCrabs의 Codex provider가 수행하고, 실제 파일 변경은 OpenCrabs dynamic tool이 호출하는 `world-tool` Go CLI가 수행한다.
+OpenCrabs가 하네스와 오케스트레이터 역할을 한다. 판단과 생성은 OpenCrabs의 Codex OAuth provider가 수행하고, 실제 파일 변경은 OpenCrabs dynamic tool이 호출하는 `world-tool` Go CLI가 수행한다. Codex CLI provider는 fallback이다.
 
 `content/` Markdown은 canon source of truth다. 생성물은 `drafts/`에 먼저 저장되고, validation과 사용자 승인을 거친 뒤에만 `content/`로 승격된다.
 
@@ -11,7 +11,7 @@ OpenCrabs가 하네스와 오케스트레이터 역할을 한다. 판단과 생�
 ```text
 OpenCrabs
   - 사용자 대화
-  - Codex provider를 통한 판단/생성
+  - Codex OAuth provider를 통한 판단/생성
   - skill 실행
   - dynamic tool 호출
 
