@@ -7,6 +7,8 @@
 
 OpenCrabs가 Codex provider를 통해 판단과 생성을 수행하고, `world-tool`이 파일 시스템 변경과 validation을 deterministic하게 처리한다.
 
+구체적인 컴포넌트 다이어그램과 sequence는 [system-design.md](system-design.md)를 기준으로 한다.
+
 ## 2. 전체 구조
 ```text
 User
