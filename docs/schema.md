@@ -22,6 +22,16 @@ schema version:
 - `world-tool draft create`는 새 draft에 `schema_version`을 자동 주입한다.
 - legacy/import 문서에 `schema_version`이 없으면 MVP에서는 warning으로 처리할 수 있지만, 새로 생성되는 문서에는 필수다.
 
+`world-doc.schema.json` 최소 구조:
+- `$schema`, `$id`, `type: object`
+- common required: `schema_version`, `id`, `type`, `status`, `title`, `created_at`, `updated_at`
+- common optional: `tags`, `related`, `relationships`, `source_run_id`, `change_type`, `target_id`, `retcon_reason`
+- type-specific definitions: `character`, `nation`, `organization`, `place`, `event`, `timeline`, `magic`, `glossary`, `storylet`
+- relationship item definition: `type`, `target`, optional `note`
+- status/type enum
+
+`document-types.yaml`은 type별 directory와 id prefix를 정의한다. `relationship-types.yaml`은 relationship allowlist, source type, target type, symmetric 여부를 정의한다.
+
 ## 2. 공통 Frontmatter
 모든 content와 draft 문서는 아래 공통 필드를 가진다.
 
@@ -38,6 +48,9 @@ updated_at: 2026-05-29
 related: []
 relationships: []
 source_run_id: 20260529-001
+change_type: create
+target_id: null
+retcon_reason: null
 ---
 ```
 
@@ -53,6 +66,9 @@ source_run_id: 20260529-001
 - related: 관련 entity id 목록. 느슨한 참조와 context loading에 사용한다.
 - relationships: typed relationship 목록. validator와 graph builder가 정밀 관계 검증에 사용한다.
 - source_run_id: 생성 또는 마지막 major update를 만든 run id. 기존 수동 문서나 import 문서는 null일 수 있다.
+- change_type: draft가 canon에 적용되는 방식. `create`, `update`, `deprecate` 중 하나다. content 문서는 생략할 수 있다.
+- target_id: `update` 또는 `deprecate` 대상 canon id. `create`에서는 null이다.
+- retcon_reason: 기존 canon을 수정하거나 폐기하는 이유. `update`와 `deprecate`에서는 필수다.
 
 relationship 예시:
 ```yaml
@@ -67,6 +83,7 @@ relationships:
 ### 필드 타입
 공통 타입 규칙:
 - `id`, `type`, `status`, `title`, `schema_version`은 string이다.
+- `change_type`, `target_id`, `retcon_reason`은 string 또는 null이다.
 - `tags`, `related`, `aliases`, `affiliation`, `participants`, `locations`는 string array다.
 - `relationships`는 object array다.
 - `created_at`, `updated_at`은 `YYYY-MM-DD` 또는 RFC3339 timestamp를 허용한다. 같은 world 안에서는 하나의 형식을 유지하는 것을 권장한다.
@@ -94,7 +111,24 @@ MVP validator가 정적으로 이해하는 relationship type은 아래 allowlist
 | `occurred_at` | event | place | source -> target |
 | `uses_magic` | character, organization, nation | magic | source -> target |
 
-알 수 없는 relationship type은 `warning`으로 기록하고 graph builder는 `generic` edge로 처리할 수 있다. strict mode에서는 error로 올릴 수 있다.
+알 수 없는 relationship type은 MVP 기본 모드에서 conflict다. graph builder가 generic edge로 흡수하는 것은 후속 기능의 명시적 opt-in 모드에서만 허용한다.
+
+### Document Type Directory
+MVP target path는 title slug가 아니라 id 기반으로 계산한다.
+
+| type | directory | id prefix |
+| --- | --- | --- |
+| `character` | `content/characters/` | `character_` |
+| `nation` | `content/nations/` | `nation_` |
+| `organization` | `content/organizations/` | `org_` |
+| `place` | `content/places/` | `place_` |
+| `event` | `content/events/` | `event_` |
+| `timeline` | `content/timeline/` | `timeline_` |
+| `magic` | `content/magic/` | `magic_` |
+| `glossary` | `content/glossary/` | `term_` |
+| `storylet` | `drafts/storylets/` only | `storylet_` |
+
+content target path는 `<directory>/<id>.md`다. `change_type: update`와 `change_type: deprecate`는 기존 content path를 유지한다.
 
 ## 3. Character Schema
 ```yaml
@@ -486,5 +520,6 @@ Canon Notes는 설정의 불변 조건, 아직 모호한 부분, 향후 검증�
 
 Storylet 정책:
 - MVP에서 storylet은 `drafts/storylets/`와 `archive/`에서만 관리한다.
-- 기본 `accept draft`는 storylet을 `content/` canon으로 승격하지 않는다.
+- 기본 `draft accept`는 storylet을 `content/` canon으로 승격하지 않는다.
+- `type: storylet`과 `status: canon` 조합은 content validation error다.
 - storylet을 canon 사건이나 entity로 반영하려면 별도 event/character/place draft를 생성해 accept한다.

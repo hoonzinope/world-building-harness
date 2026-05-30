@@ -74,15 +74,19 @@ flowchart LR
 | --- | --- | --- |
 | `world_list` | `world-tool world list` | registry에 등록된 world 목록 |
 | `world_status` | `world-tool world status` | world 상태와 pending draft 요약 |
+| `world_stage_input` | `world-tool input stage` | 긴 query/title/body/reason을 runs/inbox에 staging |
 | `world_search_docs` | `world-tool doc search` | 관련 canon/draft 검색 |
 | `world_read_doc` | `world-tool doc read` | 문서 읽기 |
 | `world_create_draft` | `world-tool draft create` | canon 변경 없이 draft 생성 |
+| `world_create_update_draft` | `world-tool draft create --change-type update` | 기존 canon 갱신/retcon draft 생성 |
+| `world_create_deprecate_draft` | `world-tool draft create --change-type deprecate` | 기존 canon 폐기 draft 생성 |
 | `world_update_draft` | `world-tool draft update` | draft 수정 |
 | `world_read_draft` | `world-tool draft read` | active draft 읽기 |
-| `world_validate_draft` | `world-tool validate draft` | schema/canon 검증 |
-| `world_diff_draft` | `world-tool diff draft` | accept 예상 변경 확인 |
-| `world_accept_draft` | `world-tool accept draft` | validation 후 content 승격 |
-| `world_reject_draft` | `world-tool reject draft` | draft 반려 |
+| `world_validate_draft` | `world-tool draft validate` | schema/canon 검증 |
+| `world_diff_draft` | `world-tool draft diff` | accept 예상 변경 확인 |
+| `world_accept_draft` | `world-tool draft accept` | validation 후 content 승격 |
+| `world_force_accept_draft` | `world-tool draft accept --force` | 정책상 허용되는 conflict 후보 강행 |
+| `world_reject_draft` | `world-tool draft reject` | draft 반려 |
 | `world_get_run` | `world-tool run get` | run artifact 조회 |
 
 ## 6. Draft 생성 흐름
@@ -102,16 +106,22 @@ sequenceDiagram
     WT->>World: read content/drafts/runs
     WT-->>Tool: status JSON
     Tool-->>OpenCrabs: status
-    OpenCrabs->>Tool: world_search_docs(query)
+    OpenCrabs->>Tool: world_stage_input(kind=query)
+    Tool->>WT: world-tool input stage --stdin --json
+    WT-->>OpenCrabs: query_file
+    OpenCrabs->>Tool: world_search_docs(query_file)
     Tool->>WT: world-tool doc search --json
     WT-->>OpenCrabs: related docs
     OpenCrabs->>OpenCrabs: Codex OAuth provider drafts markdown
+    OpenCrabs->>Tool: world_stage_input(kind=title/body)
+    Tool->>WT: world-tool input stage --stdin --json
+    WT-->>OpenCrabs: title_file, body_file
     OpenCrabs->>Tool: world_create_draft(title_file, body_file)
     Tool->>WT: world-tool draft create --json
     WT->>World: write drafts/ and runs/
     WT-->>OpenCrabs: draft_id, draft_path, run_id
     OpenCrabs->>Tool: world_validate_draft(draft_path)
-    Tool->>WT: world-tool validate draft --json
+    Tool->>WT: world-tool draft validate --json
     WT->>World: write validation artifacts
     WT-->>OpenCrabs: validation JSON
     OpenCrabs-->>User: draft summary + validation + next actions
@@ -128,13 +138,16 @@ sequenceDiagram
 
     User->>OpenCrabs: "이 draft 승인해"
     OpenCrabs->>Tool: world_diff_draft(draft_path)
-    Tool->>WT: world-tool diff draft --json
-    WT-->>OpenCrabs: diff summary
+    Tool->>WT: world-tool draft diff --json
+    WT-->>OpenCrabs: diff summary + diff_run_id + hashes
     OpenCrabs-->>User: 변경 내용 확인
     User->>OpenCrabs: "승인"
-    OpenCrabs->>Tool: world_accept_draft(draft_path, reason_file)
-    Tool->>WT: world-tool accept draft --json
-    WT->>World: validate draft again
+    OpenCrabs->>Tool: world_stage_input(kind=reason)
+    Tool->>WT: world-tool input stage --stdin --json
+    WT-->>OpenCrabs: reason_file
+    OpenCrabs->>Tool: world_accept_draft(draft_path, diff_run_id, hashes, reason_file)
+    Tool->>WT: world-tool draft accept --json
+    WT->>World: verify diff binding and draft validate again
     alt validation pass or warning
         WT->>World: write content/
         WT->>World: move draft to archive/accepted/
@@ -175,13 +188,14 @@ stateDiagram-v2
 {
   "schema_version": "world-tool.v1",
   "ok": true,
-  "status": "created",
+  "command_status": "completed",
   "command": "draft.create",
   "world_id": "ashen-continent",
+  "root": "/workspace/world",
   "run_id": "20260530-001",
   "data": {
     "draft_id": "draft_20260530_001",
-    "draft_path": "drafts/nations/northern-empire.md"
+    "draft_path": "drafts/nations/nation_northern_empire.md"
   },
   "issues": [],
   "available_actions": ["world_read_draft", "world_validate_draft", "world_diff_draft", "world_reject_draft"]
@@ -194,12 +208,14 @@ stateDiagram-v2
 {
   "schema_version": "world-tool.v1",
   "ok": true,
-  "status": "warning",
-  "command": "validate.draft",
+  "command_status": "completed",
+  "command": "draft.validate",
   "world_id": "ashen-continent",
+  "root": "/workspace/world",
   "run_id": "20260530-001",
   "data": {
-    "draft_path": "drafts/nations/northern-empire.md"
+    "draft_path": "drafts/nations/nation_northern_empire.md",
+    "validation_status": "warning"
   },
   "issues": [
     {
@@ -209,7 +225,7 @@ stateDiagram-v2
       "recommendation": "후계 국가인지 역사 서술인지 명확히 할 것"
     }
   ],
-  "available_actions": ["world_update_draft", "world_diff_draft", "world_accept_draft", "world_reject_draft"]
+  "available_actions": ["world_update_draft", "world_diff_draft", "world_reject_draft"]
 }
 ```
 
@@ -219,13 +235,14 @@ stateDiagram-v2
 {
   "schema_version": "world-tool.v1",
   "ok": true,
-  "status": "blocked",
-  "command": "accept.draft",
+  "command_status": "blocked",
+  "command": "draft.accept",
   "world_id": "ashen-continent",
+  "root": "/workspace/world",
   "run_id": "20260530-002",
   "data": {
     "reason": "validation_conflict",
-    "draft_path": "drafts/nations/northern-empire.md"
+    "draft_path": "drafts/nations/nation_northern_empire.md"
   },
   "issues": [
     {
@@ -270,19 +287,20 @@ internal/audit
 2. world root resolver와 path boundary
 3. `world-tool world init/status`
 4. Markdown/frontmatter parser
-5. `draft create/read/list/update`
-6. `validate draft`
-7. `diff draft`
-8. `accept/reject draft`
-9. `opencrabs/skills/world-building/SKILL.md`
-10. `opencrabs/tools/world-tools.toml`
-11. sample world root와 end-to-end smoke test
+5. `input stage`
+6. `draft create/read/list/update`
+7. `draft validate`
+8. `draft diff`
+9. `draft accept/reject`
+10. `opencrabs/skills/world-building/SKILL.md`
+11. `opencrabs/tools/world-tools.toml`
+12. sample world root와 end-to-end smoke test
 
 ## 12. 설계 판단
 - OpenCrabs가 이미 provider, skill, dynamic tools, channel UX를 제공하므로 별도 agent runtime을 만들지 않는다.
 - `world-tool`은 AI SDK를 품지 않는다. AI 판단은 OpenCrabs/Codex가 한다.
 - safety-critical 로직은 skill이 아니라 Go tool에서 강제한다.
-- dynamic tools는 command template quoting 문제를 피하기 위해 긴 body와 reason을 file/stdin 기반으로 전달한다.
+- dynamic tools는 command template quoting 문제를 피하기 위해 긴 query/title/body/reason을 `world_stage_input`으로 staging한 뒤 file path와 hash만 전달한다.
 - 기본 provider는 Codex OAuth다. Codex CLI provider는 OAuth provider를 사용할 수 없는 환경에서만 fallback으로 둔다.
 - OpenCrabs credential/config volume은 world root volume과 분리한다.
 
@@ -302,9 +320,9 @@ internal/audit
 ```text
 world-tool world init
 → world-tool draft create
-→ world-tool validate draft
-→ world-tool diff draft
-→ world-tool accept draft
+→ world-tool draft validate
+→ world-tool draft diff
+→ world-tool draft accept
 ```
 
 ## 14. 확장 포인트

@@ -3,9 +3,9 @@
 # OpenCrabs World-Building Tools PRD
 
 ## 1. 제품 정의
-이 레포는 별도 world-harness 제품을 만들기 위한 레포가 아니다. OpenCrabs를 세계관 빌딩 하네스이자 오케스트레이터로 사용하기 위한 skill, dynamic tools, 그리고 deterministic Go CLI(`world-tool`)를 제공한다.
+이 레포는 별도 world-harness 제품을 만들기 위한 레포가 아니다. OpenCrabs를 세계관 빌딩 하네스이자 오케스트레이터로 사용하기 위한 skill, dynamic tools, 그리고 deterministic Go CLI(`world-tool`)를 제공할 예정이다.
 
-OpenCrabs는 Codex OAuth provider를 기본 provider로 사용해 판단과 생성을 수행한다. 이 레포의 역할은 OpenCrabs가 세계관 파일과 설정을 안전하게 관리하도록 규칙과 도구를 제공하는 것이다.
+OpenCrabs는 Codex OAuth provider를 기본 provider로 사용해 판단과 생성을 수행한다. 이 레포의 역할은 OpenCrabs가 세계관 파일과 설정을 안전하게 관리하도록 규칙과 도구의 설계 기준을 제공하는 것이다.
 
 ## 2. 목표
 - OpenCrabs 대화에서 세계관 설정을 생성, 검증, 승인, 반려할 수 있게 한다.
@@ -13,6 +13,8 @@ OpenCrabs는 Codex OAuth provider를 기본 provider로 사용해 판단과 생�
 - `content/` Markdown을 canon source of truth로 유지한다.
 - 생성 결과는 먼저 `drafts/`에 저장하고, 명시적 승인 후에만 `content/`로 승격한다.
 - 세계관 작업은 OpenCrabs dynamic tools가 호출하는 `world-tool` Go 바이너리로 수행한다.
+- 긴 query/title/body/reason은 `world_stage_input`으로 staging한 뒤 후속 tool에 file path와 hash를 넘긴다.
+- 사용자가 승인한 diff와 accept 실행은 diff_run_id와 hash binding으로 묶는다.
 - tool 출력은 JSON으로 안정화해 OpenCrabs/Codex가 다음 행동을 판단할 수 있게 한다.
 - 여러 world root를 OpenCrabs 설정이나 registry로 관리한다.
 
@@ -31,19 +33,20 @@ OpenCrabs는 Codex OAuth provider를 기본 provider로 사용해 판단과 생�
 OpenCrabs는 `world_validate_draft` tool을 호출해 draft가 schema와 canon 규칙을 만족하는지 검사한다. validation 결과는 구조화 JSON과 report로 남는다.
 
 ### Accept
-사용자가 승인하면 OpenCrabs는 `world_accept_draft` tool을 호출한다. tool은 validation을 재실행하고, conflict가 없을 때만 `content/`로 승격한 뒤 accepted draft를 archive한다.
+사용자가 승인하면 OpenCrabs는 먼저 `world_diff_draft` 결과의 diff_run_id와 hash를 확인하고, reason을 staging한 뒤 `world_accept_draft` tool을 호출한다. tool은 diff binding과 validation을 재검증하고, conflict가 없을 때만 `content/`로 승격한 뒤 accepted draft를 archive한다.
 
 ## 5. MVP 기능
 1. OpenCrabs skill: 세계관 작업 원칙과 workflow 지침 제공
 2. Dynamic tools: OpenCrabs에서 호출 가능한 `world_*` tool 세트
 3. Go `world-tool` CLI: 파일/설정/검증/승격 작업을 deterministic하게 수행
-4. `content/`, `drafts/`, `runs/`, `archive/` 기반 world root 구조
-5. JSON 출력과 audit/run log
+4. `input stage`, `draft create/validate/diff/accept/reject`, `registry add/list` 명령 계약
+5. `content/`, `drafts/`, `runs/`, `archive/` 기반 world root 구조
+6. JSON 출력과 audit/run log
 
 ## 6. 성공 기준
 - OpenCrabs 대화에서 draft 생성부터 validation까지 수행할 수 있다.
 - `content/`는 `world_accept_draft` 이전에 변경되지 않는다.
-- 모든 write 작업은 `runs/`에 입력, 결과, validation, diff를 남긴다.
+- 모든 write 작업은 `runs/`에 입력, 결과, validation, diff, hash binding을 남긴다.
 - accepted draft는 `archive/accepted/`로 이동하고 active validation 대상에서 제외된다.
 - OpenCrabs skill만으로 판단 흐름을 안내하되, 실제 파일 변경은 `world-tool`이 강제한다.
 

@@ -79,9 +79,11 @@ world-root/
 확정된 canon 문서를 저장한다. `content/` Markdown은 canon source of truth다.
 
 정책:
-- content는 `world-tool accept draft`에서만 수정한다.
+- content는 `world-tool draft accept`에서만 수정한다.
 - LLM 생성 결과가 바로 content에 들어가면 안 된다.
 - 모든 content 문서는 frontmatter id를 가져야 한다.
+- content target path는 `schema.md`의 type directory와 id 기반 file name 규칙을 따른다.
+- `type: storylet` 문서는 MVP에서 content 아래에 둘 수 없다.
 - OpenCrabs DB, graph, search index는 content에서 재생성 가능해야 한다.
 
 ## 4. drafts/
@@ -117,8 +119,10 @@ runs/
 - 재현 가능한 수준의 입력과 출력을 남긴다.
 - secret과 환경변수는 저장하지 않는다.
 - `runs/inbox/`는 dynamic tool이 긴 query/title/body/reason을 world root 내부에 staging하는 임시 입력 위치다.
+- `runs/inbox/` 파일은 `world-tool input stage`만 생성한다.
 - `runs/.lock` 또는 동등한 lock은 write command 동시 실행을 막기 위해 사용한다.
 - accept/diff artifact는 target content의 before/after hash를 남긴다.
+- transaction이 중간 실패하면 `recovery.json`을 남긴다.
 
 ## 6. archive/
 승인, 반려, 폐기된 draft를 보관한다.

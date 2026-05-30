@@ -33,10 +33,27 @@ examples/worlds/                   sample world roots and fixtures
 ## MVP vertical slice
 ```text
 world-tool world init
+world-tool registry add
+world-tool input stage
 world-tool draft create
-world-tool validate draft
-world-tool diff draft
-world-tool accept draft
+world-tool draft validate
+world-tool draft diff
+world-tool draft accept
+```
+
+## 구현 후 Quickstart 목표
+아래는 CLI가 구현된 뒤 통과해야 하는 첫 성공 경로다.
+
+```bash
+world-tool world init --root ./examples/worlds/ashen-continent --json
+world-tool registry add --world ashen-continent --root ./examples/worlds/ashen-continent --title "잿빛 대륙" --json
+world-tool input stage --world ashen-continent --kind title --stdin --json
+world-tool input stage --world ashen-continent --kind body --stdin --json
+world-tool draft create --world ashen-continent --change-type create --type nation --title-file runs/inbox/<title-file> --body-file runs/inbox/<body-file> --json
+world-tool draft validate --world ashen-continent --draft drafts/nations/<id>.md --json
+world-tool draft diff --world ashen-continent --draft drafts/nations/<id>.md --json
+world-tool input stage --world ashen-continent --kind reason --stdin --json
+world-tool draft accept --world ashen-continent --draft drafts/nations/<id>.md --diff-run-id <run> --draft-hash <hash> --target-base-hash <hash> --patch-hash <hash> --reason-file runs/inbox/<reason-file> --json
 ```
 
 ## 현재 주의점

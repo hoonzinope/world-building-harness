@@ -3,7 +3,7 @@
 # OpenCrabs World-Building Architecture
 
 ## 1. 개요
-최종 구조는 OpenCrabs를 세계관 빌딩 하네스로 사용하고, 이 레포가 OpenCrabs에 설치할 skill, dynamic tools, Go 기반 `world-tool` CLI를 제공하는 방식이다.
+최종 구조는 OpenCrabs를 세계관 빌딩 하네스로 사용하고, 이 레포가 OpenCrabs에 설치할 skill, dynamic tools, Go 기반 `world-tool` CLI를 제공하는 방식이다. 현재 레포는 구현 전 문서 기준 상태다.
 
 OpenCrabs가 Codex OAuth provider를 통해 판단과 생성을 수행하고, `world-tool`이 파일 시스템 변경과 validation을 deterministic하게 처리한다. Codex CLI provider는 OAuth provider를 사용할 수 없는 환경의 fallback이다.
 
@@ -52,14 +52,18 @@ dynamic tool은 `opencrab_exec_shell` 같은 범용 명령이 아니라 의미 �
 
 - `world_list`
 - `world_status`
+- `world_stage_input`
 - `world_search_docs`
 - `world_read_doc`
 - `world_create_draft`
+- `world_create_update_draft`
+- `world_create_deprecate_draft`
 - `world_update_draft`
 - `world_read_draft`
 - `world_validate_draft`
 - `world_diff_draft`
 - `world_accept_draft`
+- `world_force_accept_draft`
 - `world_reject_draft`
 - `world_get_run`
 
@@ -136,7 +140,7 @@ accepted/rejected/deprecated draft를 보관한다. archive는 active validation
 - OpenCrabs는 world 작업에 `world_*` tools를 사용한다.
 - `world-tool`은 선택된 world root 밖을 읽거나 쓰지 않는다.
 - `content/`는 `world_accept_draft`에서만 변경된다.
-- `accept`는 validation을 재실행한다.
+- `draft accept`는 diff binding과 validation을 재실행한다.
 - `force accept`는 reason이 필수이며, semantic/timeline/relationship conflict 후보에만 제한적으로 허용하고 runs log에 남긴다.
 - Docker 사용 시 job container에는 선택된 world root 하나만 마운트한다.
 - OpenCrabs credential/config volume과 world root volume은 분리한다.

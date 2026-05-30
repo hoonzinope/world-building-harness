@@ -19,9 +19,10 @@
 - 모든 write command는 `runs/`에 audit artifact를 남긴다.
 - 모든 command는 `--json` 모드에서 [commands.md](commands.md)의 JSON envelope만 stdout에 반환한다.
 - 긴 markdown body, 검색 query, title, reason, 사용자 입력은 argv가 아니라 stdin 또는 world root 내부 `runs/inbox/` staging file로 받는다.
-- `content/`는 `accept draft` 외의 command에서 수정하지 않는다.
+- `content/`는 `draft accept` 외의 command에서 수정하지 않는다.
 - skill은 지침이고, 안전 경계는 `world-tool`에서 강제한다.
 - write command는 world root lock을 사용하고, accept는 lock 안에서 validation을 재실행한다.
+- diff와 accept는 `diff_run_id`, `draft_hash`, `target_base_hash`, `patch_hash`로 묶는다.
 
 ## 3. Milestone 0: Repository Scaffold
 ### 목표
@@ -64,12 +65,15 @@ Go CLI와 OpenCrabs bundle을 구현할 기본 디렉토리를 만든다.
 - atomic write helper
 - `world-tool world init`
 - `world-tool world status`
+- `world-tool registry add/list/default`
+- `world-tool input stage`
 
 ### 완료 기준
 - `world init`이 `content/`, `drafts/`, `runs/`, `archive/`, `graph/`, `harness.yaml`을 생성한다.
 - `../`, absolute path, symlink를 통한 root 밖 접근이 차단된다.
 - `--query-file`, `--title-file`, `--body-file`, `--reason-file`도 `runs/inbox/` 아래 상대 경로만 허용된다.
 - path violation은 JSON error와 non-zero exit code를 반환한다.
+- `input stage`만 `runs/inbox/`에 staging file을 생성할 수 있다.
 
 ## 5. Milestone 2: Content Read Model
 ### 목표
@@ -87,6 +91,7 @@ OpenCrabs가 기존 canon을 안전하게 조회할 수 있게 한다.
 - `content/`와 `drafts/` scope를 구분해서 조회할 수 있다.
 - archive는 기본 조회와 active validation scope에서 제외된다.
 - `doc read`는 world root 내부의 markdown만 읽는다.
+- `doc read/search/list`는 `content/`와 `drafts/`만 대상으로 하며 `runs/`, `archive/`, `raw/`, `schema/`를 읽지 않는다.
 - `doc search`는 최소한 title, id, tag, body text 기반 검색을 지원한다.
 
 ## 6. Milestone 3: Draft Lifecycle
@@ -98,9 +103,11 @@ LLM 생성물을 canon에 바로 쓰지 않고 draft로 저장하는 경로를 �
 - `world-tool draft update`
 - `world-tool draft read`
 - `world-tool draft list`
-- `world-tool reject draft`
+- `world-tool draft reject`
 - draft frontmatter 보정
 - draft id/path 생성 규칙
+- `change_type: create/update/deprecate`
+- `target_id` 기반 retcon/update draft
 - `source_run_id` 기록
 
 ### 완료 기준
@@ -114,8 +121,8 @@ LLM 생성물을 canon에 바로 쓰지 않고 draft로 저장하는 경로를 �
 draft를 canon과 비교해 구조 오류와 명백한 충돌을 탐지한다.
 
 ### 산출물
-- `world-tool validate draft`
-- `world-tool validate content`
+- `world-tool draft validate`
+- `world-tool content validate`
 - validation report JSON
 - validation artifact 저장
 - required field rule
@@ -127,9 +134,12 @@ draft를 canon과 비교해 구조 오류와 명백한 충돌을 탐지한다.
 
 ### 완료 기준
 - validation status는 `pass`, `warning`, `conflict`, `error` 중 하나다.
-- schema 누락과 parse 실패는 `error`로 반환된다.
-- 기존 canon id와 중복되는 draft는 `conflict`로 반환된다.
-- 존재하지 않는 relationship target은 최소 `warning` 이상으로 반환된다.
+- 새 draft의 schema_version 누락과 parse 실패는 `error`로 반환된다.
+- legacy/import content의 schema_version 누락은 migration warning으로 반환된다.
+- `change_type: create`에서 기존 canon id와 중복되는 draft는 `conflict`로 반환된다.
+- `change_type: update`에서 target_id가 없거나 id가 target_id와 다르면 `error`로 반환된다.
+- accept validation에서 active draft에만 존재하는 relationship target은 `conflict`로 반환된다.
+- 알 수 없는 relationship type과 domain/range mismatch는 `conflict`로 반환된다.
 - validation 결과는 `runs/<run-id>/validation.json`에 저장된다.
 
 ## 8. Milestone 5: Diff, Accept, Audit
@@ -137,14 +147,16 @@ draft를 canon과 비교해 구조 오류와 명백한 충돌을 탐지한다.
 사용자 승인을 받은 draft만 canon으로 승격하고, 재현 가능한 audit trail을 남긴다.
 
 ### 산출물
-- `world-tool diff draft`
-- `world-tool accept draft`
+- `world-tool draft diff`
+- `world-tool draft accept`
 - accept 직전 validation 재실행
 - `--force`와 `--reason-file`
+- diff binding flags: `--diff-run-id`, `--draft-hash`, `--target-base-hash`, `--patch-hash`
 - conflict/error 기본 차단
 - content atomic write
 - world root lock
 - diff base hash와 accept 시점 hash 비교
+- transaction/recovery artifact
 - accepted draft archive 이동
 - `runs/<run-id>/diff.patch`
 - `runs/<run-id>/result.json`
@@ -152,8 +164,9 @@ draft를 canon과 비교해 구조 오류와 명백한 충돌을 탐지한다.
 
 ### 완료 기준
 - accept는 validation을 다시 실행한다.
+- accept는 diff binding이 없거나 불일치하면 실패한다.
 - conflict/error가 있으면 기본 accept가 실패한다.
-- force accept는 reason 없이는 실패하며 structural error, path violation, target path conflict는 우회할 수 없다.
+- force accept는 reason 없이는 실패하며 structural error, id conflict, path violation, target path conflict, storylet canon 승격, diff binding mismatch는 우회할 수 없다.
 - accept 성공 시 content 문서가 생성 또는 갱신된다.
 - accept 성공 시 draft 원본은 `archive/accepted/`로 이동한다.
 - 모든 변경은 runs artifact로 추적 가능하다.
@@ -181,22 +194,28 @@ OpenCrabs가 `world-tool`을 범용 shell이 아니라 의미 단위 tool로 호
 
 ### 산출물
 - `opencrabs/tools/world-tools.toml`
+- `world_stage_input`
 - `world_list`
 - `world_status`
 - `world_search_docs`
 - `world_read_doc`
 - `world_create_draft`
+- `world_create_update_draft`
+- `world_create_deprecate_draft`
 - `world_update_draft`
 - `world_read_draft`
 - `world_validate_draft`
 - `world_diff_draft`
 - `world_accept_draft`
+- `world_force_accept_draft`
 - `world_reject_draft`
 - `world_get_run`
 
 ### 완료 기준
 - 각 tool은 stdout JSON만 반환한다.
 - 긴 query/title/body/reason은 `runs/inbox/` staging file 또는 stdin 방식으로 전달된다.
+- `world_stage_input`이 staging file을 만들고 후속 tool은 path/hash만 받는다.
+- `world_accept_draft`는 diff binding 값을 필수로 받는다.
 - 범용 `world_exec_shell` 같은 tool은 제공하지 않는다.
 - malformed JSON, timeout, non-zero exit에 대한 실패 메시지 정책이 정리되어 있다.
 
@@ -229,12 +248,22 @@ OpenCrabs, `world-tool`, skill/tools bundle을 컨테이너에서 운영할 수 
 - character/place/event 최소 3개 canon 문서
 - pass draft fixture
 - conflict draft fixture
+- update/retcon draft fixture
+- target path collision fixture
+- storylet accept block fixture
+- force denied fixture
+- lock/base-hash mismatch fixture
+- relationship allowlist fixture
 - reject fixture
+- stdout JSON fixture
 - manual OpenCrabs test script 또는 checklist
 
 ### 완료 기준
-- `world init -> draft create -> validate -> diff -> accept`가 샘플 world에서 통과한다.
+- `world init -> registry add -> input stage -> draft create -> draft validate -> draft diff -> draft accept`가 샘플 world에서 통과한다.
 - conflict draft는 기본 accept에서 차단된다.
+- diff binding mismatch는 accept에서 차단된다.
+- storylet draft는 content canon accept에서 차단된다.
+- 알 수 없는 relationship type은 conflict로 탐지된다.
 - rejected draft는 `archive/rejected/`로 이동한다.
 - accepted draft는 `content/`에 반영되고 `archive/accepted/`로 이동한다.
 - `runs/` artifact만 보고 어떤 변경이 있었는지 추적할 수 있다.
@@ -280,7 +309,9 @@ MVP는 다음을 만족할 때 완료로 본다.
 - OpenCrabs 없이 `world-tool`만으로 draft를 만들고 accept할 수 있다.
 - `content/`는 accept 전까지 변경되지 않는다.
 - validation 결과와 accept 결과가 JSON으로 반환된다.
+- JSON envelope는 `command_status`와 `data.validation_status`를 분리한다.
 - conflict/error draft는 기본 accept에서 차단된다.
+- diff와 accept는 binding hash로 묶인다.
 - 모든 write operation은 `runs/`와 `archive/`에 추적 가능한 기록을 남긴다.
 - OpenCrabs skill과 dynamic tools가 같은 workflow를 호출할 수 있다.
 - 샘플 world에서 end-to-end 시나리오가 재현된다.

@@ -33,6 +33,7 @@ world-tool
 receive user request in OpenCrabs
 → world-building skill rules apply
 → inspect world state with world_* tools
+→ stage long query/title/body/reason with world_stage_input
 → OpenCrabs/Codex drafts candidate content
 → call world_create_draft
 → call world_validate_draft
@@ -44,15 +45,17 @@ receive user request in OpenCrabs
 
 ### 단계
 1. `world_status`로 world root 상태 확인
-2. `world_search_docs` 또는 `world_read_doc`으로 관련 canon 로딩
-3. OpenCrabs/Codex가 draft markdown 후보 생성
-4. `world_create_draft` 호출
-5. `world_validate_draft` 호출
-6. validation summary와 draft path 반환
+2. 긴 검색 query는 `world_stage_input`으로 staging
+3. `world_search_docs` 또는 `world_read_doc`으로 관련 canon 로딩
+4. OpenCrabs/Codex가 draft markdown 후보 생성
+5. title/body를 `world_stage_input`으로 staging
+6. `world_create_draft` 호출
+7. `world_validate_draft` 호출
+8. validation summary와 draft path 반환
 
 ### 정책
 - OpenCrabs/Codex는 `content/`에 직접 쓰지 않는다.
-- draft body가 길면 stdin 또는 world root 내부 `runs/inbox/` staging file 기반 tool 호출을 사용한다.
+- query/title/body/reason은 command argv에 넣지 않고 `world_stage_input`으로 `runs/inbox/`에 staging한다.
 - tool output의 `draft_id`, `run_id`, `validation_status`를 사용자에게 보여준다.
 
 ## 5. Validate Workflow
@@ -77,19 +80,23 @@ receive user request in OpenCrabs
 ### 단계
 1. OpenCrabs가 사용자에게 명시적 승인 확인
 2. `world_diff_draft`로 변경 내용 표시
-3. `world_accept_draft` 호출
-4. tool 내부에서 validation 재실행
-5. conflict/error면 중단
-6. content 생성 또는 갱신
-7. accepted draft를 `archive/accepted/`로 이동
-8. runs log와 result JSON 저장
+3. 사용자에게 diff summary를 확인받는다
+4. reason을 `world_stage_input`으로 staging
+5. `world_accept_draft`에 `diff_run_id`, `draft_hash`, `target_base_hash`, `patch_hash`, `reason_file`을 함께 넘긴다
+6. tool 내부에서 diff binding 검증과 validation 재실행
+7. conflict/error면 중단
+8. content 생성 또는 갱신
+9. accepted draft를 `archive/accepted/`로 이동
+10. runs log와 result JSON 저장
 
 ### 정책
 - accept는 tool이 강제하는 deterministic workflow다.
 - warning은 accept를 차단하지 않지만 reason에 확인 맥락을 남긴다.
 - conflict/error는 기본 accept에서 차단된다.
-- `force`는 reason이 없으면 실패하며, structural error나 path/target 충돌은 우회할 수 없다.
+- `force`는 reason이 없으면 실패하며, semantic/timeline/relationship conflict 후보만 제한적으로 우회한다.
+- structural error, id conflict, path/target 충돌, storylet canon 승격, diff binding mismatch는 force로도 우회할 수 없다.
 - accept는 world root lock을 잡고 validation을 재실행한다.
+- accept는 사용자가 확인한 diff binding과 현재 draft/content hash가 일치할 때만 진행된다.
 - accept 이후 OpenCrabs는 content/index/cache를 다시 읽거나 재색인할 수 있다.
 
 ## 7. Reject Workflow

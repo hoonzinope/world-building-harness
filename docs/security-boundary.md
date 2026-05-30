@@ -65,11 +65,13 @@ command = "{{command}}"
 [[tools]]
 name = "world_accept_draft"
 executor = "shell"
-command = "world-tool accept draft --world {{world_id}} --draft {{draft_path}} --reason-file {{reason_file}} --json"
+command = "world-tool draft accept --world {{world_id}} --draft {{draft_path}} --diff-run-id {{diff_run_id}} --draft-hash {{draft_hash}} --target-base-hash {{target_base_hash}} --patch-hash {{patch_hash}} --reason-file {{reason_file}} --json"
 ```
 
 tool은 의미 단위 작업이어야 하며 shell 권한을 넓게 열지 않는다.
 긴 markdown body, 검색 query, title, reason, note는 command line argument가 아니라 stdin 또는 world root 내부 `runs/inbox/` staging file로 전달한다.
+
+긴 입력은 `world_stage_input`이 호출하는 `world-tool input stage`만 `runs/inbox/`에 쓸 수 있다. OpenCrabs/Codex가 임의 path에 직접 파일을 만들었다고 가정하지 않는다.
 
 OpenCrabs shell executor가 template 값을 argv-safe하게 escape하지 않는다면, dynamic tool command에 사용자 입력 변수를 직접 넣지 않는다. 이 경우 request JSON file 하나를 받는 wrapper command를 사용한다.
 
@@ -78,6 +80,14 @@ OpenCrabs shell executor가 template 값을 argv-safe하게 escape하지 않는�
 - active command가 읽은 뒤 해당 run artifact로 복사하거나 삭제한다.
 - symlink는 허용하지 않는다.
 - 파일 크기 상한을 둔다. MVP 기본값은 문서당 1 MiB를 권장한다.
+
+Command별 path allowlist:
+- `doc read/search/list`: `content/**/*.md`, `drafts/**/*.md`
+- `draft *`: `drafts/**/*.md`
+- `content validate`: `content/**/*.md`
+- `input stage`: `runs/inbox/**` write only
+- `run get/list`: `runs/**` read only
+- `archive/`, `raw/`, `schema/`는 MVP dynamic tool의 doc 조회 대상이 아니다.
 
 ## 6. Network Boundary
 `world-tool` MVP는 임의 네트워크 요청을 수행하지 않는다.
@@ -130,7 +140,8 @@ draft가 content로 승격되려면 `world_accept_draft`를 통과해야 한다.
 기본 차단 조건:
 - validation error
 - validation conflict
-- id 중복
+- `change_type: create` id 중복
+- `change_type: update/deprecate` target_id 누락 또는 target_id 불일치
 - content target path 충돌
 - required field 누락
 - draft가 active drafts/ 밖에 있음
@@ -139,7 +150,7 @@ force accept는 가능하지만 reason이 필수다.
 
 force accept 제한:
 - semantic/timeline/relationship conflict 후보만 우회 대상으로 삼는다.
-- path violation, inactive draft, malformed markdown/YAML, 필수 field 누락, target path 충돌, atomic write 실패, lock 실패는 force로 우회할 수 없다.
+- path violation, inactive draft, malformed markdown/YAML, 필수 field 누락, id conflict, target path 충돌, storylet canon 승격, diff binding mismatch, atomic write 실패, lock 실패는 force로 우회할 수 없다.
 
 warning은 accept를 차단하지 않지만, accept reason에 warning을 확인했다는 맥락을 남긴다.
 
@@ -156,7 +167,8 @@ write command는 world root 단위 lock을 사용한다.
 - lock 파일은 world root 내부 `runs/.lock` 또는 동등한 위치에 둔다.
 - lock 획득 실패는 `LOCK_BUSY` JSON error로 반환한다.
 - accept는 lock을 잡은 뒤 validation을 재실행한다.
-- diff 시점의 target content hash와 accept 시점의 hash가 다르면 accept를 중단한다.
+- accept는 diff_run_id, draft_hash, target_base_hash, patch_hash binding을 검증한다.
+- diff 시점의 draft/content/patch hash와 accept 시점의 값이 다르면 accept를 중단한다.
 
 ## 11. Docker Boundary
 권장 컨테이너 실행 원칙:
@@ -178,7 +190,7 @@ docker run --rm \
   --tmpfs /tmp \
   -v /host/worlds/ashen-continent:/workspace/world \
   world-tool:latest \
-  world-tool validate draft --root /workspace/world --draft drafts/nations/northern-empire.md --json
+  world-tool draft validate --root /workspace/world --draft drafts/nations/nation_northern_empire.md --json
 ```
 
 ## 12. Audit Log
@@ -193,10 +205,29 @@ docker run --rm \
 - timestamp
 - force 여부와 reason
 - before/after content hash
+- diff_run_id, draft_hash, target_base_hash, patch_hash
 - lock 획득/해제 event
 - redaction 여부
+- transaction status와 recovery instruction
 
-## 13. 위험 시나리오
+## 13. Transaction Boundary
+`draft accept`는 다중 파일 작업이므로 transaction artifact를 남긴다.
+
+순서:
+1. lock 획득
+2. `runs/<run-id>/result.json`을 `pending`으로 기록
+3. validation과 diff binding 재검증
+4. content temp file 작성
+5. content atomic rename
+6. draft archive atomic rename
+7. `result.json`을 `completed` 또는 `blocked`로 갱신
+
+중간 실패 시:
+- content write 전 실패는 상태 변경 없이 `failed`로 끝난다.
+- content write 후 archive/result 기록 실패는 `TRANSACTION_INCOMPLETE`로 반환한다.
+- `runs/<run-id>/recovery.json`에 현재 hash, 완료된 step, 재시도 방법을 남긴다.
+
+## 14. 위험 시나리오
 ### LLM이 canon을 오염시키는 경우
 방어:
 - content 직접 write tool 제공 금지
@@ -219,7 +250,7 @@ docker run --rm \
 방어:
 - conflict/error는 기본 accept에서 차단
 - force accept는 reason 필수이며 semantic/timeline/relationship conflict 후보에만 제한적으로 허용
-- structural error, path violation, inactive draft, target path conflict는 force로도 차단
+- structural error, id conflict, path violation, inactive draft, target path conflict, storylet canon 승격, diff binding mismatch는 force로도 차단
 - force 여부와 reason을 runs log에 기록
 - OpenCrabs skill에 “validation 우회 요청은 tool 정책을 따른다”는 지침 포함
 
