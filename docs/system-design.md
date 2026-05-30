@@ -72,11 +72,13 @@ flowchart LR
 ## 5. 주요 Tool 세트
 | Tool | 내부 command | 역할 |
 | --- | --- | --- |
+| `world_list` | `world-tool world list` | registry에 등록된 world 목록 |
 | `world_status` | `world-tool world status` | world 상태와 pending draft 요약 |
 | `world_search_docs` | `world-tool doc search` | 관련 canon/draft 검색 |
 | `world_read_doc` | `world-tool doc read` | 문서 읽기 |
 | `world_create_draft` | `world-tool draft create` | canon 변경 없이 draft 생성 |
 | `world_update_draft` | `world-tool draft update` | draft 수정 |
+| `world_read_draft` | `world-tool draft read` | active draft 읽기 |
 | `world_validate_draft` | `world-tool validate draft` | schema/canon 검증 |
 | `world_diff_draft` | `world-tool diff draft` | accept 예상 변경 확인 |
 | `world_accept_draft` | `world-tool accept draft` | validation 후 content 승격 |
@@ -104,7 +106,7 @@ sequenceDiagram
     Tool->>WT: world-tool doc search --json
     WT-->>OpenCrabs: related docs
     OpenCrabs->>OpenCrabs: Codex OAuth provider drafts markdown
-    OpenCrabs->>Tool: world_create_draft(body_file)
+    OpenCrabs->>Tool: world_create_draft(title_file, body_file)
     Tool->>WT: world-tool draft create --json
     WT->>World: write drafts/ and runs/
     WT-->>OpenCrabs: draft_id, draft_path, run_id
@@ -133,7 +135,7 @@ sequenceDiagram
     OpenCrabs->>Tool: world_accept_draft(draft_path, reason_file)
     Tool->>WT: world-tool accept draft --json
     WT->>World: validate draft again
-    alt validation pass or allowed warning
+    alt validation pass or warning
         WT->>World: write content/
         WT->>World: move draft to archive/accepted/
         WT->>World: write runs/result.json
@@ -165,15 +167,23 @@ stateDiagram-v2
 ```
 
 ## 9. JSON 계약 예시
+정식 JSON envelope는 [commands.md](commands.md)를 기준으로 한다. 아래 예시는 각 tool의 대표 payload다.
+
 `world_create_draft` 결과:
 
 ```json
 {
+  "schema_version": "world-tool.v1",
+  "ok": true,
   "status": "created",
+  "command": "draft.create",
   "world_id": "ashen-continent",
-  "draft_id": "draft_20260530_001",
-  "draft_path": "drafts/nations/northern-empire.md",
   "run_id": "20260530-001",
+  "data": {
+    "draft_id": "draft_20260530_001",
+    "draft_path": "drafts/nations/northern-empire.md"
+  },
+  "issues": [],
   "available_actions": ["world_read_draft", "world_validate_draft", "world_diff_draft", "world_reject_draft"]
 }
 ```
@@ -182,9 +192,15 @@ stateDiagram-v2
 
 ```json
 {
+  "schema_version": "world-tool.v1",
+  "ok": true,
   "status": "warning",
-  "draft_path": "drafts/nations/northern-empire.md",
+  "command": "validate.draft",
+  "world_id": "ashen-continent",
   "run_id": "20260530-001",
+  "data": {
+    "draft_path": "drafts/nations/northern-empire.md"
+  },
   "issues": [
     {
       "rule": "VR-203",
@@ -201,10 +217,16 @@ stateDiagram-v2
 
 ```json
 {
+  "schema_version": "world-tool.v1",
+  "ok": true,
   "status": "blocked",
-  "reason": "validation_conflict",
-  "draft_path": "drafts/nations/northern-empire.md",
+  "command": "accept.draft",
+  "world_id": "ashen-continent",
   "run_id": "20260530-002",
+  "data": {
+    "reason": "validation_conflict",
+    "draft_path": "drafts/nations/northern-empire.md"
+  },
   "issues": [
     {
       "rule": "VR-101",
@@ -270,6 +292,8 @@ internal/audit
 - Go `world-tool` CLI
 - `opencrabs/skills/world-building/SKILL.md`
 - `opencrabs/tools/world-tools.toml`
+- `schema/world-doc.schema.json`
+- `schema/relationship-types.yaml`
 - `examples/worlds/*` 샘플 world root
 - end-to-end smoke test
 

@@ -5,11 +5,29 @@
 ## 1. 목적
 schema는 세계관 문서의 표준 frontmatter와 본문 섹션을 정의한다. LLM 생성 결과를 일정한 구조로 정리하고 validator가 검사할 기준을 제공한다.
 
+### Machine-readable schema
+구현 시 `schema/` 디렉토리에 다음 파일을 둔다.
+
+```text
+schema/
+├── world-doc.schema.json
+├── relationship-types.yaml
+└── document-types.yaml
+```
+
+이 문서는 사람이 읽는 기준이고, validator는 위 machine-readable schema를 기준으로 동작해야 한다. 문서와 schema 파일이 충돌하면 구현 단계에서는 schema 파일을 고치고 이 문서를 같이 갱신한다.
+
+schema version:
+- Markdown frontmatter에는 `schema_version: world-doc.v1`을 기록한다.
+- `world-tool draft create`는 새 draft에 `schema_version`을 자동 주입한다.
+- legacy/import 문서에 `schema_version`이 없으면 MVP에서는 warning으로 처리할 수 있지만, 새로 생성되는 문서에는 필수다.
+
 ## 2. 공통 Frontmatter
 모든 content와 draft 문서는 아래 공통 필드를 가진다.
 
 ```yaml
 ---
+schema_version: world-doc.v1
 id: character_aria
 type: character
 status: draft
@@ -24,6 +42,7 @@ source_run_id: 20260529-001
 ```
 
 ### 필드 정의
+- schema_version: 문서 schema 버전. MVP 기본값은 `world-doc.v1`.
 - id: 전역 고유 id. 타입 접두어를 권장한다.
 - type: character, nation, organization, place, event, timeline, magic, glossary, storylet 중 하나.
 - status: draft, canon, deprecated, rejected 중 하나.
@@ -45,9 +64,42 @@ relationships:
     target: nation_ashen_empire
 ```
 
+### 필드 타입
+공통 타입 규칙:
+- `id`, `type`, `status`, `title`, `schema_version`은 string이다.
+- `tags`, `related`, `aliases`, `affiliation`, `participants`, `locations`는 string array다.
+- `relationships`는 object array다.
+- `created_at`, `updated_at`은 `YYYY-MM-DD` 또는 RFC3339 timestamp를 허용한다. 같은 world 안에서는 하나의 형식을 유지하는 것을 권장한다.
+- 연도 필드는 integer 또는 null이다. 불확실한 연도는 본문 `Canon Notes`에 남긴다.
+- 참조 필드는 entity id를 값으로 사용한다. 사람이 읽는 title을 넣지 않는다.
+
+### Relationship Type Allowlist
+MVP validator가 정적으로 이해하는 relationship type은 아래 allowlist다.
+
+| type | source 예시 | target 예시 | 방향성 |
+| --- | --- | --- | --- |
+| `member_of` | character, organization | organization, nation | source -> target |
+| `affiliated_with` | character, organization | organization, nation | source -> target |
+| `located_in` | place, organization | place, nation | source -> target |
+| `capital_of` | place | nation | source -> target |
+| `rules` | character, organization | nation, place | source -> target |
+| `parent_of` | character | character | source -> target |
+| `child_of` | character | character | source -> target |
+| `sibling_of` | character | character | symmetric |
+| `ally_of` | character, nation, organization | character, nation, organization | symmetric |
+| `rival_of` | character, nation, organization | character, nation, organization | symmetric |
+| `predecessor_of` | nation, organization, event | nation, organization, event | source -> target |
+| `successor_of` | nation, organization, event | nation, organization, event | source -> target |
+| `participates_in` | character, organization, nation | event | source -> target |
+| `occurred_at` | event | place | source -> target |
+| `uses_magic` | character, organization, nation | magic | source -> target |
+
+알 수 없는 relationship type은 `warning`으로 기록하고 graph builder는 `generic` edge로 처리할 수 있다. strict mode에서는 error로 올릴 수 있다.
+
 ## 3. Character Schema
 ```yaml
 ---
+schema_version: world-doc.v1
 id: character_aria
 type: character
 status: draft
@@ -89,6 +141,7 @@ source_run_id: 20260529-001
 ## 4. Nation Schema
 ```yaml
 ---
+schema_version: world-doc.v1
 id: nation_ashen_empire
 type: nation
 status: draft
@@ -136,6 +189,7 @@ source_run_id: 20260529-001
 ## 5. Organization Schema
 ```yaml
 ---
+schema_version: world-doc.v1
 id: org_gray_order
 type: organization
 status: draft
@@ -177,6 +231,7 @@ source_run_id: 20260529-001
 ## 6. Place Schema
 ```yaml
 ---
+schema_version: world-doc.v1
 id: place_gray_capital
 type: place
 status: draft
@@ -216,6 +271,7 @@ source_run_id: 20260529-001
 ## 7. Event Schema
 ```yaml
 ---
+schema_version: world-doc.v1
 id: event_fall_of_north
 type: event
 status: draft
@@ -259,6 +315,7 @@ source_run_id: 20260529-001
 ## 8. Magic Schema
 ```yaml
 ---
+schema_version: world-doc.v1
 id: magic_ash_binding
 type: magic
 status: draft
@@ -299,6 +356,7 @@ source_run_id: 20260529-001
 ## 9. Timeline Schema
 ```yaml
 ---
+schema_version: world-doc.v1
 id: timeline_main
 type: timeline
 status: draft
@@ -332,6 +390,7 @@ source_run_id: 20260529-001
 ## 10. Glossary Schema
 ```yaml
 ---
+schema_version: world-doc.v1
 id: term_ether
 type: glossary
 status: draft
@@ -368,6 +427,7 @@ storylet은 canon이 아닌 창작 후보로 취급한다.
 
 ```yaml
 ---
+schema_version: world-doc.v1
 id: storylet_trade_conflict_001
 type: storylet
 status: draft
@@ -423,3 +483,8 @@ Canon Notes는 설정의 불변 조건, 아직 모호한 부분, 향후 검증�
 - status가 draft인 문서는 drafts/ 또는 archive/에 있을 수 있다.
 - archive/accepted/의 draft 원본은 active validation과 context loading에서 제외한다.
 - OpenCrabs DB나 graph는 content Markdown에서 재생성 가능한 보조 데이터다.
+
+Storylet 정책:
+- MVP에서 storylet은 `drafts/storylets/`와 `archive/`에서만 관리한다.
+- 기본 `accept draft`는 storylet을 `content/` canon으로 승격하지 않는다.
+- storylet을 canon 사건이나 entity로 반영하려면 별도 event/character/place draft를 생성해 accept한다.

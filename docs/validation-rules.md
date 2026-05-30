@@ -8,6 +8,12 @@ validation은 LLM이 생성한 설정을 canon으로 믿지 않고, 기존 세�
 검증의 기준 canon은 `content/` Markdown이다. OpenCrabs DB, graph, search index는 보조 자료로 사용할 수 있지만 source of truth로 취급하지 않는다.
 
 ## 2. Validation Status
+최종 status는 발견된 issue 중 가장 높은 severity를 따른다.
+
+```text
+error > conflict > warning > pass
+```
+
 ### pass
 명백한 구조 오류나 충돌 후보가 없다.
 
@@ -26,6 +32,7 @@ canon과 충돌한다고 확정할 수는 없지만 검토가 필요한 부분�
 
 ### VR-002: 필수 필드 존재
 필수 필드:
+- schema_version
 - id
 - type
 - status
@@ -40,6 +47,8 @@ canon과 충돌한다고 확정할 수는 없지만 검토가 필요한 부분�
 - source_run_id
 
 기존 수동 문서나 import 문서는 source_run_id가 null일 수 있다.
+
+legacy/import 문서에 `schema_version`이 없으면 migration 전까지 warning으로 낮출 수 있다. `world-tool draft create`가 만든 새 문서에는 `schema_version` 누락을 error로 처리한다.
 
 ### VR-003: type 허용값
 허용 type:
@@ -59,6 +68,9 @@ canon과 충돌한다고 확정할 수는 없지만 검토가 필요한 부분�
 - canon
 - deprecated
 - rejected
+
+### VR-005: 날짜 형식
+created_at과 updated_at은 `YYYY-MM-DD` 또는 RFC3339 timestamp여야 한다. world 안에서는 하나의 형식을 유지하는 것을 권장하며, 혼용은 warning이다.
 
 ## 4. ID Rules
 ### VR-101: id 전역 중복 금지
@@ -107,7 +119,15 @@ relationships에 A가 B의 부모라고 되어 있는데 B 문서에서 A가 형
 relationships[].target이 content 또는 active draft에 없으면 warning이다. strict mode에서는 error로 올릴 수 있다.
 
 ### VR-306: relationship type 허용값
-정적 검증 가능한 relationship type은 allowlist로 관리한다. 알 수 없는 type은 warning으로 기록하고 graph builder는 generic edge로 처리할 수 있다.
+정적 검증 가능한 relationship type은 [schema.md](schema.md)의 allowlist로 관리한다. 알 수 없는 type은 warning으로 기록하고 graph builder는 generic edge로 처리할 수 있다.
+
+### VR-307: relationship domain/range 검사
+allowlist에 정의된 source type과 target type이 맞지 않으면 warning이다. strict mode에서는 error로 올릴 수 있다.
+
+예: `capital_of`의 source는 place여야 하고 target은 nation이어야 한다.
+
+### VR-308: symmetric relationship 정규화
+`ally_of`, `rival_of`, `sibling_of` 같은 symmetric relationship은 graph builder가 양방향 edge로 정규화한다. 한쪽 문서에만 있어도 error는 아니지만, 반대편 문서와 직접 모순되면 conflict 후보로 기록한다.
 
 ## 7. Terminology Rules
 ### VR-401: 동명 entity 검사
@@ -135,6 +155,11 @@ archive 아래 문서는 canon 또는 pending draft로 취급하지 않는다. a
 ### VR-505: OpenCrabs index 비권위성
 OpenCrabs DB나 search index와 content가 불일치하면 content를 우선한다. OpenCrabs 쪽 데이터는 재색인 대상으로 기록한다.
 
+### VR-506: target path와 base hash
+accept 대상 content path는 draft id/type/title에서 deterministic하게 계산한다. 이미 다른 id의 content 문서가 같은 target path를 점유하면 conflict다.
+
+diff 결과에는 target content의 base hash를 포함한다. accept 시점의 hash가 diff 시점과 다르면 validation을 다시 수행하고 기본 accept를 중단한다.
+
 ## 9. LLM-assisted Validation
 정적 rule로 잡기 어려운 부분은 OpenCrabs/Codex가 후보 검토를 도울 수 있다.
 
@@ -157,8 +182,20 @@ OpenCrabs/Codex는 semantic validation 후보를 생성할 수 있지만, valida
 - id 중복
 - content target path 충돌
 - 대상 draft가 drafts/ 밖 active draft가 아닌 경우
+- MVP에서 `type: storylet` draft를 content canon으로 accept하려는 경우
 
-`--force` 사용 시에도 reason이 필요하며 runs log에 기록한다.
+warning은 기본 accept를 차단하지 않는다. 단, accept reason에는 warning을 확인했다는 맥락을 남겨야 한다.
+
+`--force` 사용 시에도 reason이 필요하며 runs log에 기록한다. `--force`가 우회할 수 있는 것은 semantic/timeline/relationship conflict 후보에 한정한다.
+
+`--force`로도 우회할 수 없는 조건:
+- path boundary violation
+- inactive draft
+- malformed markdown 또는 YAML parse failure
+- 필수 frontmatter 누락
+- content target path 충돌
+- atomic write 실패
+- lock 획득 실패
 
 ## 11. Validation Report 형식
 ```markdown

@@ -64,9 +64,17 @@ OpenCrabs dynamic tools는 다음 위치에 정의한다.
 opencrabs/tools/world-tools.toml
 ```
 
-대표 tool:
+canonical dynamic tool:
+
+아래 예시는 OpenCrabs shell executor가 template 값을 argv-safe하게 escape한다고 가정한다. raw string interpolation만 지원한다면 그대로 사용하지 말고, request JSON file 하나를 받는 wrapper command를 둔다.
 
 ```toml
+[[tools]]
+name = "world_list"
+description = "List configured worlds"
+executor = "shell"
+command = "world-tool world list --json"
+
 [[tools]]
 name = "world_status"
 description = "Return world status and pending draft summary"
@@ -74,17 +82,69 @@ executor = "shell"
 command = "world-tool world status --world {{world_id}} --json"
 
 [[tools]]
+name = "world_search_docs"
+description = "Search canon and active draft documents"
+executor = "shell"
+command = "world-tool doc search --world {{world_id}} --query-file {{query_file}} --json"
+
+[[tools]]
+name = "world_read_doc"
+description = "Read a world document within the selected world root"
+executor = "shell"
+command = "world-tool doc read --world {{world_id}} --path {{path}} --json"
+
+[[tools]]
 name = "world_create_draft"
 description = "Create a draft without modifying canon content"
 executor = "shell"
-command = "world-tool draft create --world {{world_id}} --type {{type}} --title {{title}} --body-file {{body_file}} --json"
+command = "world-tool draft create --world {{world_id}} --type {{type}} --title-file {{title_file}} --body-file {{body_file}} --json"
+
+[[tools]]
+name = "world_update_draft"
+description = "Update an active draft without modifying canon content"
+executor = "shell"
+command = "world-tool draft update --world {{world_id}} --draft {{draft_path}} --body-file {{body_file}} --json"
+
+[[tools]]
+name = "world_read_draft"
+description = "Read an active draft"
+executor = "shell"
+command = "world-tool draft read --world {{world_id}} --draft {{draft_path}} --json"
+
+[[tools]]
+name = "world_validate_draft"
+description = "Validate a draft against canon"
+executor = "shell"
+command = "world-tool validate draft --world {{world_id}} --draft {{draft_path}} --json"
+
+[[tools]]
+name = "world_diff_draft"
+description = "Return the content changes that accept would apply"
+executor = "shell"
+command = "world-tool diff draft --world {{world_id}} --draft {{draft_path}} --json"
 
 [[tools]]
 name = "world_accept_draft"
 description = "Promote a validated draft into canon after explicit user approval"
 executor = "shell"
 command = "world-tool accept draft --world {{world_id}} --draft {{draft_path}} --reason-file {{reason_file}} --json"
+
+[[tools]]
+name = "world_reject_draft"
+description = "Archive a draft as rejected with a reason"
+executor = "shell"
+command = "world-tool reject draft --world {{world_id}} --draft {{draft_path}} --reason-file {{reason_file}} --json"
+
+[[tools]]
+name = "world_get_run"
+description = "Read run artifacts and result summary"
+executor = "shell"
+command = "world-tool run get --world {{world_id}} --run-id {{run_id}} --json"
 ```
+
+긴 markdown body, 검색 query, title, reason은 command template에 직접 넣지 않는다. OpenCrabs executor가 stdin을 지원하면 stdin 기반 flag를 사용하고, 그렇지 않으면 world root 내부 `runs/inbox/`에 staging한 상대 경로를 `query_file`, `title_file`, `body_file`, `reason_file`로 넘긴다.
+
+template 변수는 OpenCrabs가 넣더라도 신뢰하지 않는다. `world-tool`은 `world_id`, `type`, `path`, `draft_path`, `query_file`, `title_file`, `body_file`, `reason_file`, `run_id`를 다시 검증한다.
 
 ## 6. World Registry
 OpenCrabs나 `world-tool`은 world id를 world root로 해석해야 한다.
@@ -102,6 +162,33 @@ worlds:
 ```
 
 registry는 OpenCrabs 설정, 별도 world registry 파일, 또는 `world-tool` config로 관리할 수 있다. canon source of truth는 registry가 아니라 각 world root의 `content/`다.
+
+권장 registry 위치:
+
+```text
+~/.opencrabs/worlds.yaml
+```
+
+대체 위치:
+
+```text
+~/.config/world-tool/worlds.yaml
+```
+
+해석 우선순위:
+1. command flag `--registry <path>`가 있으면 해당 파일
+2. 환경변수 `WORLD_TOOL_REGISTRY`
+3. `~/.opencrabs/worlds.yaml`
+4. `~/.config/world-tool/worlds.yaml`
+
+registry path 자체는 world root 안에 둘 필요가 없다. 단, registry가 가리키는 root는 symlink 해석 후 absolute path로 고정하고, 이후 모든 파일 접근은 그 root 내부로 제한한다.
+
+`--world`와 `--root`가 동시에 지정되면 실패한다. `world list`는 registry만 읽고 world root를 열지 않는다.
+
+world id 규칙:
+- 영문 소문자, 숫자, 하이픈만 허용한다.
+- path separator, whitespace, shell metacharacter는 금지한다.
+- registry 안에서 중복 id는 config error다.
 
 ## 7. 대화 플로우
 ```text
@@ -149,8 +236,12 @@ Codex CLI provider fallback을 사용할 때만 컨테이너에 `codex` CLI와 �
 ### malformed JSON
 OpenCrabs는 raw stdout을 사용자에게 그대로 보여주지 않고, tool 실패와 stderr 요약을 제공한다.
 
+stdout에 JSON이 있으면 `schema_version`, `ok`, `status`, `error.code`를 우선 사용한다. stdout이 비어 있거나 JSON parse가 실패하면 dynamic tool 자체 실패로 처리한다.
+
 ### validation conflict
 OpenCrabs는 accept를 강행하지 않고 conflict 이유와 수정안을 사용자에게 보여준다.
+
+사용자가 강행을 요청하면 OpenCrabs는 `--force`가 허용되는 conflict인지 tool 결과를 기준으로 판단한다. `--force` reason은 반드시 별도 파일 또는 stdin으로 넘기고 runs log에 남긴다.
 
 ### path violation
 `world-tool`은 world root 밖 경로 접근을 error로 반환한다.

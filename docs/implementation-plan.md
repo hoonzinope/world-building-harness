@@ -17,10 +17,11 @@
 - 먼저 OpenCrabs 없이 동작하는 `world-tool` vertical slice를 만든다.
 - 모든 파일 접근은 world root boundary 안에서만 허용한다.
 - 모든 write command는 `runs/`에 audit artifact를 남긴다.
-- 모든 command는 `--json` 모드에서 stdout JSON만 반환한다.
-- 긴 markdown body, reason, 사용자 입력은 argv가 아니라 `--body-file`, `--reason-file`, stdin으로 받는다.
+- 모든 command는 `--json` 모드에서 [commands.md](commands.md)의 JSON envelope만 stdout에 반환한다.
+- 긴 markdown body, 검색 query, title, reason, 사용자 입력은 argv가 아니라 stdin 또는 world root 내부 `runs/inbox/` staging file로 받는다.
 - `content/`는 `accept draft` 외의 command에서 수정하지 않는다.
 - skill은 지침이고, 안전 경계는 `world-tool`에서 강제한다.
+- write command는 world root lock을 사용하고, accept는 lock 안에서 validation을 재실행한다.
 
 ## 3. Milestone 0: Repository Scaffold
 ### 목표
@@ -38,6 +39,9 @@ Go CLI와 OpenCrabs bundle을 구현할 기본 디렉토리를 만든다.
 - `internal/config`
 - `opencrabs/skills/world-building/SKILL.md`
 - `opencrabs/tools/world-tools.toml`
+- `schema/world-doc.schema.json`
+- `schema/relationship-types.yaml`
+- `schema/document-types.yaml`
 - `examples/worlds/ashen-continent`
 
 ### 완료 기준
@@ -55,6 +59,8 @@ Go CLI와 OpenCrabs bundle을 구현할 기본 디렉토리를 만든다.
 - path normalization
 - symlink escape 차단
 - world root 밖 read/write 차단
+- `runs/inbox/` staging path 검증
+- world root lock helper
 - atomic write helper
 - `world-tool world init`
 - `world-tool world status`
@@ -62,6 +68,7 @@ Go CLI와 OpenCrabs bundle을 구현할 기본 디렉토리를 만든다.
 ### 완료 기준
 - `world init`이 `content/`, `drafts/`, `runs/`, `archive/`, `graph/`, `harness.yaml`을 생성한다.
 - `../`, absolute path, symlink를 통한 root 밖 접근이 차단된다.
+- `--query-file`, `--title-file`, `--body-file`, `--reason-file`도 `runs/inbox/` 아래 상대 경로만 허용된다.
 - path violation은 JSON error와 non-zero exit code를 반환한다.
 
 ## 5. Milestone 2: Content Read Model
@@ -91,7 +98,7 @@ LLM 생성물을 canon에 바로 쓰지 않고 draft로 저장하는 경로를 �
 - `world-tool draft update`
 - `world-tool draft read`
 - `world-tool draft list`
-- `world-tool draft reject`
+- `world-tool reject draft`
 - draft frontmatter 보정
 - draft id/path 생성 규칙
 - `source_run_id` 기록
@@ -116,6 +123,7 @@ draft를 canon과 비교해 구조 오류와 명백한 충돌을 탐지한다.
 - relationship target existence rule
 - timeline/event consistency rule
 - target path conflict rule
+- target content base hash 계산
 
 ### 완료 기준
 - validation status는 `pass`, `warning`, `conflict`, `error` 중 하나다.
@@ -135,6 +143,8 @@ draft를 canon과 비교해 구조 오류와 명백한 충돌을 탐지한다.
 - `--force`와 `--reason-file`
 - conflict/error 기본 차단
 - content atomic write
+- world root lock
+- diff base hash와 accept 시점 hash 비교
 - accepted draft archive 이동
 - `runs/<run-id>/diff.patch`
 - `runs/<run-id>/result.json`
@@ -143,7 +153,7 @@ draft를 canon과 비교해 구조 오류와 명백한 충돌을 탐지한다.
 ### 완료 기준
 - accept는 validation을 다시 실행한다.
 - conflict/error가 있으면 기본 accept가 실패한다.
-- force accept는 reason 없이는 실패한다.
+- force accept는 reason 없이는 실패하며 structural error, path violation, target path conflict는 우회할 수 없다.
 - accept 성공 시 content 문서가 생성 또는 갱신된다.
 - accept 성공 시 draft 원본은 `archive/accepted/`로 이동한다.
 - 모든 변경은 runs artifact로 추적 가능하다.
@@ -171,11 +181,13 @@ OpenCrabs가 `world-tool`을 범용 shell이 아니라 의미 단위 tool로 호
 
 ### 산출물
 - `opencrabs/tools/world-tools.toml`
+- `world_list`
 - `world_status`
 - `world_search_docs`
 - `world_read_doc`
 - `world_create_draft`
 - `world_update_draft`
+- `world_read_draft`
 - `world_validate_draft`
 - `world_diff_draft`
 - `world_accept_draft`
@@ -184,7 +196,7 @@ OpenCrabs가 `world-tool`을 범용 shell이 아니라 의미 단위 tool로 호
 
 ### 완료 기준
 - 각 tool은 stdout JSON만 반환한다.
-- 긴 body/reason은 temp file 또는 stdin 방식으로 전달된다.
+- 긴 query/title/body/reason은 `runs/inbox/` staging file 또는 stdin 방식으로 전달된다.
 - 범용 `world_exec_shell` 같은 tool은 제공하지 않는다.
 - malformed JSON, timeout, non-zero exit에 대한 실패 메시지 정책이 정리되어 있다.
 

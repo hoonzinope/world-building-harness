@@ -52,7 +52,7 @@ receive user request in OpenCrabs
 
 ### 정책
 - OpenCrabs/Codex는 `content/`에 직접 쓰지 않는다.
-- draft body가 길면 stdin 또는 temp file 기반 tool 호출을 사용한다.
+- draft body가 길면 stdin 또는 world root 내부 `runs/inbox/` staging file 기반 tool 호출을 사용한다.
 - tool output의 `draft_id`, `run_id`, `validation_status`를 사용자에게 보여준다.
 
 ## 5. Validate Workflow
@@ -86,7 +86,10 @@ receive user request in OpenCrabs
 
 ### 정책
 - accept는 tool이 강제하는 deterministic workflow다.
-- `force`는 reason이 없으면 실패한다.
+- warning은 accept를 차단하지 않지만 reason에 확인 맥락을 남긴다.
+- conflict/error는 기본 accept에서 차단된다.
+- `force`는 reason이 없으면 실패하며, structural error나 path/target 충돌은 우회할 수 없다.
+- accept는 world root lock을 잡고 validation을 재실행한다.
 - accept 이후 OpenCrabs는 content/index/cache를 다시 읽거나 재색인할 수 있다.
 
 ## 7. Reject Workflow
@@ -113,6 +116,8 @@ runs/
     ├── events.jsonl
     └── result.json
 ```
+
+accept/diff run은 target content의 before/after hash를 포함한다.
 
 `events.jsonl` 예시:
 

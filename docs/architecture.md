@@ -56,6 +56,7 @@ dynamic tool은 `opencrab_exec_shell` 같은 범용 명령이 아니라 의미 �
 - `world_read_doc`
 - `world_create_draft`
 - `world_update_draft`
+- `world_read_draft`
 - `world_validate_draft`
 - `world_diff_draft`
 - `world_accept_draft`
@@ -74,6 +75,8 @@ Go 단일 바이너리다. OpenCrabs와 독립적으로 실행 가능해야 하�
 - runs/audit log 작성
 
 ## 4. 추천 레포 구조
+아래는 목표 구조다. 현재 레포는 문서 중심 상태이며 구현 산출물은 roadmap/implementation-plan의 순서로 추가한다.
+
 ```text
 world-harness/
 ├── cmd/
@@ -94,6 +97,11 @@ world-harness/
 │   └── tools/
 │       └── world-tools.toml
 ├── schema/
+│   ├── world-doc.schema.json
+│   ├── relationship-types.yaml
+│   └── document-types.yaml
+├── examples/
+│   └── worlds/
 └── docs/
 ```
 
@@ -129,6 +137,6 @@ accepted/rejected/deprecated draft를 보관한다. archive는 active validation
 - `world-tool`은 선택된 world root 밖을 읽거나 쓰지 않는다.
 - `content/`는 `world_accept_draft`에서만 변경된다.
 - `accept`는 validation을 재실행한다.
-- `force accept`는 reason이 필수이며 runs log에 남긴다.
+- `force accept`는 reason이 필수이며, semantic/timeline/relationship conflict 후보에만 제한적으로 허용하고 runs log에 남긴다.
 - Docker 사용 시 job container에는 선택된 world root 하나만 마운트한다.
 - OpenCrabs credential/config volume과 world root volume은 분리한다.

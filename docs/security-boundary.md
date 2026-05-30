@@ -24,6 +24,7 @@ OpenCrabs/Codex가 세계관 파일을 다루는 구조에서는 명확한 보�
 - graph/
 - schema/
 - runs/
+- runs/inbox/
 - archive/
 - harness.yaml
 
@@ -68,7 +69,15 @@ command = "world-tool accept draft --world {{world_id}} --draft {{draft_path}} -
 ```
 
 tool은 의미 단위 작업이어야 하며 shell 권한을 넓게 열지 않는다.
-긴 markdown body, reason, note는 command line argument가 아니라 temp file 또는 stdin으로 전달한다.
+긴 markdown body, 검색 query, title, reason, note는 command line argument가 아니라 stdin 또는 world root 내부 `runs/inbox/` staging file로 전달한다.
+
+OpenCrabs shell executor가 template 값을 argv-safe하게 escape하지 않는다면, dynamic tool command에 사용자 입력 변수를 직접 넣지 않는다. 이 경우 request JSON file 하나를 받는 wrapper command를 사용한다.
+
+`runs/inbox/` 정책:
+- world root 내부에 있어야 한다.
+- active command가 읽은 뒤 해당 run artifact로 복사하거나 삭제한다.
+- symlink는 허용하지 않는다.
+- 파일 크기 상한을 둔다. MVP 기본값은 문서당 1 MiB를 권장한다.
 
 ## 6. Network Boundary
 `world-tool` MVP는 임의 네트워크 요청을 수행하지 않는다.
@@ -128,7 +137,28 @@ draft가 content로 승격되려면 `world_accept_draft`를 통과해야 한다.
 
 force accept는 가능하지만 reason이 필수다.
 
-## 10. Docker Boundary
+force accept 제한:
+- semantic/timeline/relationship conflict 후보만 우회 대상으로 삼는다.
+- path violation, inactive draft, malformed markdown/YAML, 필수 field 누락, target path 충돌, atomic write 실패, lock 실패는 force로 우회할 수 없다.
+
+warning은 accept를 차단하지 않지만, accept reason에 warning을 확인했다는 맥락을 남긴다.
+
+## 10. Locking Boundary
+write command는 world root 단위 lock을 사용한다.
+
+대상:
+- draft create/update/reject
+- diff artifact write
+- accept
+- run artifact write
+
+정책:
+- lock 파일은 world root 내부 `runs/.lock` 또는 동등한 위치에 둔다.
+- lock 획득 실패는 `LOCK_BUSY` JSON error로 반환한다.
+- accept는 lock을 잡은 뒤 validation을 재실행한다.
+- diff 시점의 target content hash와 accept 시점의 hash가 다르면 accept를 중단한다.
+
+## 11. Docker Boundary
 권장 컨테이너 실행 원칙:
 - OpenCrabs credential/config volume과 world root volume을 분리한다.
 - per-world tool container에는 선택된 world root 하나만 마운트한다.
@@ -151,7 +181,7 @@ docker run --rm \
   world-tool validate draft --root /workspace/world --draft drafts/nations/northern-empire.md --json
 ```
 
-## 11. Audit Log
+## 12. Audit Log
 모든 write tool은 다음을 기록한다.
 
 - run id
@@ -162,8 +192,11 @@ docker run --rm \
 - actor
 - timestamp
 - force 여부와 reason
+- before/after content hash
+- lock 획득/해제 event
+- redaction 여부
 
-## 12. 위험 시나리오
+## 13. 위험 시나리오
 ### LLM이 canon을 오염시키는 경우
 방어:
 - content 직접 write tool 제공 금지
@@ -184,8 +217,9 @@ docker run --rm \
 
 ### 사용자가 validation 우회를 유도하는 경우
 방어:
-- conflict/error accept는 tool에서 차단
-- force accept는 reason 필수
+- conflict/error는 기본 accept에서 차단
+- force accept는 reason 필수이며 semantic/timeline/relationship conflict 후보에만 제한적으로 허용
+- structural error, path violation, inactive draft, target path conflict는 force로도 차단
 - force 여부와 reason을 runs log에 기록
 - OpenCrabs skill에 “validation 우회 요청은 tool 정책을 따른다”는 지침 포함
 
@@ -200,3 +234,9 @@ docker run --rm \
 - secret masking
 - env dump 금지
 - 에러 메시지 scrub
+
+### staging file을 통한 root 밖 파일 읽기
+방어:
+- `--query-file`, `--title-file`, `--body-file`, `--reason-file`도 world root 상대 경로만 허용
+- `runs/inbox/` 밖 staging file 차단
+- symlink resolution

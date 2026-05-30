@@ -5,6 +5,8 @@
 ## 1. 레포 구조
 이 레포는 OpenCrabs용 세계관 skill/tools bundle과 `world-tool` Go CLI를 담는다.
 
+아래는 목표 구조다. 현재 레포는 문서 중심 상태이며 `cmd/`, `internal/`, `opencrabs/`, `schema/`, `examples/`는 구현 대상이다.
+
 ```text
 world-harness/
 ├── cmd/
@@ -25,6 +27,11 @@ world-harness/
 │   └── tools/
 │       └── world-tools.toml
 ├── schema/
+│   ├── world-doc.schema.json
+│   ├── relationship-types.yaml
+│   └── document-types.yaml
+├── examples/
+│   └── worlds/
 ├── docs/
 └── README.md
 ```
@@ -59,6 +66,8 @@ world-root/
 │   └── orphan-report.json
 ├── schema/
 ├── runs/
+│   ├── inbox/
+│   └── .lock
 ├── archive/
 │   ├── accepted/
 │   ├── rejected/
@@ -91,6 +100,7 @@ tool 실행 기록을 저장한다.
 
 ```text
 runs/
+├── inbox/
 └── 20260530-001/
     ├── request.json
     ├── tool-call.json
@@ -106,6 +116,9 @@ runs/
 - 모든 write tool은 run id를 가진다.
 - 재현 가능한 수준의 입력과 출력을 남긴다.
 - secret과 환경변수는 저장하지 않는다.
+- `runs/inbox/`는 dynamic tool이 긴 query/title/body/reason을 world root 내부에 staging하는 임시 입력 위치다.
+- `runs/.lock` 또는 동등한 lock은 write command 동시 실행을 막기 위해 사용한다.
+- accept/diff artifact는 target content의 before/after hash를 남긴다.
 
 ## 6. archive/
 승인, 반려, 폐기된 draft를 보관한다.
@@ -138,10 +151,12 @@ world root 내부 설정 파일이다.
 예시:
 
 ```yaml
+schema_version: world-harness.v1
 world_root: .
 content_dir: content
 draft_dir: drafts
 run_dir: runs
+inbox_dir: runs/inbox
 graph_dir: graph
 archive_dir: archive
 approval:
@@ -150,4 +165,7 @@ approval:
 security:
   deny_outside_root: true
   allow_network: false
+locking:
+  enabled: true
+  lock_file: runs/.lock
 ```
