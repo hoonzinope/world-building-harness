@@ -72,7 +72,7 @@ command = "world-tool draft accept --world {{world_id}} --draft {{draft_path}} -
 ```
 
 tool은 의미 단위 작업이어야 하며 shell 권한을 넓게 열지 않는다.
-긴 markdown body, 검색 query, title, reason, retcon_reason, note는 command line argument가 아니라 stdin 또는 world root 내부 `runs/inbox/` staging file로 전달한다.
+긴 markdown body, 검색 query, title, reason, retcon_reason, note는 command line argument가 아니라 `world_stage_input` / `world-tool input stage --stdin` canonical staging 흐름으로 먼저 world root 내부 `runs/inbox/`에 staging하고, 후속 tool은 kind별 file/hash binding만 소비한다.
 
 긴 입력 staging은 `world_stage_input`이 호출하는 `world-tool input stage`가 담당한다. approval attestation staging은 별도 `approval attest` 경로다. OpenCrabs/Codex가 임의 path에 직접 파일을 만들었다고 가정하지 않는다.
 

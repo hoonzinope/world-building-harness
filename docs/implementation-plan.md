@@ -18,7 +18,7 @@
 - 모든 파일 접근은 world root boundary 안에서만 허용한다.
 - 모든 write command는 `runs/`에 audit artifact를 남긴다.
 - 모든 command는 `--json` 모드에서 [commands.md](commands.md)의 JSON envelope만 stdout에 반환한다.
-- 긴 markdown body, 검색 query, title, reason, 사용자 입력은 argv가 아니라 stdin 또는 world root 내부 `runs/inbox/` staging file로 받는다.
+- 긴 markdown body, 검색 query, title, reason, 사용자 입력은 argv가 아니라 `world_stage_input` / `world-tool input stage --stdin` canonical staging 흐름으로 먼저 world root 내부 `runs/inbox/`에 staging하고, 후속 tool은 kind별 file/hash binding만 소비한다.
 - `content/`는 `draft accept` 외의 command에서 수정하지 않는다.
 - skill은 지침이고, 안전 경계는 `world-tool`에서 강제한다.
 - write command는 world root lock을 사용하고, accept는 lock 안에서 validation을 재실행한다.
@@ -115,7 +115,7 @@ LLM 생성물을 canon에 바로 쓰지 않고 draft로 저장하는 경로를 �
 
 ### 완료 기준
 - draft 생성/수정 시 `content/`는 변경되지 않는다.
-- markdown body는 `--body-file` 또는 stdin으로 받을 수 있다.
+- markdown body는 `world_stage_input`이 만든 `runs/inbox/` staging file과 `--body-file`/`--body-hash` path+hash binding으로 `draft create/update`가 소비한다.
 - draft 생성 결과는 JSON으로 draft path, id, run id를 반환한다.
 - reject는 draft를 `archive/rejected/`로 이동하고 reason을 audit에 남긴다.
 
@@ -262,7 +262,7 @@ OpenCrabs가 `world-tool`을 범용 shell이 아니라 의미 단위 tool로 호
 
 ### 완료 기준
 - 각 tool은 stdout JSON만 반환한다.
-- 긴 query/title/body/reason/retcon_reason은 `runs/inbox/` staging file 또는 stdin 방식으로 전달된다.
+- 긴 query/title/body/reason/retcon_reason은 `world_stage_input` / `world-tool input stage --stdin` canonical staging 흐름으로 `runs/inbox/`에 먼저 staging되고, 후속 tool은 file/hash binding만 소비한다.
 - `world_stage_input`이 staging file을 만들고 후속 tool은 path/hash만 받는다.
 - trusted wrapper/adapter가 authenticated session metadata를 받아 `auth_context_file`을 생성하고, 해당 파일의 hash를 계산해 `auth_context_hash`와 함께 tool 변수로 채운다. production auth context input은 configured wrapper-owned auth-context boundary의 normalized regular file 또는 trusted request-file/FD alternative를 먼저 통과해야 하며, traversal/symlink/selected world root/runtime-owned run dir/staged inbox는 hash/parse/signature/MAC/trust-material 검증 전에 거부되어야 한다. 그 다음 signature/MAC 또는 configured wrapper trust-material 검증과 expected issuer/audience/scope/expiry policy를 통과해야 하고, `auth_context_hash`는 integrity binding이다.
 - `auth_context_file`의 trusted contents는 expiry, scope, session metadata, approval channel, authenticated actor, downstream_action provenance 등이다. wrapper는 세션 종료 또는 attestation 사용 후 이를 정리/무효화한다. local fixture mode는 `WORLD_TOOL_TEST_AUTH_CONTEXT=1` explicit opt-in 테스트 전용 경로이며, local fixture는 production auth context provenance로 승격될 수 없다.

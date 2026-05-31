@@ -46,7 +46,7 @@ OpenCrabs 없이도 로컬 CLI로 파일 관리와 validation을 수행할 수 �
 ### 구현 주의
 - path boundary와 symlink resolution을 가장 먼저 구현한다.
 - Markdown parser와 YAML frontmatter parser는 round-trip 안정성을 기준으로 선택한다.
-- 긴 draft body, 검색 query, title, reason, retcon_reason은 command-line argument가 아니라 stdin 또는 world root 내부 `runs/inbox/` staging file로 받는다.
+- 긴 draft body, 검색 query, title, reason, retcon_reason은 command-line argument가 아니라 `world_stage_input` / `world-tool input stage --stdin` canonical staging 흐름으로 먼저 world root 내부 `runs/inbox/`에 staging하고, 후속 tool은 kind별 file/hash binding만 소비한다.
 - `world_stage_input`과 `world_create_approval_attestation`이 돌려준 file path와 hash만 후속 tool에 넘기고, `authenticated_actor`는 OpenCrabs 인증 세션에서만 채운다. `auth_context_hash`는 integrity binding이며 production trusted auth context input은 먼저 configured wrapper-owned auth-context boundary의 normalized regular file 또는 trusted request-file/FD mechanism을 만족해야 하고, traversal/symlink/selected world root/runtime-owned run dir/staged inbox는 hash/parse/signature/MAC/trust-material 검증 전에 거부되며, 그 뒤에 signature/MAC 또는 configured wrapper trust-material 검증과 expected issuer/audience/scope/expiry policy를 만족해야 한다.
 - 모든 command는 `commands.md`의 JSON envelope와 exit code 정책을 일관되게 지킨다.
 - write command는 world root lock을 사용한다.
@@ -133,7 +133,7 @@ OpenCrabs가 `world-tool`을 의미 단위 tool로 호출하게 한다.
 - OpenCrabs에서 dynamic tools가 로드됨
 - 각 tool은 stdout JSON을 반환함
 - 범용 shell tool 없이 세계관 workflow를 수행할 수 있음
-- 긴 markdown body를 file/stdin 기반으로 전달하는 tool이 동작함
+- 긴 markdown body는 `world_stage_input`으로 staging한 뒤 file/hash binding으로 전달하는 tool이 동작함
 - trusted wrapper/adapter가 authenticated session metadata를 받아 `auth_context_file`을 생성하고 hash를 계산해 `auth_context_hash`와 함께 tool 변수로 채움. production trusted auth context input은 configured wrapper-owned auth-context boundary의 normalized regular file 또는 trusted request-file/FD mechanism에서만 받아야 하고, traversal/symlink/selected world root/runtime-owned run dir/staged inbox는 hash/parse/signature/MAC/trust-material 검증 전에 거부해야 하며, `auth_context_hash`는 integrity binding만 담당함
 - `auth_context_file`의 trusted contents는 expiry, scope, session metadata, approval channel, authenticated actor, downstream_action provenance 등이다. wrapper는 세션 종료 또는 attestation 사용 후 이를 정리/무효화한다. local fixture mode는 `WORLD_TOOL_TEST_AUTH_CONTEXT=1` explicit opt-in 테스트 전용 경로임
 - `approver_id`는 CLI/template input으로 별도 전달되는 non-authoritative audit/display label로 attestation과 audit에 기록됨.
