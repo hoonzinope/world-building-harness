@@ -32,6 +32,7 @@ OpenCrabs 없이도 로컬 CLI로 파일 관리와 validation을 수행할 수 �
 - `world-tool doc read/search --scope active`
 - `world-tool draft create/update/read/list`
 - `world-tool draft validate`
+- `world-tool content validate`
 - `world-tool draft diff`
 - `world-tool approval attest`
 - `world-tool draft accept`

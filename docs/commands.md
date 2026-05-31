@@ -247,8 +247,10 @@ OpenCrabs는 `ok`, `command_status`, `data.validation_status`, `data.block_reaso
 | --- | --- |
 | validation `pass` | `world_diff_draft`, `world_update_draft`, `world_reject_draft` |
 | validation `warning` | `world_diff_draft`, `world_update_draft`, `world_reject_draft` |
+| `draft diff` completed | `world_stage_input`, `world_create_approval_attestation` |
 | validation `conflict` | `world_update_draft`, `world_reject_draft`, `world_diff_draft`, `world_validate_draft` |
 | validation `error` | `world_update_draft`, `world_reject_draft`, `world_validate_draft` |
+| `approval attest` completed | `world_accept_draft` when `data.downstream_action` is `world_accept_draft`; `world_force_accept_draft` when `data.downstream_action` is `world_force_accept_draft` |
 | `MISSING_TARGET` on `draft create --change-type update|deprecate` with no draft created | `[]` |
 | `MISSING_TARGET` on `draft diff/accept` with active draft already present | `world_update_draft`, `world_reject_draft`, `world_diff_draft`, `world_validate_draft` |
 | `DIFF_BINDING_REQUIRED` or `DIFF_BINDING_MISMATCH` | `world_diff_draft`, `world_validate_draft`, `world_update_draft` |
@@ -387,7 +389,7 @@ world-tool input stage --world ashen-continent --kind retcon_reason --stdin --js
 - staging path는 항상 `runs/inbox/` 아래에 tool이 생성한다.
 - symlink는 허용하지 않는다.
 - 기본 크기 상한은 입력 하나당 1 MiB다.
-- 후속 command가 staging file을 읽으면 해당 run artifact로 복사하고 inbox 원본은 삭제하거나 consumed marker를 남긴다.
+- 후속 command가 staging file을 소비하면 raw staged-input artifact는 internal/private run artifact로만 복사되고 `run get`/`world_get_run_artifact`로는 노출하지 않는다. 복사가 필요하면 redacted summary와 hash만 넘기며, future separate privileged command가 자신의 auth/redaction contract를 정의할 때만 예외를 둘 수 있다. inbox 원본은 삭제하거나 consumed marker를 남긴다.
 - staged input을 후속 command가 소비할 때는 반드시 해당 파일 경로와 대응하는 hash를 함께 넘겨야 한다. `world-tool`은 파일을 다시 해시해서 `input_hash`와 비교하고, 불일치하면 `command_status: "failed"`와 `error.code: "INPUT_HASH_MISMATCH"`를 반환한다.
 - `input.stage`의 JSON 출력은 항상 `input_path`와 `input_hash`를 유지한다. OpenCrabs dynamic tools는 이 값을 `{{kind}}_file`과 `{{kind}}_hash`로 재매핑해서 후속 tool call에 넘긴다. 예를 들어 `kind: query`는 `query_file`/`query_hash`, `kind: title`은 `title_file`/`title_hash`가 된다.
 
@@ -543,6 +545,21 @@ world-tool approval attest \
   --authenticated-actor openid:codex-oauth:user-123 \
   --reason-hash sha256:... \
   --json
+
+world-tool approval attest \
+  --world ashen-continent \
+  --diff-run-id 20260530-010 \
+  --draft-hash sha256:... \
+  --target-base-hash sha256:... \
+  --patch-hash sha256:... \
+  --approver-id alice \
+  --approval-channel OpenCrabs-chat \
+  --downstream-action world_force_accept_draft \
+  --auth-context-file /var/lib/opencrabs/auth-contexts/20260530-010.json \
+  --auth-context-hash sha256:... \
+  --authenticated-actor openid:codex-oauth:user-123 \
+  --reason-hash sha256:... \
+  --json
 ```
 
 동작:
@@ -558,6 +575,7 @@ world-tool approval attest \
 - auth context 파일에는 최소 `world_id`, `allowed_actions` 또는 equivalent scope, `issuer`, `audience`, `session_id`, `authenticated_actor`, `approval_channel`, `issued_at`, `expires_at`, `downstream_action`이 들어 있어야 하며, `downstream_action`은 normalized verified literal field로 항상 present해야 한다. `world-tool`은 파일 내용과 `--world`, `--approval-channel`, `--authenticated-actor`, `--downstream-action`이 일치하는지 검증한다. `allowed_actions`는 최소한 `world_create_approval_attestation`과 downstream action(`world_accept_draft` 또는 `world_force_accept_draft`)을 포함해야 한다. `scope_verification`은 이 allowlist를 요약해 담고, auth context input의 `downstream_action`이 없거나 `--downstream-action`과 mismatch면 `AUTH_CONTEXT_SCOPE_DENIED`로 실패해야 한다. staged approval attestation이 accept/force 시점의 command/world/diff/reason/actor/channel binding과 payload를 다시 검증할 때는 `APPROVAL_ATTESTATION_BINDING_MISMATCH`를 사용한다. `world_accept_draft`는 `downstream_action: world_accept_draft`가, `world_force_accept_draft`는 `downstream_action: world_force_accept_draft`가 정확히 바인딩되어야 하며 allowlist가 둘 다를 포함하더라도 이 exact match를 대체할 수 없다. `AUTH_CONTEXT_SCOPE_DENIED`는 auth context의 scope가 `world_create_approval_attestation`과 exact downstream action을 커버하지 못하거나 `--world`/`--approval-channel`/`--authenticated-actor`/`issuer`/`audience` binding이 일치하지 않을 때 사용한다. `auth_context_hash` mismatch는 `AUTH_CONTEXT_HASH_MISMATCH`, `expires_at` 초과는 `AUTH_CONTEXT_EXPIRED`를 사용한다. `--approver-id`는 non-empty audit field로 검증하고 attestation payload에 기록한다.
 - test auth context는 `fixture_mode: true`를 명시한 local fixture와 `WORLD_TOOL_TEST_AUTH_CONTEXT=1` 환경변수가 둘 다 있을 때만 허용한다. 둘 중 하나라도 없으면 `AUTH_CONTEXT_TEST_MODE_REQUIRED` failed다. fixture-backed context는 test-only이며 production attestation provenance로 승격할 수 없다.
 - `approval attest`가 만든 attestation은 `draft accept`가 소비하기 전까지 `runs/inbox/`에만 머문다. `run get/list`는 이 inbox artifact를 노출하지 않는다.
+- `world_accept_draft`용 attestation은 `world_force_accept_draft`를 authorize하지 않는다. `draft accept --force`는 `downstream_action: world_force_accept_draft`로 생성된 별도 attestation file/hash를 사용해야 한다.
 - local CLI 테스트에서는 wrapper가 제공하는 동일한 auth context mock을 명시적으로 주입해야 하며, 기본 interactive shell 문자열을 신뢰하지 않는다.
 
 ## 14. draft accept
@@ -588,8 +606,8 @@ world-tool draft accept \
   --force \
   --approver-id alice \
   --approval-channel OpenCrabs-chat \
-  --approval-attestation-file runs/inbox/20260530-011-approval-attestation.json \
-  --approval-attestation-hash sha256:... \
+  --approval-attestation-file runs/inbox/20260530-012-approval-attestation.json \
+  --approval-attestation-hash sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
   --authenticated-actor openid:codex-oauth:user-123 \
   --reason-file runs/inbox/20260530-011-reason.txt \
   --reason-hash sha256:... \

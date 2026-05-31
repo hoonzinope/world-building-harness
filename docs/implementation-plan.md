@@ -23,7 +23,7 @@
 - skill은 지침이고, 안전 경계는 `world-tool`에서 강제한다.
 - write command는 world root lock을 사용하고, accept는 lock 안에서 validation을 재실행한다.
 - diff와 accept는 `diff_run_id`, `draft_hash`, `target_base_hash`, `patch_hash`로 묶는다.
-- unresolved recovery가 있으면 같은 world root의 `world init`, `input stage`, `approval attest`, `draft create`, `draft update`, `draft validate`(validation artifact writer), `draft diff`, `draft accept`, `draft reject`, `content validate` artifact writer, `content migrate` report writer, 기타 content report writer는 차단되고 `world_recover_run`만 write 예외다. read-only inspection은 허용한다.
+- unresolved recovery가 있으면 같은 world root의 `world init`, `input stage`, `approval attest`, `draft create`, `draft update`, `draft validate`(validation artifact writer), `draft diff`, `draft accept`, `draft reject`, `content validate` artifact writer, `content migrate` report writer, 기타 content report writer는 차단되고 `world-tool run recover`만 write 예외다(`world_recover_run` 동적 매핑). read-only inspection은 허용한다.
 
 ## 3. Milestone 0: Repository Scaffold
 ### 목표

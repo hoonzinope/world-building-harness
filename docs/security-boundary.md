@@ -3,7 +3,7 @@
 # OpenCrabs World Tools Security Boundary
 
 ## 1. 목적
-OpenCrabs/Codex가 세계관 파일을 다루는 구조에서는 명확한 보안 경계가 필요하다. 목표는 world root 밖 파일, secret, host system이 tool 호출로 노출되거나 변경되지 않게 하는 것이다. `TRANSACTION_INCOMPLETE`는 failed/recovery-required partial transaction이며, 이 상태가 unresolved인 동안에는 같은 world root에 대한 후속 write를 허용하지 않는다. 복구는 `world_recover_run` / `world-tool run recover`만 허용하며, 원래 write command를 직접 다시 실행해서 복구를 대신하는 경로는 허용하지 않는다.
+OpenCrabs/Codex가 세계관 파일을 다루는 구조에서는 명확한 보안 경계가 필요하다. 목표는 world root 밖 파일, secret, host system이 tool 호출로 노출되거나 변경되지 않게 하는 것이다. `TRANSACTION_INCOMPLETE`는 failed/recovery-required partial transaction이며, 이 상태가 unresolved인 동안에는 같은 world root에 대한 후속 write를 허용하지 않는다. 복구는 `world-tool run recover`만 허용하며(`world_recover_run` 매핑), 원래 write command를 직접 다시 실행해서 복구를 대신하는 경로는 허용하지 않는다.
 
 ## 2. 기본 원칙
 - 세계관 파일 작업은 `world_*` dynamic tools로 수행한다.
@@ -13,7 +13,7 @@ OpenCrabs/Codex가 세계관 파일을 다루는 구조에서는 명확한 보�
 - draft 생성과 canon 승격은 분리한다.
 - OpenCrabs/Codex 출력은 후보이며 tool validation을 통과해야 한다.
 - 모든 write 작업은 runs log에 기록한다.
-- unresolved recovery가 있으면 같은 world root에 대한 `world init`, `input stage`, `approval attest`, `draft create`, `draft update`, `draft validate`(validation artifact writer), `draft diff`, `draft accept`, `draft reject`, `content validate` artifact writer, `content migrate` report writer, 기타 content report writer를 포함한 모든 write command가 차단되며, `world_recover_run`만 write 예외다. read-only inspection은 허용한다.
+- unresolved recovery가 있으면 같은 world root에 대한 `world init`, `input stage`, `approval attest`, `draft create`, `draft update`, `draft validate`(validation artifact writer), `draft diff`, `draft accept`, `draft reject`, `content validate` artifact writer, `content migrate` report writer, 기타 content report writer를 포함한 모든 write command가 차단되며, `world-tool run recover`만 write 예외다(`world_recover_run` 매핑). read-only inspection은 허용한다.
 
 ## 3. 파일 시스템 경계
 ### 허용 경로
@@ -242,7 +242,7 @@ Docker root-only 실행에서는 world_id provenance를 bind mount path에서 �
 - content write 후 archive/result 기록 실패는 failed/recovery-required partial transaction으로 `TRANSACTION_INCOMPLETE`를 반환한다.
 - `runs/<run-id>/recovery.json`에 현재 hash, 완료된 step, 재시도 방법을 남긴다.
 - `TRANSACTION_INCOMPLETE`가 unresolved인 동안 같은 world root의 후속 write는 차단해야 한다. read-only inspection은 허용하되, `world init`, `input stage`, `approval attest`, `draft diff`, `draft create`, `draft update`, `draft validate`(validation artifact writer), `draft accept`, `draft reject`, `content validate` artifact writer, `content migrate` report writer, 기타 content report writer를 포함한 모든 world-root/run-writing command를 재개하지 않는다.
-- resolve path는 `world_recover_run` / `world-tool run recover`다. `runs/<run-id>/recovery.json`을 읽고 현재 content/archive 상태를 확인한 뒤, 이미 최종 상태가 반영되어 있으면 recovery artifact를 resolved로 마킹하고, 그렇지 않으면 남은 recovery 단계를 수행한다. 원래 write command를 직접 다시 실행하는 것은 복구 경로가 아니다.
+- resolve path는 `world-tool run recover`다(`world_recover_run` 매핑). `runs/<run-id>/recovery.json`을 읽고 현재 content/archive 상태를 확인한 뒤, 이미 최종 상태가 반영되어 있으면 recovery artifact를 resolved로 마킹하고, 그렇지 않으면 남은 recovery 단계를 수행한다. 원래 write command를 직접 다시 실행하는 것은 복구 경로가 아니다.
 
 ## 14. 위험 시나리오
 ### LLM이 canon을 오염시키는 경우

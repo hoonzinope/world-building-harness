@@ -99,6 +99,7 @@ validate_json=$(world-tool draft validate --world "$WORLD_ID" --draft "$draft_pa
 jq -e '.ok == true and .command_status == "completed" and (.data.validation_status == "pass" or .data.validation_status == "warning")' <<<"$validate_json" >/dev/null
 
 diff_json=$(world-tool draft diff --world "$WORLD_ID" --draft "$draft_path" --json)
+jq -e '.ok == true and .command_status == "completed" and .data.target_exists == false and .data.target_base_hash == null' <<<"$diff_json" >/dev/null
 diff_run_id=$(jq -r '.data.diff_run_id' <<<"$diff_json")
 draft_hash=$(jq -r '.data.draft_hash' <<<"$diff_json")
 target_base_hash=$(jq -r '.data.target_base_hash // "none"' <<<"$diff_json")
