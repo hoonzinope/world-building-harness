@@ -130,14 +130,14 @@ draft validation에서는 related에 적힌 id가 content 또는 active draft에
 accept validation에서는 related id가 content에 있어야 한다. active draft에만 있는 id를 canon 문서가 참조하려고 하면 conflict다. 단, 향후 batch accept 기능에서는 같은 batch 안에서 함께 accept되는 draft target만 예외로 둘 수 있다.
 
 ### VR-302: canonical relationship graph
-`relationships[]`는 canonical graph다. `affiliation`, `capital`, `headquarters`, `located_in`, `participants`, `locations`는 convenience field이며, validator는 relationship metadata의 domain/range를 authority로 사용해 이를 아래 관계로 normalize한다. range-side convenience field는 inverse label을 거친 뒤 canonical graph와 비교한다.
+`relationships[]`는 canonical graph다. `relationships[].type`으로 authored 할 수 있는 값은 [schema.md](schema.md)의 allowlist `type` 열뿐이다. `affiliation`, `capital`, `headquarters`, `located_in`, `participants`, `locations`는 convenience field이며, validator는 relationship metadata의 domain/range를 authority로 사용해 이를 아래 authored type으로 normalize한다. range-side convenience field는 내부 inverse label을 거친 normalized fact와 비교하되, inverse label 자체는 authored relationship type이 아니다.
 
-- `affiliation` -> `member_of`
-- `capital` -> `has_capital`
-- `headquarters` -> `has_headquarters`
-- `located_in` -> `located_in`
-- `participants` -> `has_participant`
-- `locations` -> `occurred_at`
+- `character.affiliation: org_id` -> `(character_id, member_of, org_id)`
+- `nation.capital: place_id` -> `(place_id, capital_of, nation_id)`
+- `organization.headquarters: place_id` -> `(place_id, headquarters_of, organization_id)`
+- `place.located_in: parent_id` 또는 `organization.located_in: place_id` -> `(source_id, located_in, target_id)`
+- `event.participants: [participant_id]` -> `(participant_id, participates_in, event_id)`
+- `event.locations: [place_id]` -> `(event_id, occurred_at, place_id)`
 - `affiliation`은 strict membership shorthand다. 느슨한 관계는 `relationships[]`의 `affiliated_with`를 직접 사용한다.
 
 convenience field와 explicit `relationships[]`는 정규화 후 같은 fact를 표현해야 한다. 편의 필드가 배열이라면 각 값은 별도 edge로 normalize된다. 잘못된 shape, 비문자열 id, 중복이지만 의미가 다른 edge는 error다.
@@ -155,7 +155,7 @@ MVP 기본 모드에서 알 수 없는 type은 draft validation에서는 conflic
 ### VR-305: relationship domain/range 검사
 allowlist에 정의된 domain type과 range type이 맞지 않으면 draft validation에서는 conflict, accept validation에서는 blocking conflict다.
 
-예: `capital_of`의 domain은 place여야 하고 range는 nation이어야 한다. `nation.capital`, `event.participants`, `organization.headquarters`는 각각 `has_capital`, `has_participant`, `has_headquarters`로 먼저 정규화된 뒤 domain/range와 비교된다.
+예: `capital_of`의 domain은 place이고 range는 nation이다. 따라서 `nation.capital: place_id`는 `(place_id, capital_of, nation_id)`로 정규화한 뒤 domain/range와 비교한다. `event.participants: [character_id]`는 `(character_id, participates_in, event_id)`, `organization.headquarters: place_id`는 `(place_id, headquarters_of, organization_id)`로 정규화한다.
 
 ### VR-306: inverse/symmetric contradiction 검사
 `parent_of`/`child_of`, `predecessor_of`/`successor_of`는 inverse metadata로 normalize한다. `sibling_of`, `ally_of`, `rival_of`는 symmetric edge다.
@@ -251,7 +251,7 @@ report에는 다음이 포함되어야 한다.
 ### migration milestone boundary
 - `schema_version` 누락 같은 legacy/import 호환 이슈는 migration warning으로 시작할 수 있다.
 - `change_type` 누락, invalid enum, `target_id` 누락/불일치, `retcon_reason` 누락은 migration report에서 blocker로 분리한다.
-- migration command가 있으면 dry-run은 report만 생성하고, apply는 report와 artifact를 남긴 뒤에만 실행한다.
+- migration command는 report-only이며 content를 직접 변경하지 않는다. 실행 결과는 report와 artifact만 남긴다.
 - migration 완료 기준은 warning이 0이 아니라, warning이 action item으로 분류되고 blocked 항목이 없어졌는지로 판단한다.
 
 ## 10. LLM-assisted Validation
@@ -285,7 +285,7 @@ OpenCrabs/Codex는 semantic validation 후보를 생성할 수 있지만, valida
 
 warning은 기본 accept를 차단하지 않는다. 단, accept reason에는 warning을 확인했다는 맥락을 남겨야 한다.
 
-`--force` 사용 시에도 reason이 필요하며 runs log에 기록한다. `--force`가 우회할 수 있는 것은 semantic/timeline/relationship conflict 후보에 한정한다.
+`--force` 사용 시에도 reason과 trusted approval attestation이 필요하며 runs log에 기록한다. `--force`가 우회할 수 있는 것은 semantic/timeline/relationship conflict 후보에 한정한다.
 
 `--force`로도 우회할 수 없는 조건:
 - path boundary violation

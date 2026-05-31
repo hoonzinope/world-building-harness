@@ -122,8 +122,9 @@ runs/
 - 모든 write tool은 run id를 가진다.
 - 재현 가능한 수준의 입력과 출력을 남긴다.
 - secret과 환경변수는 저장하지 않는다.
-- `runs/inbox/`는 dynamic tool이 긴 query/title/body/reason/retcon_reason을 world root 내부에 staging하는 임시 입력 위치다.
-- `runs/inbox/` 파일은 `world-tool input stage`만 생성한다.
+- `runs/inbox/`는 dynamic tool이 긴 query/title/body/reason/retcon_reason과 approval attestation을 world root 내부에 staging하는 임시 입력 위치다.
+- `runs/inbox/` 파일은 `world-tool input stage`와 `world-tool approval attest`만 생성한다.
+- `run get/list`는 `runs/inbox/`를 노출하지 않으며, unresolved `recovery.json`의 repair는 `world-tool run recover`만 수행한다.
 - `runs/.lock` 또는 동등한 lock은 write command 동시 실행을 막기 위해 사용한다.
 - accept/diff artifact는 target content의 before/after hash를 남긴다.
 - transaction이 중간 실패하면 `recovery.json`을 남긴다.
@@ -157,6 +158,7 @@ opencrabs/
 world root 내부 설정 파일이다.
 
 `--root`로만 world root를 여는 실행에서는 이 파일이 `world_id` provenance를 복원하는 기준이 된다. mount path 자체를 world_id로 쓰지 않는다.
+`--root` 실행 시에는 command site에서 `--world-id`를 명시하거나, 첫 tool 호출 전에 `harness.yaml`을 읽어 provenance를 확인해야 한다.
 
 예시:
 

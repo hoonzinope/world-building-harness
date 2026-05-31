@@ -15,7 +15,7 @@ OpenCrabs는 Codex OAuth provider를 기본 provider로 사용해 판단과 생�
 - 세계관 작업은 OpenCrabs dynamic tools가 호출하는 `world-tool` Go 바이너리로 수행한다.
 - 긴 query/title/body/reason/retcon_reason은 `world_stage_input`으로 staging한 뒤 후속 tool에 file path와 hash를 넘긴다.
 - 사용자가 승인한 diff와 accept 실행은 diff_run_id와 hash binding으로 묶는다.
-- 승인 provenance는 `approver_id`, `approval_channel`, `authenticated_actor`를 포함해야 하며, `authenticated_actor`는 OpenCrabs 인증 세션 또는 provider identity에서만 가져온다.
+- 승인 provenance는 `approver_id`, `approval_channel`, `authenticated_actor`, approval attestation file/hash를 포함해야 하며, `authenticated_actor`와 attestation은 OpenCrabs 인증 세션 또는 provider identity에서만 가져온다.
 - tool 출력은 JSON으로 안정화해 OpenCrabs/Codex가 다음 행동을 판단할 수 있게 한다.
 - 여러 world root를 OpenCrabs 설정이나 registry로 관리한다.
 
@@ -34,7 +34,7 @@ OpenCrabs는 Codex OAuth provider를 기본 provider로 사용해 판단과 생�
 OpenCrabs는 `world_validate_draft` tool을 호출해 draft가 schema와 canon 규칙을 만족하는지 검사한다. validation 결과는 구조화 JSON과 report로 남는다.
 
 ### Accept
-사용자가 승인하면 OpenCrabs는 먼저 `world_diff_draft` 결과의 diff_run_id와 hash를 확인하고, reason과 approval provenance를 staging한 뒤 `world_accept_draft` tool을 호출한다. tool은 diff binding과 validation을 재검증하고, conflict나 policy stop이 없을 때만 `content/`로 승격한 뒤 accepted draft를 archive한다. operator-approved force path가 필요한 경우에도 approval provenance는 유지되어야 한다.
+사용자가 승인하면 OpenCrabs는 먼저 `world_diff_draft` 결과의 diff_run_id와 hash를 확인하고, reason과 approval attestation/provenance를 staging한 뒤 `world_accept_draft` tool을 호출한다. tool은 diff binding과 validation을 재검증하고, conflict나 policy stop이 없을 때만 `content/`로 승격한 뒤 accepted draft를 archive한다. operator-approved force path가 필요한 경우에도 approval attestation/provenance는 유지되어야 한다.
 
 ## 5. MVP 기능
 1. OpenCrabs skill: 세계관 작업 원칙과 workflow 지침 제공
@@ -49,7 +49,7 @@ OpenCrabs는 `world_validate_draft` tool을 호출해 draft가 schema와 canon �
 - `content/`는 `world_accept_draft` 이전에 변경되지 않는다.
 - 모든 write 작업은 `runs/`에 입력, 결과, validation, diff, hash binding을 남긴다.
 - accepted draft는 `archive/accepted/`로 이동하고 active validation 대상에서 제외된다.
-- validation/policy stop은 blocked로 보고하고, failed와 구분한다.
+- validation/policy/precondition/domain stop은 blocked로 보고하고, failed와 구분한다. 여기에는 `TRANSACTION_INCOMPLETE` 같은 recovery-required 상태도 포함한다.
 - OpenCrabs skill만으로 판단 흐름을 안내하되, 실제 파일 변경은 `world-tool`이 강제한다.
 
 ## 7. 핵심 원칙

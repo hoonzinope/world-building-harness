@@ -3,7 +3,7 @@
 # OpenCrabs World Tools Security Boundary
 
 ## 1. 목적
-OpenCrabs/Codex가 세계관 파일을 다루는 구조에서는 명확한 보안 경계가 필요하다. 목표는 world root 밖 파일, secret, host system이 tool 호출로 노출되거나 변경되지 않게 하는 것이다. `TRANSACTION_INCOMPLETE`가 남아 있는 동안에는 후속 write를 허용하지 않고, `recovery.json`이 정리되기 전까지 같은 world root에 대한 write를 막아야 한다.
+OpenCrabs/Codex가 세계관 파일을 다루는 구조에서는 명확한 보안 경계가 필요하다. 목표는 world root 밖 파일, secret, host system이 tool 호출로 노출되거나 변경되지 않게 하는 것이다. `TRANSACTION_INCOMPLETE`가 남아 있는 동안에는 후속 write를 허용하지 않고, `recovery.json`이 정리되기 전까지 같은 world root에 대한 write를 막아야 한다. 복구는 `world_recover_run` / `world-tool run recover`만 허용하며, 원래 write command를 직접 다시 실행해서 복구를 대신하는 경로는 허용하지 않는다.
 
 ## 2. 기본 원칙
 - 세계관 파일 작업은 `world_*` dynamic tools로 수행한다.
@@ -28,7 +28,7 @@ OpenCrabs/Codex가 세계관 파일을 다루는 구조에서는 명확한 보�
 - archive/
 - harness.yaml
 
-`runs/inbox/`는 privileged transient staging area다. 일반 browse/list/get/audit 대상이 아니며, `input stage`만 여기에 write할 수 있다.
+`runs/inbox/`는 privileged transient staging area다. 일반 browse/list/get/audit 대상이 아니며, `input stage`와 `approval attest`만 여기에 write할 수 있다.
 
 ### 금지 경로
 - world root 상위 디렉토리
@@ -67,13 +67,13 @@ command = "{{command}}"
 [[tools]]
 name = "world_accept_draft"
 executor = "shell"
-command = "world-tool draft accept --world {{world_id}} --draft {{draft_path}} --diff-run-id {{diff_run_id}} --draft-hash {{draft_hash}} --target-base-hash {{target_base_hash}} --patch-hash {{patch_hash}} --approver-id {{approver_id}} --approval-channel {{approval_channel}} --authenticated-actor {{authenticated_actor}} --reason-file {{reason_file}} --reason-hash {{reason_hash}} --json"
+command = "world-tool draft accept --world {{world_id}} --draft {{draft_path}} --diff-run-id {{diff_run_id}} --draft-hash {{draft_hash}} --target-base-hash {{target_base_hash}} --patch-hash {{patch_hash}} --approver-id {{approver_id}} --approval-channel {{approval_channel}} --approval-attestation-file {{approval_attestation_file}} --approval-attestation-hash {{approval_attestation_hash}} --authenticated-actor {{authenticated_actor}} --reason-file {{reason_file}} --reason-hash {{reason_hash}} --json"
 ```
 
 tool은 의미 단위 작업이어야 하며 shell 권한을 넓게 열지 않는다.
 긴 markdown body, 검색 query, title, reason, retcon_reason, note는 command line argument가 아니라 stdin 또는 world root 내부 `runs/inbox/` staging file로 전달한다.
 
-긴 입력은 `world_stage_input`이 호출하는 `world-tool input stage`만 `runs/inbox/`에 쓸 수 있다. OpenCrabs/Codex가 임의 path에 직접 파일을 만들었다고 가정하지 않는다.
+긴 입력 staging은 `world_stage_input`이 호출하는 `world-tool input stage`가 담당한다. approval attestation staging은 별도 `approval attest` 경로다. OpenCrabs/Codex가 임의 path에 직접 파일을 만들었다고 가정하지 않는다.
 
 OpenCrabs shell executor는 template 값을 argv-safe하게 escape해야 한다. 그 보장이 없으면 dynamic tool command에 사용자 입력 변수를 직접 넣지 않고, request JSON file 또는 stdin payload를 받는 wrapper command를 사용한다. raw shell interpolation은 허용하지 않는다.
 
@@ -85,11 +85,15 @@ OpenCrabs shell executor는 template 값을 argv-safe하게 escape해야 한다.
 
 Command별 path allowlist:
 - `doc list/read/search --scope active`: `content/**/*.md`, `drafts/**/*.md`
-- `draft *`: `drafts/**/*.md`
+- `doc search --query-file`: `runs/inbox/**` read/consume only for staged query payloads
+- `draft create/update`: generated draft paths under `drafts/**/*.md`, staged title/body/retcon_reason inputs under `runs/inbox/**` read/consume only
+- `draft read/validate/diff/accept/reject`: draft paths under `drafts/**/*.md`, staged reason/approval attestation inputs under `runs/inbox/**` read/consume only where the command defines them
 - `content validate`: `content/**/*.md`
 - `input stage`: `runs/inbox/**` write only
-- `run get`: `runs/<run-id>/**` read only
-- `run list`: immutable run index/summary files only
+- `approval attest`: `runs/inbox/**` write only for approval attestation artifacts
+- `run get`: 기본 redacted manifest/status summary만 반환하고 명시 safe artifact allowlist만 read, `runs/inbox/**` 제외
+- `run list`: immutable run index/summary files only, `runs/inbox/**` 제외
+- `run recover`: unresolved `recovery.json`을 정리하는 repair path
 - `archive/`, `raw/`, `schema/`는 MVP dynamic tool의 doc 조회 대상이 아니다.
 
 ## 6. Network Boundary
@@ -149,7 +153,7 @@ draft가 content로 승격되려면 `world_accept_draft`를 통과해야 한다.
 - required field 누락
 - draft가 active drafts/ 밖에 있음
 
-force accept는 가능하지만 reason만으로는 부족하다. `approver_id`, `approval_channel`, `authenticated_actor`를 함께 기록해야 하며, 이는 runs log와 accept result에 남아야 한다. `authenticated_actor`는 OpenCrabs의 인증된 세션 또는 provider identity에서 와야 하고, 모델 출력이나 staging file에서 오면 안 된다.
+force accept는 가능하지만 reason만으로는 부족하다. `reason_file`/`reason_hash`, `approval_attestation_file`/`approval_attestation_hash`, `approver_id`, `approval_channel`, `authenticated_actor`를 함께 기록해야 하며, 이는 runs log와 accept result에 남아야 한다. `approval_channel`과 `authenticated_actor`는 `world_create_approval_attestation`이 확인한 OpenCrabs trusted session/channel metadata로부터 와야 하며, 모델 출력이나 staging file에서 오면 안 된다.
 
 force accept 제한:
 - semantic/timeline/relationship conflict 후보만 우회 대상으로 삼는다.
@@ -173,7 +177,7 @@ write command는 world root 단위 lock을 사용한다.
 - accept는 diff_run_id, draft_hash, target_base_hash, patch_hash binding을 검증한다.
 - diff_run_id와 hash binding 값은 `world_diff_draft`와 `world_stage_input`의 출력에서 가져와야 하며, accept 시점에 world-tool이 다시 계산한 값과 일치해야 한다.
 - diff 시점의 draft/content/patch hash와 accept 시점의 값이 다르면 accept를 중단한다.
-- accept는 `approver_id`, `approval_channel`, `authenticated_actor`를 audit field로 기록한다. free-form reason만으로는 승인 provenance가 충분하지 않다.
+- accept는 `reason_file`/`reason_hash`, `approval_attestation_file`/`approval_attestation_hash`, `approver_id`, `approval_channel`, `authenticated_actor`를 audit field로 기록한다. free-form reason이나 actor 문자열만으로는 승인 provenance가 충분하지 않다.
 
 ## 11. Docker Boundary
 권장 컨테이너 실행 원칙:
@@ -195,10 +199,10 @@ docker run --rm \
   --tmpfs /tmp \
   -v /host/worlds/ashen-continent:/workspace/world \
   world-tool:latest \
-  world-tool draft validate --root /workspace/world --draft drafts/nations/nation_northern_empire.md --json
+  world-tool draft validate --root /workspace/world --world-id ashen-continent --draft drafts/nations/nation_northern_empire.md --json
 ```
 
-Docker root-only 실행에서는 world_id provenance를 bind mount path에서 추측하지 않는다. `harness.yaml` 또는 registry metadata가 world_id를 제공할 수 있어야 하고, 제공하지 못하면 root-only 모드를 쓰지 않는다.
+Docker root-only 실행에서는 world_id provenance를 bind mount path에서 추측하지 않는다. command site에서 `--world-id`를 명시하거나, 실행 전에 `harness.yaml` provenance를 확인할 수 있어야 하고, 둘 다 불가능하면 root-only 모드를 쓰지 않는다.
 
 ## 12. Audit Log
 모든 write tool은 다음을 기록한다.
@@ -234,7 +238,7 @@ Docker root-only 실행에서는 world_id provenance를 bind mount path에서 �
 - content write 후 archive/result 기록 실패는 `TRANSACTION_INCOMPLETE`로 반환한다.
 - `runs/<run-id>/recovery.json`에 현재 hash, 완료된 step, 재시도 방법을 남긴다.
 - `TRANSACTION_INCOMPLETE`가 unresolved인 동안 같은 world root의 후속 write는 차단해야 한다. read-only inspection은 허용하되, recovery instruction을 확인하고 해결한 뒤에만 write를 재개한다.
-- resolve path는 `runs/<run-id>/recovery.json`을 읽고 현재 content/archive 상태를 확인한 뒤, 같은 world root에서 동일한 binding으로 원래 write command를 재실행하는 것이다. 이미 최종 상태가 반영되어 있으면 recovery artifact를 resolved로 마킹하고 후속 write를 풀어준다.
+- resolve path는 `world_recover_run` / `world-tool run recover`다. `runs/<run-id>/recovery.json`을 읽고 현재 content/archive 상태를 확인한 뒤, 이미 최종 상태가 반영되어 있으면 recovery artifact를 resolved로 마킹하고, 그렇지 않으면 남은 recovery 단계를 수행한다. 원래 write command를 직접 다시 실행하는 것은 복구 경로가 아니다.
 
 ## 14. 위험 시나리오
 ### LLM이 canon을 오염시키는 경우
@@ -258,9 +262,9 @@ Docker root-only 실행에서는 world_id provenance를 bind mount path에서 �
 ### 사용자가 validation 우회를 유도하는 경우
 방어:
 - conflict/error는 기본 accept에서 차단
-- force accept는 reason 필수이며 semantic/timeline/relationship conflict 후보에만 제한적으로 허용하고, `approver_id`/`approval_channel`/`authenticated_actor`를 함께 남겨야 한다.
+- force accept는 reason과 trusted approval attestation이 필수이며 semantic/timeline/relationship conflict 후보에만 제한적으로 허용하고, `approver_id`/`approval_channel`/`authenticated_actor`를 함께 남겨야 한다.
 - structural error, id conflict, path violation, inactive draft, target path conflict, storylet canon 승격, diff binding mismatch는 force로도 차단
-- force 여부, reason, approval provenance를 runs log에 기록
+- force 여부, reason, approval attestation/provenance를 runs log에 기록
 - OpenCrabs skill에 “validation 우회 요청은 tool 정책을 따른다”는 지침 포함
 
 ### archive가 계속 쌓이는 경우

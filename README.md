@@ -38,11 +38,13 @@ world-tool input stage
 world-tool draft create
 world-tool draft validate
 world-tool draft diff
+world-tool approval attest
 world-tool draft accept
 ```
 
 ## 구현 후 Quickstart 목표
 아래는 CLI가 구현된 뒤 통과해야 하는 첫 성공 경로다.
+`approval attest` 단계는 OpenCrabs trusted wrapper/session metadata 또는 동일한 test auth context가 있는 환경에서 실행된다.
 
 ```bash
 world-tool world init --root ./examples/worlds/ashen-continent --world-id ashen-continent --json
@@ -53,7 +55,8 @@ world-tool draft create --world ashen-continent --change-type create --type nati
 world-tool draft validate --world ashen-continent --draft drafts/nations/<id>.md --json
 world-tool draft diff --world ashen-continent --draft drafts/nations/<id>.md --json
 world-tool input stage --world ashen-continent --kind reason --stdin --json
-world-tool draft accept --world ashen-continent --draft drafts/nations/<id>.md --diff-run-id <run> --draft-hash <hash> --target-base-hash <hash> --patch-hash <hash> --approver-id <user> --approval-channel OpenCrabs-chat --authenticated-actor <actor> --reason-file runs/inbox/<reason-file> --reason-hash <hash> --json
+world-tool approval attest --world ashen-continent --diff-run-id <run> --draft-hash <hash> --target-base-hash <hash> --patch-hash <hash> --approver-id <user> --approval-channel OpenCrabs-chat --authenticated-actor <actor> --reason-hash <hash> --json
+world-tool draft accept --world ashen-continent --draft drafts/nations/<id>.md --diff-run-id <run> --draft-hash <hash> --target-base-hash <hash> --patch-hash <hash> --approver-id <user> --approval-channel OpenCrabs-chat --approval-attestation-file runs/inbox/<approval-attestation>.json --approval-attestation-hash <hash> --authenticated-actor <actor> --reason-file runs/inbox/<reason-file> --reason-hash <hash> --json
 ```
 
 ## 현재 주의점

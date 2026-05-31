@@ -30,7 +30,7 @@ schema version:
 - relationship item definition: `type`, `target`, optional `note`
 - status/type enum
 
-`document-types.yaml`은 type별 content directory, draft directory, id prefix, storylet 예외를 정의한다. `relationship-types.yaml`은 relationship allowlist, inverse, contradicts, domain/range, symmetric 여부를 정의한다. validator는 `relationships[]`를 canonical graph로 쓰고, convenience field를 normalize할 때 이 metadata를 사용한다.
+`document-types.yaml`은 type별 content directory, draft directory, id prefix, storylet 예외를 정의한다. `relationship-types.yaml`은 relationship allowlist, inverse, contradicts, domain/range, symmetric 여부를 정의한다. `relationships[]`에 작성 가능한 authored relationship type은 allowlist의 `type` 열뿐이고, `inverse`는 validator가 range-side convenience field를 비교할 때 쓰는 내부 정규화 label이다.
 
 ## 2. 공통 Frontmatter
 모든 content와 draft 문서는 아래 공통 필드를 가진다. 단, `change_type` 계열 필드는 draft에만 의미가 있다.
@@ -100,27 +100,27 @@ relationships:
 ### Relationship normalization contract
 - `relationships[]`가 canonical graph다.
 - `affiliation`, `capital`, `headquarters`, `located_in`, `participants`, `locations`는 authoring convenience field다.
-- validator는 relationship metadata의 domain/range를 authority로 사용한다. convenience field가 relationship의 range-side에 붙어 있으면 inverse label을 통해 canonical graph와 비교한다.
-- `affiliation` -> `member_of`
-- `capital` -> `has_capital`
-- `headquarters` -> `has_headquarters`
-- `located_in` -> `located_in`
-- `participants` -> `has_participant`
-- `locations` -> `occurred_at`
+- validator는 relationship metadata의 domain/range를 authority로 사용한다. convenience field는 allowlist type으로 정규화해 비교하며, range-side convenience field는 내부 inverse label을 거친 normalized fact와 비교한다. inverse label 자체는 authored relationship type이 아니다.
+- `character.affiliation: org_id` -> `(character_id, member_of, org_id)`
+- `nation.capital: place_id` -> `(place_id, capital_of, nation_id)`
+- `organization.headquarters: place_id` -> `(place_id, headquarters_of, organization_id)`
+- `place.located_in: parent_id` 또는 `organization.located_in: place_id` -> `(source_id, located_in, target_id)`
+- `event.participants: [participant_id]` -> `(participant_id, participates_in, event_id)`
+- `event.locations: [place_id]` -> `(event_id, occurred_at, place_id)`
 - `affiliation`은 strict membership shorthand다. 더 느슨한 관계는 `relationships[]`의 `affiliated_with`를 직접 쓴다.
 - convenience field와 explicit `relationships[]`는 정규화 후 같은 fact를 표현해야 한다. 같은 fact로 normalize되지 않으면 conflict다.
 - convenience field가 여러 값이면 각 값은 별도 edge로 normalize된다.
 
 ### Relationship Type Allowlist
-MVP validator가 정적으로 이해하는 relationship type은 아래 allowlist다. `inverse`는 graph builder가 합성하는 normalized inverse label이고, `contradicts`는 같은 사실 공간에서 동시에 존재할 수 없는 type을 뜻한다.
+MVP validator가 `relationships[]`의 authored type으로 이해하는 type은 아래 allowlist의 `type` 열뿐이다. `inverse`는 graph builder와 validator가 range-side convenience field 비교를 위해 합성하는 내부 normalized inverse label이고, `contradicts`는 같은 사실 공간에서 동시에 존재할 수 없는 type을 뜻한다.
 
 | type | inverse | contradicts | domain | range | notes |
 | --- | --- | --- | --- | --- | --- |
 | `member_of` | `has_member` | - | character, organization | organization, nation | canonical membership edge |
 | `affiliated_with` | `has_affiliation` | - | character, organization | organization, nation | loose affiliation edge |
 | `located_in` | `contains` | - | place, organization | place, nation | normalized from `located_in` convenience field |
-| `capital_of` | `has_capital` | - | place | nation | canonical capital edge; range-side `capital` convenience field normalizes through `has_capital` |
-| `headquarters_of` | `has_headquarters` | - | place | organization | canonical headquarters edge; range-side `headquarters` convenience field normalizes through `has_headquarters` |
+| `capital_of` | `has_capital` | - | place | nation | canonical capital edge; range-side `capital` convenience field is compared via the internal inverse orientation |
+| `headquarters_of` | `has_headquarters` | - | place | organization | canonical headquarters edge; range-side `headquarters` convenience field is compared via the internal inverse orientation |
 | `rules` | `ruled_by` | - | character, organization | nation, place | governance edge |
 | `parent_of` | `child_of` | `child_of` on the same oriented pair | character | character | parent/child pair is inverse-normalized |
 | `child_of` | `parent_of` | `parent_of` on the same oriented pair | character | character | parent/child pair is inverse-normalized |
@@ -129,7 +129,7 @@ MVP validator가 정적으로 이해하는 relationship type은 아래 allowlist
 | `rival_of` | `rival_of` | `ally_of` | character, nation, organization | character, nation, organization | symmetric hostility edge |
 | `predecessor_of` | `successor_of` | `successor_of` on the same oriented pair | nation, organization, event | nation, organization, event | predecessor/successor pair is inverse-normalized |
 | `successor_of` | `predecessor_of` | `predecessor_of` on the same oriented pair | nation, organization, event | nation, organization, event | predecessor/successor pair is inverse-normalized |
-| `participates_in` | `has_participant` | - | character, organization, nation | event | canonical participation edge; range-side `participants` convenience field normalizes through `has_participant` |
+| `participates_in` | `has_participant` | - | character, organization, nation | event | canonical participation edge; range-side `participants` convenience field is compared via the internal inverse orientation |
 | `occurred_at` | `hosts_event` | - | event | place | normalized from `locations` convenience field |
 | `uses_magic` | `used_by` | - | character, organization, nation | magic | spell/source ownership edge |
 

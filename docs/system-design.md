@@ -56,6 +56,7 @@ flowchart TD
 - world root 밖 path를 차단한다.
 - Markdown/frontmatter를 파싱하고 정규화한다.
 - validation, diff, accept/reject, runs log, recovery handling을 수행한다.
+- recovery handling은 `world_recover_run` / `world-tool run recover`로만 수행하며, 원래 write command를 재실행하는 repair shortcut은 제공하지 않는다.
 - `content/` 변경은 accept command에서만 허용한다.
 
 ## 4. World Root
@@ -71,7 +72,7 @@ flowchart LR
 
 `content/`가 canon source of truth다. OpenCrabs DB, search index, graph는 보조 데이터이며 content에서 재생성 가능해야 한다.
 
-`runs/inbox/`는 privileged transient staging area다. normal browse/search/list 대상이 아니며, `input stage`만 여기에 write한다.
+`runs/inbox/`는 privileged transient staging area다. normal browse/search/list 대상이 아니며, `input stage`와 `approval attest`만 여기에 write한다.
 
 canonical root binding:
 
@@ -99,10 +100,12 @@ native execution에서는 `registry_root == root`가 되어야 한다. Docker에
 | `world_read_draft` | `world-tool draft read` | active draft 읽기 |
 | `world_validate_draft` | `world-tool draft validate` | schema/canon 검증 |
 | `world_diff_draft` | `world-tool draft diff` | accept 예상 변경 확인 |
-| `world_accept_draft` | `world-tool draft accept` | validation 후 content 승격, approval provenance required |
-| `world_force_accept_draft` | `world-tool draft accept --force` | 오퍼레이터가 승인한 예외 경로, policy limits still apply |
+| `world_create_approval_attestation` | `world-tool approval attest` | trusted session metadata와 diff/reason hash binding을 approval attestation으로 staging |
+| `world_accept_draft` | `world-tool draft accept` | validation 후 content 승격, trusted approval attestation required |
+| `world_force_accept_draft` | `world-tool draft accept --force` | 오퍼레이터가 승인한 예외 경로, trusted approval attestation과 policy limits required |
 | `world_reject_draft` | `world-tool draft reject` | draft 반려 |
-| `world_get_run` | `world-tool run get` | run artifact 조회 |
+| `world_recover_run` | `world-tool run recover` | `TRANSACTION_INCOMPLETE` / unresolved recovery 정리 |
+| `world_get_run` | `world-tool run get` | redacted manifest와 명시 safe artifact allowlist 조회 |
 
 ## 6. Draft 생성 흐름
 ```mermaid
@@ -145,7 +148,7 @@ sequenceDiagram
     OpenCrabs-->>User: draft summary + validation + next actions
 ```
 
-위 시퀀스는 schematic이지만 command contract를 깨지 않도록 필수 인자 `--world`, 파일 경로 입력, hash binding, approval provenance를 명시한다.
+위 시퀀스는 schematic이지만 command contract를 깨지 않도록 필수 인자 `--world`, 파일 경로 입력, hash binding, approval attestation/provenance를 명시한다.
 
 ## 7. Accept 흐름
 ```mermaid
@@ -165,8 +168,11 @@ sequenceDiagram
     OpenCrabs->>Tool: world_stage_input(kind=reason)
     Tool->>WT: world-tool input stage --world ashen-continent --kind reason --stdin --json
     WT-->>OpenCrabs: reason_file + reason_hash
-    OpenCrabs->>Tool: world_accept_draft(draft_path, diff_run_id, hashes, reason_file, reason_hash, approver_id, approval_channel, authenticated_actor)
-    Tool->>WT: world-tool draft accept --world ashen-continent --draft drafts/nations/<draft>.md --diff-run-id 20260530-010 --draft-hash sha256:... --target-base-hash sha256:... --patch-hash sha256:... --approver-id park.hana --approval-channel OpenCrabs-chat --authenticated-actor openid:codex-oauth:user-123 --reason-file runs/inbox/<reason-file> --reason-hash sha256:... --json
+    OpenCrabs->>Tool: world_create_approval_attestation(diff_run_id, hashes, reason_hash, approver_id, approval_channel, authenticated_actor)
+    Tool->>WT: world-tool approval attest --world ashen-continent --diff-run-id 20260530-010 --draft-hash sha256:... --target-base-hash sha256:... --patch-hash sha256:... --approver-id park.hana --approval-channel OpenCrabs-chat --authenticated-actor openid:codex-oauth:user-123 --reason-hash sha256:... --json
+    WT-->>OpenCrabs: approval_attestation_file + approval_attestation_hash
+    OpenCrabs->>Tool: world_accept_draft(draft_path, diff_run_id, hashes, reason_file, reason_hash, approval_attestation_file, approval_attestation_hash, approver_id, approval_channel, authenticated_actor)
+    Tool->>WT: world-tool draft accept --world ashen-continent --draft drafts/nations/<draft>.md --diff-run-id 20260530-010 --draft-hash sha256:... --target-base-hash sha256:... --patch-hash sha256:... --approver-id park.hana --approval-channel OpenCrabs-chat --approval-attestation-file runs/inbox/<approval-attestation>.json --approval-attestation-hash sha256:... --authenticated-actor openid:codex-oauth:user-123 --reason-file runs/inbox/<reason-file> --reason-hash sha256:... --json
     WT->>World: verify diff binding and draft validate again
     alt validation pass or warning
         WT->>World: write content/

@@ -84,22 +84,24 @@ receive user request in OpenCrabs
 2. `world_diff_draft`로 변경 내용 표시
 3. 사용자에게 diff summary를 확인받는다
 4. reason을 `world_stage_input`으로 staging
-5. `world_accept_draft`에 `diff_run_id`, `draft_hash`, `target_base_hash`, `patch_hash`, `reason_file`, `reason_hash`, `approver_id`, `approval_channel`, `authenticated_actor`를 함께 넘긴다
-6. tool 내부에서 diff binding 검증과 validation 재실행
-7. policy/validation stop이면 blocked로 중단
-8. content 생성 또는 갱신
-9. accepted draft를 `archive/accepted/`로 이동
-10. runs log와 result JSON 저장
+5. `world_create_approval_attestation`으로 trusted session metadata와 diff/reason hash binding을 staging
+6. `world_accept_draft`에 `diff_run_id`, `draft_hash`, `target_base_hash`, `patch_hash`, `reason_file`, `reason_hash`, `approval_attestation_file`, `approval_attestation_hash`, `approver_id`, `approval_channel`, `authenticated_actor`를 함께 넘긴다
+7. tool 내부에서 diff binding, approval attestation, validation 재실행을 검증
+8. validation/policy/precondition/domain blocked result이면 blocked로 중단
+9. content 생성 또는 갱신
+10. accepted draft를 `archive/accepted/`로 이동
+11. runs log와 result JSON 저장
 
 ### 정책
 - accept는 tool이 강제하는 deterministic workflow다.
 - warning은 accept를 차단하지 않지만 reason에 확인 맥락을 남긴다.
-- blocked는 validation/policy stop을 의미하며, failed와 구분한다.
-- conflict/error는 기본 accept에서 blocked로 반환된다.
-- `force`는 reason이 없으면 blocked이며, semantic/timeline/relationship conflict 후보만 제한적으로 우회한다.
+- blocked는 validation/policy/precondition/domain stop을 의미하며, failed와 구분한다.
+- conflict/error와 `TRANSACTION_INCOMPLETE`, `DRAFT_NOT_ACTIVE`, `DIFF_BINDING_REQUIRED`, `PATH_SCOPE_DENIED`, `LOCK_BUSY` 같은 domain blocked 결과는 기본 accept에서 blocked로 반환된다.
+- `force`는 reason과 trusted approval attestation 중 하나라도 없으면 blocked이며, semantic/timeline/relationship conflict 후보만 제한적으로 우회한다.
 - structural error, id conflict, path/target 충돌, storylet canon 승격, diff binding mismatch는 force로도 우회할 수 없다.
-- `force`는 `approver_id`, `approval_channel`, `authenticated_actor`가 함께 기록될 때만 승인 provenance가 완성된다.
-- `authenticated_actor`는 OpenCrabs 인증 세션에서만 가져오고, `world_stage_input`이 반환한 파일 경로와 hash만 후속 tool에 전달한다.
+- `force`는 `approval_attestation_file`, `approval_attestation_hash`, `approver_id`, `approval_channel`, `authenticated_actor`가 함께 기록될 때만 승인 provenance가 완성된다.
+- `authenticated_actor`는 OpenCrabs 인증 세션에서만 가져오고, `world_stage_input`과 `world_create_approval_attestation`이 반환한 파일 경로와 hash만 후속 tool에 전달한다.
+- attestation은 prompt/model output이 아니라 trusted OpenCrabs session/channel metadata에서 만들어야 하며, 없으면 accept 대신 `AUTH_CONTEXT_MISSING` 실패를 사용자에게 설명한다.
 - accept는 world root lock을 잡고 validation을 재실행한다.
 - accept는 사용자가 확인한 diff binding과 현재 draft/content hash가 일치할 때만 진행된다.
 - accept 이후 OpenCrabs는 content/index/cache를 다시 읽거나 재색인할 수 있다.
@@ -108,10 +110,14 @@ receive user request in OpenCrabs
 목적: 사용자가 승인하지 않은 draft를 반려한다.
 
 ### 단계
-1. 반려 사유 확인
-2. `world_reject_draft` 호출
-3. draft를 `archive/rejected/`로 이동
-4. runs log에 reason 기록
+1. 반려 사유를 `world_stage_input`으로 staging한다.
+2. `world_reject_draft`를 `reason_file`, `reason_hash`와 함께 호출한다.
+3. draft를 `archive/rejected/`로 이동한다.
+4. runs log에 reason을 기록한다.
+
+### 정책
+- reject reason은 staging 후 `reason_file`/`reason_hash`로 binding해야 한다.
+- `world_reject_draft`는 reason이 없는 반려를 허용하지 않는다.
 
 ## 8. Run Log
 예시:

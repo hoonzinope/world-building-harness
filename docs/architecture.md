@@ -62,9 +62,11 @@ dynamic tool은 `opencrab_exec_shell` 같은 범용 명령이 아니라 의미 �
 - `world_read_draft`
 - `world_validate_draft`
 - `world_diff_draft`
+- `world_create_approval_attestation`
 - `world_accept_draft`
 - `world_force_accept_draft`
 - `world_reject_draft`
+- `world_recover_run`
 - `world_get_run`
 
 ### world-tool Layer
@@ -141,9 +143,9 @@ accepted/rejected/deprecated draft를 보관한다. archive는 active validation
 - `world-tool`은 선택된 world root 밖을 읽거나 쓰지 않는다.
 - `content/`는 `world_accept_draft`에서만 변경된다.
 - `draft accept`는 diff binding과 validation을 재실행한다.
-- `force accept`는 reason과 approval provenance가 필수이며, semantic/timeline/relationship conflict 후보에만 제한적으로 허용하고 runs log에 남긴다.
+- `force accept`는 reason과 trusted approval attestation provenance가 필수이며, semantic/timeline/relationship conflict 후보에만 제한적으로 허용하고 runs log에 남긴다.
 - `content migrate`는 report-only maintenance path로 취급하고, content mutation path와 분리한다.
-- `authenticated_actor`와 staged input hash는 OpenCrabs 인증 세션과 staging tool output에서만 가져오고, prompt text나 Docker mount path에서 추측하지 않는다.
+- `authenticated_actor`, approval attestation, staged input hash는 OpenCrabs 인증 세션과 staging tool output에서만 가져오고, prompt text나 Docker mount path에서 추측하지 않는다.
 - Docker 사용 시 job container에는 선택된 world root 하나만 마운트한다.
-- `--root`만 사용하는 Docker 실행은 `harness.yaml` 또는 registry metadata가 world_id provenance를 제공할 때만 허용한다.
+- `--root`만 사용하는 Docker 실행은 command site에서 `--world-id`를 명시하거나 `harness.yaml` provenance를 먼저 검증할 때만 허용한다.
 - OpenCrabs credential/config volume과 world root volume은 분리한다.

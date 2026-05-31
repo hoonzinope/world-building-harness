@@ -183,6 +183,7 @@ OpenCrabs는 `ok`, `command_status`, `data.validation_status`, `data.block_reaso
 - `PATH_NOT_MARKDOWN`
 - `PATH_SCOPE_DENIED`
 - `INPUT_HASH_MISMATCH`
+- `AUTH_CONTEXT_MISSING`
 - `DRAFT_NOT_ACTIVE`
 - `DIFF_BINDING_REQUIRED`
 - `DIFF_BINDING_MISMATCH`
@@ -205,9 +206,13 @@ OpenCrabs는 `ok`, `command_status`, `data.validation_status`, `data.block_reaso
 | `doc list/read/search --scope content` | `content/**/*.md` |
 | `doc list/read/search --scope drafts` | `drafts/**/*.md` |
 | `doc list/read/search --scope active` | `content/**/*.md`, `drafts/**/*.md` |
-| `draft read/update/validate/diff/accept/reject` | `drafts/**/*.md` |
+| `doc search --query-file` | `runs/inbox/**` read/consume only for staged query payloads |
+| `draft create/update` | generated draft paths under `drafts/**/*.md`; staged title/body/retcon_reason inputs under `runs/inbox/**` read/consume only |
+| `draft read/validate/diff/accept/reject` | draft paths under `drafts/**/*.md`; staged reason/approval attestation inputs under `runs/inbox/**` read/consume only where the command defines them |
 | `input stage` | `runs/inbox/**` write only |
-| `run get/list` | `runs/<run-id>/**` read only, plus immutable run index/summary files; `runs/inbox/**` excluded |
+| `approval attest` | `runs/inbox/**` write only for approval attestation artifacts |
+| `run list` | immutable run index/summary files only; `runs/inbox/**` excluded |
+| `run get` | default redacted manifest only; explicit safe artifact allowlist only; sensitive artifacts require privileged access or a separate command; `runs/inbox/**` excluded |
 | `content validate` | `content/**/*.md` |
 
 `doc` command는 `runs/`, `archive/`, `raw/`, `schema/`를 읽지 않는다. archive 조회가 필요하면 향후 별도 `archive` resource를 둔다.
@@ -410,7 +415,35 @@ diff result 필수 payload:
 }
 ```
 
-## 13. draft accept
+## 13. approval attest
+`approval attest`는 OpenCrabs trusted wrapper가 accept 직전에 호출하는 helper command다. 모델이나 prompt에서 받은 actor 문자열을 승인 provenance로 쓰지 않도록, 인증된 OpenCrabs session/channel metadata와 사용자가 확인한 diff binding을 하나의 staged attestation artifact로 묶는다.
+
+```bash
+world-tool approval attest \
+  --world ashen-continent \
+  --diff-run-id 20260530-010 \
+  --draft-hash sha256:... \
+  --target-base-hash sha256:... \
+  --patch-hash sha256:... \
+  --approver-id alice \
+  --approval-channel chat \
+  --authenticated-actor openid:codex-oauth:user-123 \
+  --reason-hash sha256:... \
+  --json
+```
+
+동작:
+- OpenCrabs trusted wrapper/session metadata에서 authenticated actor와 channel provenance를 확인한다.
+- `runs/inbox/<run-id>-approval-attestation.json`을 생성하고 `approval_attestation_file`, `approval_attestation_hash`를 반환한다.
+- attestation payload에는 `authenticated_actor`, `approver_id`, `approval_channel`, `diff_run_id`, `draft_hash`, `target_base_hash`, `patch_hash`, `reason_hash`, `session_id`, `created_at`을 포함한다.
+- trusted auth/session metadata가 없으면 `command_status: "failed"`와 `error.code: "AUTH_CONTEXT_MISSING"`을 반환한다.
+
+정책:
+- `--authenticated-actor`는 wrapper가 채운 값이어야 하며, prompt text, model output, staged input, Docker mount path에서 파생하면 안 된다. `world-tool`은 이 flag가 wrapper/request metadata의 authenticated actor와 일치하는지 확인하고, 해당 metadata가 없으면 flag 값과 무관하게 `AUTH_CONTEXT_MISSING`으로 실패한다.
+- `approval attest`가 만든 attestation은 `draft accept`가 소비하기 전까지 `runs/inbox/`에만 머문다. `run get/list`는 이 inbox artifact를 노출하지 않는다.
+- local CLI 테스트에서는 wrapper가 제공하는 동일한 auth context mock을 명시적으로 주입해야 하며, 기본 interactive shell 문자열을 신뢰하지 않는다.
+
+## 14. draft accept
 ```bash
 world-tool draft accept \
   --world ashen-continent \
@@ -421,6 +454,8 @@ world-tool draft accept \
   --patch-hash sha256:... \
   --approver-id alice \
   --approval-channel chat \
+  --approval-attestation-file runs/inbox/20260530-011-approval-attestation.json \
+  --approval-attestation-hash sha256:... \
   --authenticated-actor openid:codex-oauth:user-123 \
   --reason-file runs/inbox/20260530-011-reason.txt \
   --reason-hash sha256:... \
@@ -436,6 +471,8 @@ world-tool draft accept \
   --force \
   --approver-id alice \
   --approval-channel chat \
+  --approval-attestation-file runs/inbox/20260530-011-approval-attestation.json \
+  --approval-attestation-hash sha256:... \
   --authenticated-actor openid:codex-oauth:user-123 \
   --reason-file runs/inbox/20260530-011-reason.txt \
   --reason-hash sha256:... \
@@ -453,16 +490,16 @@ world-tool draft accept \
 - transaction result 기록
 
 Accept 정책:
-- `draft accept`와 `draft accept --force`는 `--reason-file`, `--reason-hash`, `--approver-id`, `--approval-channel`, `--authenticated-actor`를 모두 요구한다. `reason-file`만으로는 충분하지 않다.
+- `draft accept`와 `draft accept --force`는 `--reason-file`, `--reason-hash`, `--approver-id`, `--approval-channel`, `--approval-attestation-file`, `--approval-attestation-hash`, `--authenticated-actor`를 모두 요구한다. `reason-file`만으로는 충분하지 않다.
 - `--reason-file`과 `--reason-hash`는 짝을 이뤄야 하며, `world-tool`은 acceptance metadata를 기록하기 전에 재해시해서 검증한다.
-- `--authenticated-actor`는 OpenCrabs의 trusted session/channel metadata에서만 공급되어야 하며, 모델/사용자 텍스트나 파일 내용에서 유도한 값은 신뢰하지 않는다. `world-tool`은 이 값이 신뢰된 세션 주체와 일치하는지 검증하고 `approval.authenticated_actor`에 그대로 기록한다.
-- `pass`는 explicit approval metadata가 있으면 accept 가능하다.
-- `warning`은 기본 accept 가능하지만, warning과 approval metadata를 runs log에 남긴다.
+- `--authenticated-actor`는 단독으로는 신뢰되지 않는다. CLI는 `--approval-attestation-file`과 `--approval-attestation-hash`를 함께 넘겨야 하며, 이 attestation은 trusted wrapper/session metadata가 생성한 파일이어야 한다. attestation은 `runs/inbox/` 같은 trusted staging area에 있어야 하고, `world-tool`은 파일 해시를 다시 계산한 뒤 attestation 내부의 `authenticated_actor`, `approver_id`, `approval_channel`, `diff_run_id`, `draft_hash`, `target_base_hash`, `patch_hash`, `reason_hash`가 command flags와 일치하는지 검증한 다음에만 `approval.authenticated_actor`를 기록한다.
+- `pass`는 explicit approval provenance가 있으면 accept 가능하다.
+- `warning`은 기본 accept 가능하지만, warning과 approval provenance를 runs log에 남긴다.
 - `conflict`와 `error`는 기본 accept에서 `command_status: "blocked"`로 반환한다.
-- `--force`는 semantic/timeline/relationship conflict 후보만 우회할 수 있고 approval metadata와 reason이 필수다.
+- `--force`는 semantic/timeline/relationship conflict 후보만 우회할 수 있고 trusted approval attestation과 reason이 필수다.
 - `--force`도 structural error, id conflict, path violation, target path conflict, inactive draft, storylet canon 승격, diff binding mismatch는 우회할 수 없다.
 - `type: storylet`은 MVP에서 content canon accept 대상이 아니며 `STORYLET_NOT_CANON_TARGET`으로 blocked다.
-- accept 성공 시 `data.approval`은 `approver_id`, `approval_channel`, `authenticated_actor`, `reason_path`를 포함해야 한다.
+- accept 성공 시 `data.approval`은 `approver_id`, `approval_channel`, `authenticated_actor`, `approval_attestation_path`, `reason_path`를 포함해야 한다.
 
 Diff binding 정책:
 - accept는 `--diff-run-id`, `--draft-hash`, `--target-base-hash`, `--patch-hash`가 모두 없으면 `DIFF_BINDING_REQUIRED`로 blocked다.
@@ -477,9 +514,9 @@ Transaction/recovery 정책:
 - content write 성공 후 archive/result 기록이 실패하면 `command_status: "blocked"`와 `data.block_reason: "TRANSACTION_INCOMPLETE"`를 반환하고 recovery instruction을 `runs/<run-id>/recovery.json`에 남긴다.
 - recovery는 content hash와 archive 상태를 기준으로 idempotent하게 재시도할 수 있어야 한다.
 - `runs/<run-id>/recovery.json`가 unresolved인 동안에는 같은 world root를 쓰는 write command와 해당 draft를 바꾸는 write command가 blocked다. 여기에는 `world init`, `input stage`, `draft create`, `draft update`, `draft accept`, `draft reject`와 같은 쓰기 command가 포함된다. read-only command는 계속 허용된다.
-- `run recover`는 이 차단의 예외이며, unresolved `recovery.json`를 안전하게 재실행하거나 정리하기 위한 유일한 운영자용 repair command다.
+- `run recover`는 이 차단의 예외이며, `TRANSACTION_INCOMPLETE` 또는 unresolved `recovery.json`를 복구하는 유일한 운영자용 repair command다. 이 command는 원래 write command를 다시 실행하지 않고, 기록된 transaction state만 안전하게 수습한다.
 
-## 14. draft reject
+## 15. draft reject
 ```bash
 world-tool draft reject \
   --world ashen-continent \
@@ -495,7 +532,7 @@ world-tool draft reject \
 - `--reason-file`과 `--reason-hash`는 짝을 이뤄야 한다.
 - `world-tool`은 rejection reason을 기록하기 전에 `--reason-file`과 `--reason-hash`를 재해시해서 검증한다.
 
-## 15. run
+## 16. run
 ```bash
 world-tool run list --world ashen-continent --json
 world-tool run get --world ashen-continent --run-id 20260530-001 --json
@@ -503,15 +540,16 @@ world-tool run recover --world ashen-continent --run-id 20260530-001 --json
 ```
 
 동작:
-- 최근 실행 목록
-- run artifact 조회
-- validation/diff/result 요약
+- 최근 실행 목록과 immutable summary만 조회
+- `run get`은 기본적으로 redacted manifest와 상태 요약만 반환
+- `run get`은 명시적인 safe artifact allowlist만 허용한다. 예: `manifest.json`, `summary.json`, `result-summary.json`, `validation.json`, redacted `recovery.json`
+- sensitive artifact, raw staged input, inbox payload, unredacted result/body/reason는 `run get`로 노출하지 않는다. 이런 자료는 별도의 privileged command나 explicit privileged flag가 있어야 한다.
 - `run recover`는 `TRANSACTION_INCOMPLETE` 또는 unresolved `recovery.json`를 해결하는 운영자용 command다. 대상 run의 `recovery.json`, 현재 content hash, archive state, result state를 다시 읽고, 이미 복구가 끝났다면 no-op으로 끝낸다.
 - `run recover`는 멱등적이어야 하며, 반복 호출해도 duplicate write를 만들지 않는다. 복구가 필요한 경우에만 남은 단계를 수행하고 `recovery.json`를 resolved로 표시한다.
 - `run recover`가 성공하면 이후 write command는 다시 허용된다.
 - `run recover`의 결과 `data`는 최소한 `recovery_run_id`, `recovery_path`, `recovery_status`, `recovered_at`을 포함해야 하며, `available_actions`는 비어 있어도 된다.
 
-## 16. OpenCrabs Dynamic Tool 매핑
+## 17. OpenCrabs Dynamic Tool 매핑
 `~/.opencrabs/tools.toml`에는 의미 단위 tool을 등록한다.
 
 아래 예시는 shell executor가 template 값을 argv-safe한 인자로 전달하고 stdin/request-file payload를 지원한다고 가정한다. shell 텍스트 안에 raw string interpolation을 그대로 붙이는 방식은 허용하지 않는다. 그런 executor만 있다면 이 command 문자열을 그대로 쓰지 말고, request JSON file 하나를 받는 wrapper command를 둔다.
@@ -590,16 +628,22 @@ executor = "shell"
 command = "world-tool draft diff --world {{world_id}} --draft {{draft_path}} --json"
 
 [[tools]]
-name = "world_accept_draft"
-description = "Promote a validated draft into canon after explicit user approval metadata is recorded"
+name = "world_create_approval_attestation"
+description = "Create trusted approval attestation from OpenCrabs session metadata and diff binding"
 executor = "shell"
-command = "world-tool draft accept --world {{world_id}} --draft {{draft_path}} --diff-run-id {{diff_run_id}} --draft-hash {{draft_hash}} --target-base-hash {{target_base_hash}} --patch-hash {{patch_hash}} --approver-id {{approver_id}} --approval-channel {{approval_channel}} --authenticated-actor {{authenticated_actor}} --reason-file {{reason_file}} --reason-hash {{reason_hash}} --json"
+command = "world-tool approval attest --world {{world_id}} --diff-run-id {{diff_run_id}} --draft-hash {{draft_hash}} --target-base-hash {{target_base_hash}} --patch-hash {{patch_hash}} --approver-id {{approver_id}} --approval-channel {{approval_channel}} --authenticated-actor {{authenticated_actor}} --reason-hash {{reason_hash}} --json"
+
+[[tools]]
+name = "world_accept_draft"
+description = "Promote a validated draft into canon after explicit user approval provenance and trusted approval attestation are recorded"
+executor = "shell"
+command = "world-tool draft accept --world {{world_id}} --draft {{draft_path}} --diff-run-id {{diff_run_id}} --draft-hash {{draft_hash}} --target-base-hash {{target_base_hash}} --patch-hash {{patch_hash}} --approver-id {{approver_id}} --approval-channel {{approval_channel}} --approval-attestation-file {{approval_attestation_file}} --approval-attestation-hash {{approval_attestation_hash}} --authenticated-actor {{authenticated_actor}} --reason-file {{reason_file}} --reason-hash {{reason_hash}} --json"
 
 [[tools]]
 name = "world_force_accept_draft"
-description = "Force promote a draft when policy allows it and approval metadata is recorded"
+description = "Force promote a draft when policy allows it and trusted approval attestation is recorded"
 executor = "shell"
-command = "world-tool draft accept --world {{world_id}} --draft {{draft_path}} --diff-run-id {{diff_run_id}} --draft-hash {{draft_hash}} --target-base-hash {{target_base_hash}} --patch-hash {{patch_hash}} --force --approver-id {{approver_id}} --approval-channel {{approval_channel}} --authenticated-actor {{authenticated_actor}} --reason-file {{reason_file}} --reason-hash {{reason_hash}} --json"
+command = "world-tool draft accept --world {{world_id}} --draft {{draft_path}} --diff-run-id {{diff_run_id}} --draft-hash {{draft_hash}} --target-base-hash {{target_base_hash}} --patch-hash {{patch_hash}} --force --approver-id {{approver_id}} --approval-channel {{approval_channel}} --approval-attestation-file {{approval_attestation_file}} --approval-attestation-hash {{approval_attestation_hash}} --authenticated-actor {{authenticated_actor}} --reason-file {{reason_file}} --reason-hash {{reason_hash}} --json"
 
 [[tools]]
 name = "world_reject_draft"
@@ -609,17 +653,17 @@ command = "world-tool draft reject --world {{world_id}} --draft {{draft_path}} -
 
 [[tools]]
 name = "world_recover_run"
-description = "Resolve a partially committed transaction using run recovery state"
+description = "Resolve a partially committed transaction using run recovery state without replaying the original write command"
 executor = "shell"
 command = "world-tool run recover --world {{world_id}} --run-id {{run_id}} --json"
 
 [[tools]]
 name = "world_get_run"
-description = "Read run artifacts and result summary"
+description = "Read the redacted run manifest and explicit safe artifacts only"
 executor = "shell"
 command = "world-tool run get --world {{world_id}} --run-id {{run_id}} --json"
 ```
 
-OpenCrabs는 query/title/body/reason/retcon_reason을 command template에 직접 넣지 않는다. 먼저 `world_stage_input`으로 `runs/inbox/` path를 만들고, 후속 tool에는 path와 hash만 넘긴다. `world_search_docs`는 `--scope active`를 명시하고, 각 후속 command는 대응하는 `--*-hash`를 함께 전달해야 한다.
+OpenCrabs는 query/title/body/reason/retcon_reason을 command template에 직접 넣지 않는다. 먼저 `world_stage_input`으로 `runs/inbox/` path를 만들고, approval attestation은 `world_create_approval_attestation`으로 attestation path/hash를 만든 뒤 후속 tool에는 path와 hash만 넘긴다. `world_search_docs`는 `--scope active`를 명시하고, 각 후속 command는 대응하는 `--*-hash`를 함께 전달해야 한다.
 
-모든 template 변수는 OpenCrabs가 넣더라도 신뢰하지 않는다. `world-tool`이 `world_id`, `kind`, `type`, `scope`, `target_id`, `path`, `draft_path`, `query_file`, `query_hash`, `title_file`, `title_hash`, `body_file`, `body_hash`, `reason_file`, `reason_hash`, `retcon_reason_file`, `retcon_reason_hash`, `approver_id`, `approval_channel`, `authenticated_actor`, `run_id`, `diff_run_id`, `draft_hash`, `target_base_hash`, `patch_hash`를 다시 검증한다.
+모든 template 변수는 OpenCrabs가 넣더라도 신뢰하지 않는다. `world-tool`이 `world_id`, `kind`, `type`, `scope`, `target_id`, `path`, `draft_path`, `query_file`, `query_hash`, `title_file`, `title_hash`, `body_file`, `body_hash`, `reason_file`, `reason_hash`, `retcon_reason_file`, `retcon_reason_hash`, `approver_id`, `approval_channel`, `approval_attestation_file`, `approval_attestation_hash`, `authenticated_actor`, `run_id`, `diff_run_id`, `draft_hash`, `target_base_hash`, `patch_hash`를 다시 검증한다.

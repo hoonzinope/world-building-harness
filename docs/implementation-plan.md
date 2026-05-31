@@ -73,7 +73,7 @@ Go CLI와 OpenCrabs bundle을 구현할 기본 디렉토리를 만든다.
 - `../`, absolute path, symlink를 통한 root 밖 접근이 차단된다.
 - `--query-file`, `--title-file`, `--body-file`, `--reason-file`, `--retcon-reason-file`도 `runs/inbox/` 아래 상대 경로만 허용된다.
 - path violation은 JSON error와 non-zero exit code를 반환한다.
-- `input stage`만 `runs/inbox/`에 staging file을 생성할 수 있다.
+- `input stage`와 `approval attest`만 `runs/inbox/`에 staging file을 생성할 수 있다.
 
 ## 5. Milestone 2: Content Read Model
 ### 목표
@@ -165,7 +165,7 @@ draft를 canon과 비교해 구조 오류와 명백한 충돌을 탐지한다.
 - `world-tool draft diff`
 - `world-tool draft accept`
 - accept 직전 validation 재실행
-- `--force`, `--reason-file`, `--approver-id`, `--approval-channel`, `--authenticated-actor`
+- `--force`, `--reason-file`, `--reason-hash`, `--approval-attestation-file`, `--approval-attestation-hash`, `--approver-id`, `--approval-channel`, `--authenticated-actor`
 - diff binding flags: `--diff-run-id`, `--draft-hash`, `--target-base-hash`, `--patch-hash`
 - conflict/error 기본 차단
 - content atomic write
@@ -181,7 +181,7 @@ draft를 canon과 비교해 구조 오류와 명백한 충돌을 탐지한다.
 - accept는 validation을 다시 실행한다.
 - accept는 diff binding이 없거나 불일치하면 blocked다.
 - conflict/error가 있으면 기본 accept가 blocked다.
-- force accept는 reason 또는 approval provenance가 없으면 blocked이며 structural error, id conflict, path violation, target path conflict, storylet canon 승격, diff binding mismatch는 우회할 수 없다.
+- force accept는 reason과 trusted approval attestation provenance 중 하나라도 없으면 blocked이며 structural error, id conflict, path violation, target path conflict, storylet canon 승격, diff binding mismatch는 우회할 수 없다.
 - accept 성공 시 content 문서가 생성 또는 갱신된다.
 - accept 성공 시 draft 원본은 `archive/accepted/`로 이동한다.
 - 모든 변경은 runs artifact로 추적 가능하다.
@@ -221,9 +221,11 @@ OpenCrabs가 `world-tool`을 범용 shell이 아니라 의미 단위 tool로 호
 - `world_read_draft`
 - `world_validate_draft`
 - `world_diff_draft`
+- `world_create_approval_attestation`
 - `world_accept_draft`
 - `world_force_accept_draft`
 - `world_reject_draft`
+- `world_recover_run`
 - `world_get_run`
 
 ### 완료 기준
@@ -231,6 +233,7 @@ OpenCrabs가 `world-tool`을 범용 shell이 아니라 의미 단위 tool로 호
 - 긴 query/title/body/reason/retcon_reason은 `runs/inbox/` staging file 또는 stdin 방식으로 전달된다.
 - `world_stage_input`이 staging file을 만들고 후속 tool은 path/hash만 받는다.
 - `world_accept_draft`는 diff binding 값을 필수로 받는다.
+- staged-input-consuming commands는 hash mismatch를 command-level `INPUT_HASH_MISMATCH`로 반환한다.
 - 범용 `world_exec_shell` 같은 tool은 제공하지 않는다.
 - malformed JSON, timeout, non-zero exit에 대한 실패 메시지 정책이 정리되어 있다.
 
@@ -281,6 +284,7 @@ OpenCrabs, `world-tool`, skill/tools bundle을 컨테이너에서 운영할 수 
 - recovery resolution fixture
 - storylet accept block fixture
 - storylet content validation fixture
+- active draft path/type wrong-directory fixture
 - force denied fixture
 - lock/base-hash mismatch fixture
 - relationship allowlist fixture
@@ -304,12 +308,13 @@ OpenCrabs, `world-tool`, skill/tools bundle을 컨테이너에서 운영할 수 
 - diff binding mismatch는 accept에서 차단된다.
 - relationship domain/range mismatch는 conflict로 탐지된다.
 - related id 또는 relationship target이 active draft에만 존재하면 draft validate에서는 warning, accept에서는 blocked된다.
-- staged input hash mismatch는 해당 hash binding을 command contract가 정의한 경우 accept에서 차단된다.
+- staged input hash mismatch는 hash binding을 소비하는 모든 command에서 command-level `INPUT_HASH_MISMATCH`로 반환된다.
 - recovery resolution fixture는 recovery artifact가 해결된 뒤 동일 draft가 다시 accept될 수 있어야 한다는 점을 검증한다.
 - storylet draft는 content canon accept에서 차단된다.
 - storylet content path/status 위반은 validation `error`로 보고되고 accept에서 blocked된다.
+- active draft path/type wrong-directory fixture는 non-storylet draft가 `drafts/storylets/`에 있는 경우와 `storylet` draft가 `drafts/storylets/` 밖에 있는 경우를 함께 검증한다.
 - 알 수 없는 relationship type은 conflict로 탐지된다.
-- migration boundary fixture는 `content migrate --dry-run`이 report-only이고 `--apply`가 허용되지 않음을 검증한다.
+- migration boundary fixture는 `content migrate`가 report-only임을 검증한다.
 - rejected draft는 `archive/rejected/`로 이동한다.
 - accepted draft는 `content/`에 반영되고 `archive/accepted/`로 이동한다.
 - `runs/` artifact만 보고 어떤 변경이 있었는지 추적할 수 있다.
@@ -333,11 +338,11 @@ MVP 이후 장기 운영에 필요한 안정성 기능을 추가한다.
 - 장편 세계관에서 archive와 runs가 늘어나도 운영 정책이 있다.
 - graph는 content에서 재생성 가능한 인덱스로 유지된다.
 - validator가 확정 판정기가 아니라 conflict 후보 탐지기라는 경계가 유지된다.
-- migration dry-run은 report만 만들고 content를 변경하지 않는다.
+- migration command는 report만 만들고 content를 변경하지 않는다.
 - migration command는 report-only이며 content를 직접 변경하는 mutating mode를 제공하지 않는다.
 
 ### Migration workflow
-- `content migrate --dry-run`은 report와 artifact만 남기고 content를 변경하지 않는다.
+- `content migrate`는 report와 artifact만 남기고 content를 변경하지 않는다.
 - `content migrate`는 warning-only legacy/import 이슈를 actionable report로 묶고 blocked 항목과 분리하되 content를 직접 변경하지 않는다.
 - migration report는 source 문서, path move 여부, field normalization 결과, before/after hash, blocker 목록을 포함한다.
 - migration 완료 기준은 warning이 사라졌는지가 아니라, warning이 의사결정 가능한 action item으로 정리되고 blocked 항목이 남지 않았는지다.
