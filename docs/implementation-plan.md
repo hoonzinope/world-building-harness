@@ -59,7 +59,7 @@ Go CLI와 OpenCrabs bundle을 구현할 기본 디렉토리를 만든다.
 - `harness.yaml` 기본 설정 로딩
 - path normalization
 - symlink escape 차단
-- world root 밖 read/write 차단
+- world root 밖 read/write 차단. 단, `approval attest`의 trusted wrapper auth context file은 hash/expiry 검증 후 read-only 예외로 허용
 - `runs/inbox/` staging path 검증
 - world root lock helper
 - atomic write helper
@@ -70,7 +70,7 @@ Go CLI와 OpenCrabs bundle을 구현할 기본 디렉토리를 만든다.
 
 ### 완료 기준
 - `world init`이 `content/`, `drafts/`, `runs/`, `archive/`, `graph/`, `harness.yaml`을 생성한다.
-- `../`, absolute path, symlink를 통한 root 밖 접근이 차단된다.
+- `../`, absolute path, symlink를 통한 root 밖 접근이 차단된다. 단, `--auth-context-file`은 `approval attest`에서만 명시 hash/expiry 검증을 거친 read-only 예외다.
 - `--query-file`, `--title-file`, `--body-file`, `--reason-file`, `--retcon-reason-file`도 `runs/inbox/` 아래 상대 경로만 허용된다.
 - path violation은 JSON error와 non-zero exit code를 반환한다.
 - `input stage`와 `approval attest`만 `runs/inbox/`에 staging file을 생성할 수 있다.
@@ -106,6 +106,7 @@ LLM 생성물을 canon에 바로 쓰지 않고 draft로 저장하는 경로를 �
 - `world-tool draft reject`
 - draft frontmatter 보정
 - draft id/path 생성 규칙
+- draft create는 explicit `--id` 또는 동등한 id template variable을 필수로 받아야 하고 title에서 id를 암묵적으로 파생하지 않는다.
 - `change_type: create/update/deprecate`
 - `target_id` 기반 retcon/update/deprecate draft
 - `source_run_id` 기록
@@ -181,7 +182,8 @@ draft를 canon과 비교해 구조 오류와 명백한 충돌을 탐지한다.
 - accept는 validation을 다시 실행한다.
 - accept는 diff binding이 없거나 불일치하면 blocked다.
 - conflict/error가 있으면 기본 accept가 blocked다.
-- force accept는 reason과 trusted approval attestation provenance 중 하나라도 없으면 blocked이며 structural error, id conflict, path violation, target path conflict, storylet canon 승격, diff binding mismatch는 우회할 수 없다.
+- force accept는 reason과 trusted approval attestation provenance 중 하나라도 없으면 blocked이며 missing target, missing related target, active draft-only target, structural error, id conflict, path violation, target path conflict, storylet canon 승격, diff binding mismatch는 우회할 수 없다.
+- force accept는 semantic/timeline/relationship conflict 후보 중 referenced target이 모두 canon content에 있는 경우에만 우회할 수 있다.
 - accept 성공 시 content 문서가 생성 또는 갱신된다.
 - accept 성공 시 draft 원본은 `archive/accepted/`로 이동한다.
 - 모든 변경은 runs artifact로 추적 가능하다.
@@ -227,12 +229,15 @@ OpenCrabs가 `world-tool`을 범용 shell이 아니라 의미 단위 tool로 호
 - `world_reject_draft`
 - `world_recover_run`
 - `world_get_run`
+- `world_get_run_artifact`
 
 ### 완료 기준
 - 각 tool은 stdout JSON만 반환한다.
 - 긴 query/title/body/reason/retcon_reason은 `runs/inbox/` staging file 또는 stdin 방식으로 전달된다.
 - `world_stage_input`이 staging file을 만들고 후속 tool은 path/hash만 받는다.
+- `world_create_approval_attestation`은 trusted auth context provenance를 path/hash로도 검증할 수 있으면 그렇게 하고, raw actor 문자열만으로 승인 provenance를 만들지 않는다.
 - `world_accept_draft`는 diff binding 값을 필수로 받는다.
+- `world_get_run_artifact`는 safe artifact basename allowlist와 path boundary 검증을 강제하고, inbox payload나 unredacted sensitive artifact는 노출하지 않는다.
 - staged-input-consuming commands는 hash mismatch를 command-level `INPUT_HASH_MISMATCH`로 반환한다.
 - 범용 `world_exec_shell` 같은 tool은 제공하지 않는다.
 - malformed JSON, timeout, non-zero exit에 대한 실패 메시지 정책이 정리되어 있다.
@@ -288,7 +293,6 @@ OpenCrabs, `world-tool`, skill/tools bundle을 컨테이너에서 운영할 수 
 - force denied fixture
 - lock/base-hash mismatch fixture
 - relationship allowlist fixture
-- migration boundary fixture
 - reject fixture
 - stdout JSON fixture
 - manual OpenCrabs test script 또는 checklist
@@ -314,7 +318,6 @@ OpenCrabs, `world-tool`, skill/tools bundle을 컨테이너에서 운영할 수 
 - storylet content path/status 위반은 validation `error`로 보고되고 accept에서 blocked된다.
 - active draft path/type wrong-directory fixture는 non-storylet draft가 `drafts/storylets/`에 있는 경우와 `storylet` draft가 `drafts/storylets/` 밖에 있는 경우를 함께 검증한다.
 - 알 수 없는 relationship type은 conflict로 탐지된다.
-- migration boundary fixture는 `content migrate`가 report-only임을 검증한다.
 - rejected draft는 `archive/rejected/`로 이동한다.
 - accepted draft는 `content/`에 반영되고 `archive/accepted/`로 이동한다.
 - `runs/` artifact만 보고 어떤 변경이 있었는지 추적할 수 있다.
@@ -330,6 +333,7 @@ MVP 이후 장기 운영에 필요한 안정성 기능을 추가한다.
 - retcon/versioning report
 - schema migration and migration report
 - `content migrate` report-only workflow
+- migration boundary fixture
 - OpenCrabs tool calling retry/timeout 정책
 - semantic search integration
 - storylet/exporter

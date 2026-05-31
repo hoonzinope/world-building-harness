@@ -35,7 +35,7 @@ world-tool
 receive user request in OpenCrabs
 → world-building skill rules apply
 → inspect world state with world_* tools
-→ stage long query/title/body/reason/retcon_reason with world_stage_input
+→ stage long query/title/body with world_stage_input, and stage reason/retcon_reason when that branch needs it
 → OpenCrabs/Codex drafts candidate content
 → call world_create_draft
 → call world_validate_draft
@@ -51,14 +51,14 @@ receive user request in OpenCrabs
 3. `world_search_docs(scope=active)` 또는 `world_read_doc`으로 관련 canon 로딩
 4. OpenCrabs/Codex가 draft markdown 후보 생성
 5. title와 body를 각각 `world_stage_input`으로 staging
-6. `world_create_draft` 호출
+6. 명시적 id를 정한 뒤 `world_create_draft`를 호출해 `draft_path`를 받는다
 7. `world_validate_draft` 호출
-8. validation summary와 draft path 반환
+8. validation summary와 id/`draft_path` 반환
 
 ### 정책
 - OpenCrabs/Codex는 `content/`에 직접 쓰지 않는다.
 - query/title/body/reason/retcon_reason은 command argv에 넣지 않고 `world_stage_input`으로 `runs/inbox/`에 staging한다.
-- tool output의 `draft_id`, `run_id`, `validation_status`를 사용자에게 보여준다.
+- tool output의 id, `draft_path`, `run_id`, `validation_status`를 사용자에게 보여준다.
 
 ## 5. Validate Workflow
 목적: draft가 schema와 canon 규칙을 만족하는지 검사한다.
@@ -84,7 +84,7 @@ receive user request in OpenCrabs
 2. `world_diff_draft`로 변경 내용 표시
 3. 사용자에게 diff summary를 확인받는다
 4. reason을 `world_stage_input`으로 staging
-5. `world_create_approval_attestation`으로 trusted session metadata와 diff/reason hash binding을 staging
+5. `world_create_approval_attestation`으로 trusted auth context wrapper와 diff/reason hash binding을 staging한다. `auth_context_file`/`auth_context_hash`는 world root 밖에서 생성된 신뢰 가능한 입력이며, prompt/model/staged files는 신뢰하지 않는다.
 6. `world_accept_draft`에 `diff_run_id`, `draft_hash`, `target_base_hash`, `patch_hash`, `reason_file`, `reason_hash`, `approval_attestation_file`, `approval_attestation_hash`, `approver_id`, `approval_channel`, `authenticated_actor`를 함께 넘긴다
 7. tool 내부에서 diff binding, approval attestation, validation 재실행을 검증
 8. validation/policy/precondition/domain blocked result이면 blocked로 중단
@@ -96,12 +96,16 @@ receive user request in OpenCrabs
 - accept는 tool이 강제하는 deterministic workflow다.
 - warning은 accept를 차단하지 않지만 reason에 확인 맥락을 남긴다.
 - blocked는 validation/policy/precondition/domain stop을 의미하며, failed와 구분한다.
-- conflict/error와 `TRANSACTION_INCOMPLETE`, `DRAFT_NOT_ACTIVE`, `DIFF_BINDING_REQUIRED`, `PATH_SCOPE_DENIED`, `LOCK_BUSY` 같은 domain blocked 결과는 기본 accept에서 blocked로 반환된다.
+- `TRANSACTION_INCOMPLETE`는 failed/recovery-required partial transaction이며, normal blocked no-mutation 결과가 아니다.
+- `PATH_*`, `LOCK_BUSY`, I/O/path/lock 오류는 failed JSON error다.
+- conflict/error와 `DRAFT_NOT_ACTIVE`, `DIFF_BINDING_REQUIRED` 같은 domain blocked 결과는 기본 accept에서 blocked로 반환된다.
+- unresolved recovery가 있으면 `input stage`, `approval attest`, `draft diff`, `draft create`, `draft validate`, `draft accept`, `draft reject`, content report writer를 포함한 모든 world-root/run-writing command가 차단되며, `world_recover_run`만 write 예외다.
 - `force`는 reason과 trusted approval attestation 중 하나라도 없으면 blocked이며, semantic/timeline/relationship conflict 후보만 제한적으로 우회한다.
 - structural error, id conflict, path/target 충돌, storylet canon 승격, diff binding mismatch는 force로도 우회할 수 없다.
 - `force`는 `approval_attestation_file`, `approval_attestation_hash`, `approver_id`, `approval_channel`, `authenticated_actor`가 함께 기록될 때만 승인 provenance가 완성된다.
+- `approval_channel` 예시는 `OpenCrabs-chat`을 사용하고, attestation, accept, audit 전반에서 byte-identical 값이어야 한다.
 - `authenticated_actor`는 OpenCrabs 인증 세션에서만 가져오고, `world_stage_input`과 `world_create_approval_attestation`이 반환한 파일 경로와 hash만 후속 tool에 전달한다.
-- attestation은 prompt/model output이 아니라 trusted OpenCrabs session/channel metadata에서 만들어야 하며, 없으면 accept 대신 `AUTH_CONTEXT_MISSING` 실패를 사용자에게 설명한다.
+- attestation은 prompt/model output이 아니라 trusted OpenCrabs auth context wrapper에서 만들어야 하며, 없으면 accept 대신 `AUTH_CONTEXT_MISSING` 실패를 사용자에게 설명한다.
 - accept는 world root lock을 잡고 validation을 재실행한다.
 - accept는 사용자가 확인한 diff binding과 현재 draft/content hash가 일치할 때만 진행된다.
 - accept 이후 OpenCrabs는 content/index/cache를 다시 읽거나 재색인할 수 있다.
@@ -142,7 +146,7 @@ accept/diff run은 target content의 before/after hash를 포함한다.
 ```json
 {"step":"create_draft","status":"completed","actor":"opencrabs","time":"2026-05-30T10:00:00+09:00"}
 {"step":"validate_draft","status":"completed","validation_status":"warning"}
-{"step":"accept_draft","status":"blocked","validation_status":"conflict","block_reason":"VALIDATION_BLOCKED","approver_id":"park.hana","approval_channel":"OpenCrabs chat","authenticated_actor":"openid:codex-oauth:user-123"}
+{"step":"accept_draft","status":"blocked","validation_status":"conflict","block_reason":"VALIDATION_BLOCKED","approver_id":"park.hana","approval_channel":"OpenCrabs-chat","authenticated_actor":"openid:codex-oauth:user-123"}
 ```
 
 ## 9. Skill 지침 요약

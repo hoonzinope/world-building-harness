@@ -85,6 +85,7 @@ world-root/
 - 모든 content 문서는 frontmatter id를 가져야 한다.
 - content target path는 `schema.md`의 type directory와 id 기반 file name 규칙을 따른다.
 - `type: storylet` 문서는 MVP에서 content 아래에 둘 수 없다.
+- `status: deprecated` 문서는 content/에 남아 있는 canon 문서다. deprecate accept는 canon 파일을 archive로 옮기지 않는다.
 - OpenCrabs DB, graph, search index는 content에서 재생성 가능해야 한다.
 
 ## 4. drafts/
@@ -134,8 +135,9 @@ runs/
 
 정책:
 - archive/accepted/는 승인 당시 draft 원본을 보존한다.
+- accepted deprecate도 draft 원본만 archive/accepted/로 이동하고, 대상 canon 문서는 content/에 남아 `status: deprecated`와 deprecation audit metadata를 유지한다.
 - archive/rejected/는 반려된 draft와 반려 사유를 보존한다.
-- archive/deprecated/는 더 이상 쓰지 않는 draft나 이전 canon 후보를 보존한다.
+- archive/deprecated/는 더 이상 쓰지 않는 draft나 이전 canon 후보를 보존한다. accepted deprecate의 대상 canon 문서는 여기에 들어가지 않는다.
 - archive 아래 문서는 기본 context loading, active validation, id 중복 검사 대상에서 제외한다.
 
 ## 7. opencrabs/

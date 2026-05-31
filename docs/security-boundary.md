@@ -3,12 +3,12 @@
 # OpenCrabs World Tools Security Boundary
 
 ## 1. 목적
-OpenCrabs/Codex가 세계관 파일을 다루는 구조에서는 명확한 보안 경계가 필요하다. 목표는 world root 밖 파일, secret, host system이 tool 호출로 노출되거나 변경되지 않게 하는 것이다. `TRANSACTION_INCOMPLETE`가 남아 있는 동안에는 후속 write를 허용하지 않고, `recovery.json`이 정리되기 전까지 같은 world root에 대한 write를 막아야 한다. 복구는 `world_recover_run` / `world-tool run recover`만 허용하며, 원래 write command를 직접 다시 실행해서 복구를 대신하는 경로는 허용하지 않는다.
+OpenCrabs/Codex가 세계관 파일을 다루는 구조에서는 명확한 보안 경계가 필요하다. 목표는 world root 밖 파일, secret, host system이 tool 호출로 노출되거나 변경되지 않게 하는 것이다. `TRANSACTION_INCOMPLETE`는 failed/recovery-required partial transaction이며, 이 상태가 unresolved인 동안에는 같은 world root에 대한 후속 write를 허용하지 않는다. 복구는 `world_recover_run` / `world-tool run recover`만 허용하며, 원래 write command를 직접 다시 실행해서 복구를 대신하는 경로는 허용하지 않는다.
 
 ## 2. 기본 원칙
 - 세계관 파일 작업은 `world_*` dynamic tools로 수행한다.
 - dynamic tools는 `world-tool` Go CLI를 호출한다.
-- `world-tool`은 선택된 world root 밖 파일을 읽거나 쓰지 않는다.
+- `world-tool`은 선택된 world root 밖 파일을 기본적으로 읽거나 쓰지 않는다. 유일한 read 예외는 `approval attest`가 `--auth-context-file`/`--auth-context-hash`로 검증하는 OpenCrabs trusted wrapper auth context 파일이며, 이 파일도 쓰거나 run artifact로 복사하지 않는다.
 - `content/`는 accept tool에서만 변경된다.
 - draft 생성과 canon 승격은 분리한다.
 - OpenCrabs/Codex 출력은 후보이며 tool validation을 통과해야 한다.
@@ -28,7 +28,7 @@ OpenCrabs/Codex가 세계관 파일을 다루는 구조에서는 명확한 보�
 - archive/
 - harness.yaml
 
-`runs/inbox/`는 privileged transient staging area다. 일반 browse/list/get/audit 대상이 아니며, `input stage`와 `approval attest`만 여기에 write할 수 있다.
+`runs/inbox/`는 privileged transient staging area다. 일반 browse/list/get/audit 대상이 아니며, `input stage`와 `approval attest`만 여기에 write할 수 있다. unresolved recovery가 있으면 이 staging area에 대한 write도 막힌다.
 
 ### 금지 경로
 - world root 상위 디렉토리
@@ -91,7 +91,7 @@ Command별 path allowlist:
 - `content validate`: `content/**/*.md`
 - `input stage`: `runs/inbox/**` write only
 - `approval attest`: `runs/inbox/**` write only for approval attestation artifacts
-- `run get`: 기본 redacted manifest/status summary만 반환하고 명시 safe artifact allowlist만 read, `runs/inbox/**` 제외
+- `run get`: 기본 redacted manifest/status summary만 반환하고, explicit safe artifact allowlist 또는 dedicated safe-artifact command가 있을 때만 추가 artifact를 읽는다. `runs/inbox/**`는 제외한다.
 - `run list`: immutable run index/summary files only, `runs/inbox/**` 제외
 - `run recover`: unresolved `recovery.json`을 정리하는 repair path
 - `archive/`, `raw/`, `schema/`는 MVP dynamic tool의 doc 조회 대상이 아니다.
@@ -153,7 +153,7 @@ draft가 content로 승격되려면 `world_accept_draft`를 통과해야 한다.
 - required field 누락
 - draft가 active drafts/ 밖에 있음
 
-force accept는 가능하지만 reason만으로는 부족하다. `reason_file`/`reason_hash`, `approval_attestation_file`/`approval_attestation_hash`, `approver_id`, `approval_channel`, `authenticated_actor`를 함께 기록해야 하며, 이는 runs log와 accept result에 남아야 한다. `approval_channel`과 `authenticated_actor`는 `world_create_approval_attestation`이 확인한 OpenCrabs trusted session/channel metadata로부터 와야 하며, 모델 출력이나 staging file에서 오면 안 된다.
+force accept는 가능하지만 reason만으로는 부족하다. `reason_file`/`reason_hash`, `approval_attestation_file`/`approval_attestation_hash`, `approver_id`, `approval_channel`, `authenticated_actor`를 함께 기록해야 하며, 이는 runs log와 accept result에 남아야 한다. `approval_channel` 예시는 `OpenCrabs-chat`을 사용하고, attestation, accept, audit 전반에서 byte-identical 값이어야 한다. `approval_channel`과 `authenticated_actor`는 `world_create_approval_attestation`이 확인한 OpenCrabs trusted auth context wrapper로부터 와야 하며, 모델 출력이나 staging file에서 오면 안 된다.
 
 force accept 제한:
 - semantic/timeline/relationship conflict 후보만 우회 대상으로 삼는다.
@@ -175,7 +175,7 @@ write command는 world root 단위 lock을 사용한다.
 - lock 획득 실패는 `LOCK_BUSY` JSON error로 반환한다.
 - accept는 lock을 잡은 뒤 validation을 재실행한다.
 - accept는 diff_run_id, draft_hash, target_base_hash, patch_hash binding을 검증한다.
-- diff_run_id와 hash binding 값은 `world_diff_draft`와 `world_stage_input`의 출력에서 가져와야 하며, accept 시점에 world-tool이 다시 계산한 값과 일치해야 한다.
+- `diff_run_id`, `draft_hash`, `target_base_hash`, `patch_hash`는 `world_diff_draft`의 출력에서 가져와야 한다. staged file hash는 `world_stage_input`의 출력에서 가져오고, approval attestation이 이 값들과 trusted auth context를 묶어야 한다. accept 시점에 world-tool이 다시 계산한 값과 일치해야 한다.
 - diff 시점의 draft/content/patch hash와 accept 시점의 값이 다르면 accept를 중단한다.
 - accept는 `reason_file`/`reason_hash`, `approval_attestation_file`/`approval_attestation_hash`, `approver_id`, `approval_channel`, `authenticated_actor`를 audit field로 기록한다. free-form reason이나 actor 문자열만으로는 승인 provenance가 충분하지 않다.
 
@@ -235,9 +235,9 @@ Docker root-only 실행에서는 world_id provenance를 bind mount path에서 �
 
 중간 실패 시:
 - content write 전 I/O/atomicity 실패는 상태 변경 없이 `failed`로 끝난다.
-- content write 후 archive/result 기록 실패는 `TRANSACTION_INCOMPLETE`로 반환한다.
+- content write 후 archive/result 기록 실패는 failed/recovery-required partial transaction으로 `TRANSACTION_INCOMPLETE`를 반환한다.
 - `runs/<run-id>/recovery.json`에 현재 hash, 완료된 step, 재시도 방법을 남긴다.
-- `TRANSACTION_INCOMPLETE`가 unresolved인 동안 같은 world root의 후속 write는 차단해야 한다. read-only inspection은 허용하되, recovery instruction을 확인하고 해결한 뒤에만 write를 재개한다.
+- `TRANSACTION_INCOMPLETE`가 unresolved인 동안 같은 world root의 후속 write는 차단해야 한다. read-only inspection은 허용하되, `input stage`, `approval attest`, `draft diff`, `draft create`, `draft validate`, `draft accept`, `draft reject`, content report writer를 포함한 모든 world-root/run-writing command를 재개하지 않는다.
 - resolve path는 `world_recover_run` / `world-tool run recover`다. `runs/<run-id>/recovery.json`을 읽고 현재 content/archive 상태를 확인한 뒤, 이미 최종 상태가 반영되어 있으면 recovery artifact를 resolved로 마킹하고, 그렇지 않으면 남은 recovery 단계를 수행한다. 원래 write command를 직접 다시 실행하는 것은 복구 경로가 아니다.
 
 ## 14. 위험 시나리오
@@ -284,3 +284,4 @@ Docker root-only 실행에서는 world_id provenance를 bind mount path에서 �
 - `--query-file`, `--title-file`, `--body-file`, `--reason-file`, `--retcon-reason-file`도 world root 상대 경로만 허용
 - `runs/inbox/` 밖 staging file 차단
 - symlink resolution
+- `--auth-context-file`은 staging file이 아니며, `approval attest`에서만 world root 밖 trusted wrapper path를 hash/expiry와 함께 읽는 예외다.

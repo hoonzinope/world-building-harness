@@ -109,17 +109,21 @@ OpenCrabs가 `world-tool`을 의미 단위 tool로 호출하게 한다.
 - `world_read_draft`
 - `world_validate_draft`
 - `world_diff_draft`
+- `world_create_approval_attestation`
 - `world_accept_draft`
 - `world_force_accept_draft`
 - `world_reject_draft`
 - `world_recover_run`
 - `world_get_run`
+- `world_get_run_artifact`
 
 ### 완료 기준
 - OpenCrabs에서 dynamic tools가 로드됨
 - 각 tool은 stdout JSON을 반환함
 - 범용 shell tool 없이 세계관 workflow를 수행할 수 있음
 - 긴 markdown body를 file/stdin 기반으로 전달하는 tool이 동작함
+- approval attestation은 auth-context provenance가 있으면 path/hash로 검증하고, raw actor 문자열만으로 승인 provenance를 만들지 않음
+- safe artifact retrieval은 명시적 basename allowlist와 path boundary 검증만 허용함
 - diff 확인과 accept 실행이 같은 diff_run_id/hash binding으로 묶임
 
 ## 7. Phase 5: OpenCrabs Integration UX

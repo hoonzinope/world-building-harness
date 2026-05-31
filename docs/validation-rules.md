@@ -128,6 +128,7 @@ event의 start_year는 end_year보다 늦을 수 없다.
 draft validation에서는 related에 적힌 id가 content 또는 active draft에 없으면 warning이다. strict mode에서는 error로 올릴 수 있다.
 
 accept validation에서는 related id가 content에 있어야 한다. active draft에만 있는 id를 canon 문서가 참조하려고 하면 conflict다. 단, 향후 batch accept 기능에서는 같은 batch 안에서 함께 accept되는 draft target만 예외로 둘 수 있다.
+`--force`라도 missing related target, missing relationship target, 또는 active draft에만 존재하는 target은 bypass하지 못한다.
 
 ### VR-302: canonical relationship graph
 `relationships[]`는 canonical graph다. `relationships[].type`으로 authored 할 수 있는 값은 [schema.md](schema.md)의 allowlist `type` 열뿐이다. `affiliation`, `capital`, `headquarters`, `located_in`, `participants`, `locations`는 convenience field이며, validator는 relationship metadata의 domain/range를 authority로 사용해 이를 아래 authored type으로 normalize한다. range-side convenience field는 내부 inverse label을 거친 normalized fact와 비교하되, inverse label 자체는 authored relationship type이 아니다.
@@ -146,6 +147,7 @@ convenience field와 explicit `relationships[]`는 정규화 후 같은 fact를 
 draft validation에서는 relationships[].target이 content 또는 active draft에 없으면 warning이다. strict mode에서는 error로 올릴 수 있다.
 
 accept validation에서는 relationships[].target이 content에 있어야 한다. active draft에만 있는 target은 conflict이며 accept는 blocked다. batch accept가 생기면 같은 batch 안에서 함께 accept되는 target만 예외로 둘 수 있다.
+`--force`라도 relationship target이 content가 아니라 active draft에만 있거나 아직 존재하지 않으면 bypass하지 못한다.
 
 ### VR-304: relationship type 허용값
 정적 검증 가능한 relationship type은 [schema.md](schema.md)의 allowlist로 관리한다.
@@ -223,11 +225,20 @@ draft type to directory:
 `change_type: create`는 위 규칙으로 새 target path를 계산한다. 이미 다른 id의 content 문서가 같은 target path를 점유하면 conflict다.
 
 `change_type: update`와 `change_type: deprecate`는 기존 content 문서의 path를 유지한다. rename/path move는 MVP 범위 밖이며 별도 migration command로 처리한다.
+`change_type: deprecate`가 accept되면 대상 canon 문서는 `content/`에 남아 `status: deprecated`와 deprecation audit metadata를 유지한다. archive로 이동하는 것은 accepted draft 원본뿐이다.
 
 draft diff 결과에는 draft hash, target content base hash, patch hash를 포함한다. draft accept는 해당 binding 값이 없거나 현재 상태와 다르면 `DIFF_BINDING_REQUIRED` 또는 `DIFF_BINDING_MISMATCH`로 blocked다.
 
 ### VR-507: storylet canon 금지
 MVP에서 `type: storylet` active draft는 `drafts/storylets/` 아래에만 존재할 수 있다. `content/` 아래 storylet 문서 또는 `status: canon` storylet은 content validation `error`이며 accept에서는 blocked다. archive copy는 active draft scope 밖의 보관물이다.
+
+### VR-508: force accept 비우회 경계
+`--force`는 semantic, timeline, relationship conflict 후보만 우회할 수 있다. 이때도 referenced target이 모두 content에 이미 존재해야 한다.
+
+- missing target, missing related target, missing relationship target은 `--force`로 우회할 수 없다.
+- related target 또는 relationship target이 active draft에만 존재하면 `--force`로 우회할 수 없다.
+- path/type/id/schema 불일치, id conflict, target path conflict, diff binding mismatch, storylet canon 승격 금지는 `--force`로 우회할 수 없다.
+- `--force`는 오직 all-referenced-targets-in-canon 상태의 semantic/timeline/relationship conflict 후보에만 적용한다.
 
 ## 9. Migration Workflow
 legacy/import 문서처럼 schema가 완전히 정리되지 않은 대상은 warning-only로 끝내지 않고 migration artifact로 묶는다.

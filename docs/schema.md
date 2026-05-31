@@ -58,7 +58,7 @@ retcon_reason: null
 - schema_version: 문서 schema 버전. MVP 기본값은 `world-doc.v1`.
 - id: 전역 고유 id. 타입 접두어를 권장한다.
 - type: character, nation, organization, place, event, timeline, magic, glossary, storylet 중 하나.
-- status: draft, canon, deprecated, rejected 중 하나.
+- status: draft, canon, deprecated, rejected 중 하나. `deprecated`는 archive 상태가 아니라 content 안에 남아 있는 canon 상태다.
 - title: 사람이 읽는 제목.
 - tags: 검색과 분류를 위한 태그.
 - created_at: 생성일.
@@ -69,6 +69,8 @@ retcon_reason: null
 - change_type: draft가 canon에 적용되는 방식. draft에서는 `create`, `update`, `deprecate` 중 하나가 필수다. content 문서는 생략하거나 null로 둔다.
 - target_id: `update` 또는 `deprecate` 대상 canon id. draft의 `update`와 `deprecate`에서는 필수이며 `id`와 같아야 한다. `create`에서는 null 또는 생략이다.
 - retcon_reason: 기존 canon을 수정하거나 폐기하는 이유. draft의 `update`와 `deprecate`에서는 필수다. `create`에서는 null 또는 생략이다.
+
+`change_type: deprecate`가 accept되면 대상 canon 문서는 `content/`에서 제거되지 않고 `status: deprecated`와 deprecation audit metadata를 유지한다. archive로 이동하는 것은 accepted draft 원본뿐이다.
 
 relationship 예시:
 ```yaml
@@ -150,7 +152,7 @@ MVP target path는 title slug가 아니라 id 기반으로 계산한다.
 | `glossary` | `content/glossary/` | `drafts/glossary/` | `term_` |
 | `storylet` | n/a | `drafts/storylets/` only | `storylet_` |
 
-content target path는 `<content directory>/<id>.md`다. non-storylet draft path는 `<draft directory>/<id>.md`다. `change_type: update`와 `change_type: deprecate`는 기존 content path를 유지한다.
+content target path는 `<content directory>/<id>.md`다. non-storylet draft path는 `<draft directory>/<id>.md`다. `change_type: update`와 `change_type: deprecate`는 기존 content path를 유지한다. `change_type: deprecate`의 accepted result는 target canon file을 archive로 옮기지 않고 content에 남긴다.
 
 ## 3. Character Schema
 ```yaml
@@ -563,8 +565,10 @@ Canon Notes는 설정의 불변 조건, 아직 모호한 부분, 향후 검증�
 
 ## 14. Source of Truth 정책
 - status가 canon인 문서는 content/에 있어야 한다.
+- status가 deprecated인 문서는 content/에 있어야 한다.
 - status가 draft인 문서는 drafts/ 또는 archive/에 있을 수 있다.
 - archive/accepted/의 draft 원본은 active validation과 context loading에서 제외한다.
+- archive/accepted/는 accepted draft 원본만 보관한다. accepted deprecate의 대상 canon은 content/에 남아 `status: deprecated`를 유지한다.
 - OpenCrabs DB나 graph는 content Markdown에서 재생성 가능한 보조 데이터다.
 
 Storylet 정책:
@@ -572,4 +576,5 @@ Storylet 정책:
 - 기본 `draft accept`는 storylet을 `content/` canon으로 승격하지 않는다.
 - `type: storylet`과 `status: canon` 조합은 content validation `error`이며 accept에서는 blocked 상태다.
 - accepted/rejected archive 원본은 active draft scope 밖의 보관물이다.
+- archive/deprecated/는 더 이상 쓰지 않는 draft나 이전 canon 후보를 보존한다. accepted deprecate의 target canon 문서는 여기에 들어가지 않는다.
 - storylet을 canon 사건이나 entity로 반영하려면 별도 event/character/place draft를 생성해 accept한다.

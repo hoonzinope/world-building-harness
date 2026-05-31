@@ -14,8 +14,9 @@ OpenCrabs는 Codex OAuth provider를 기본 provider로 사용해 판단과 생�
 - 생성 결과는 먼저 `drafts/`에 저장하고, 명시적 승인 후에만 `content/`로 승격한다. `force accept`는 오퍼레이터가 명시적으로 승인한 예외 경로일 뿐, 일반 guardrail 우회가 아니다.
 - 세계관 작업은 OpenCrabs dynamic tools가 호출하는 `world-tool` Go 바이너리로 수행한다.
 - 긴 query/title/body/reason/retcon_reason은 `world_stage_input`으로 staging한 뒤 후속 tool에 file path와 hash를 넘긴다.
+- draft create는 명시적 `--id`를 입력으로 받고, 사용자는 그 id에서 파생된 `draft_path`를 기준으로 validate/diff/accept 흐름을 따라간다.
 - 사용자가 승인한 diff와 accept 실행은 diff_run_id와 hash binding으로 묶는다.
-- 승인 provenance는 `approver_id`, `approval_channel`, `authenticated_actor`, approval attestation file/hash를 포함해야 하며, `authenticated_actor`와 attestation은 OpenCrabs 인증 세션 또는 provider identity에서만 가져온다.
+- 승인 provenance는 `approver_id`, `approval_channel`, `authenticated_actor`, approval attestation file/hash를 포함해야 하며, `authenticated_actor`와 attestation은 OpenCrabs 인증 세션 또는 provider identity에서만 가져오고, `auth_context_file`/`auth_context_hash`는 world root 밖에서 생성된 trusted wrapper input이어야 한다.
 - tool 출력은 JSON으로 안정화해 OpenCrabs/Codex가 다음 행동을 판단할 수 있게 한다.
 - 여러 world root를 OpenCrabs 설정이나 registry로 관리한다.
 
@@ -34,7 +35,7 @@ OpenCrabs는 Codex OAuth provider를 기본 provider로 사용해 판단과 생�
 OpenCrabs는 `world_validate_draft` tool을 호출해 draft가 schema와 canon 규칙을 만족하는지 검사한다. validation 결과는 구조화 JSON과 report로 남는다.
 
 ### Accept
-사용자가 승인하면 OpenCrabs는 먼저 `world_diff_draft` 결과의 diff_run_id와 hash를 확인하고, reason과 approval attestation/provenance를 staging한 뒤 `world_accept_draft` tool을 호출한다. tool은 diff binding과 validation을 재검증하고, conflict나 policy stop이 없을 때만 `content/`로 승격한 뒤 accepted draft를 archive한다. operator-approved force path가 필요한 경우에도 approval attestation/provenance는 유지되어야 한다.
+사용자가 승인하면 OpenCrabs는 먼저 `world_diff_draft` 결과의 diff_run_id, draft_hash, target_base_hash, patch_hash를 확인하고, reason을 staging한 뒤 `world_create_approval_attestation`으로 auth context와 diff/reason binding을 묶는다. 그 다음 `world_accept_draft` tool을 호출한다. tool은 diff binding과 validation을 재검증하고, conflict나 policy stop이 없을 때만 `content/`로 승격한 뒤 accepted draft를 archive한다. operator-approved force path가 필요한 경우에도 approval attestation/provenance는 유지되어야 하며, `approval_channel`은 attest/accept/audit 전반에서 byte-identical이어야 한다.
 
 ## 5. MVP 기능
 1. OpenCrabs skill: 세계관 작업 원칙과 workflow 지침 제공
@@ -49,7 +50,7 @@ OpenCrabs는 `world_validate_draft` tool을 호출해 draft가 schema와 canon �
 - `content/`는 `world_accept_draft` 이전에 변경되지 않는다.
 - 모든 write 작업은 `runs/`에 입력, 결과, validation, diff, hash binding을 남긴다.
 - accepted draft는 `archive/accepted/`로 이동하고 active validation 대상에서 제외된다.
-- validation/policy/precondition/domain stop은 blocked로 보고하고, failed와 구분한다. 여기에는 `TRANSACTION_INCOMPLETE` 같은 recovery-required 상태도 포함한다.
+- validation/policy/precondition/domain stop은 blocked로 보고하고, failed와 구분한다. `TRANSACTION_INCOMPLETE`는 failed/recovery-required partial transaction으로 별도 취급한다.
 - OpenCrabs skill만으로 판단 흐름을 안내하되, 실제 파일 변경은 `world-tool`이 강제한다.
 
 ## 7. 핵심 원칙

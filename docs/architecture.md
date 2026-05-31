@@ -62,12 +62,12 @@ dynamic tool은 `opencrab_exec_shell` 같은 범용 명령이 아니라 의미 �
 - `world_read_draft`
 - `world_validate_draft`
 - `world_diff_draft`
-- `world_create_approval_attestation`
+- `world_create_approval_attestation` (uses auth_context_file/auth_context_hash + diff/reason binding)
 - `world_accept_draft`
 - `world_force_accept_draft`
 - `world_reject_draft`
 - `world_recover_run`
-- `world_get_run`
+- `world_get_run` (redacted manifest/status only by default)
 
 ### world-tool Layer
 Go 단일 바이너리다. OpenCrabs와 독립적으로 실행 가능해야 하며, 모든 출력은 `--json`을 지원한다.
@@ -136,16 +136,16 @@ pending 후보 설정이다. OpenCrabs/Codex가 생성한 설정은 먼저 draft
 모든 write workflow의 입력, 결과, validation, diff, actor, timestamp를 기록한다.
 
 ### archive/
-accepted/rejected/deprecated draft를 보관한다. archive는 active validation과 id 중복 검사 기본 대상에서 제외한다.
+accepted/rejected draft를 보관한다. deprecated는 content/ 내부에서 status: deprecated로 유지되며 archive로 옮기지 않는다. archive는 active validation과 id 중복 검사 기본 대상에서 제외한다.
 
 ## 6. 권한 경계
 - OpenCrabs는 world 작업에 `world_*` tools를 사용한다.
-- `world-tool`은 선택된 world root 밖을 읽거나 쓰지 않는다.
+- `world-tool`은 선택된 world root 밖을 기본적으로 읽거나 쓰지 않는다. 예외적으로 `approval attest`는 world root 밖 trusted wrapper auth context file을 hash/expiry 검증 후 read-only로 읽을 수 있다.
 - `content/`는 `world_accept_draft`에서만 변경된다.
 - `draft accept`는 diff binding과 validation을 재실행한다.
-- `force accept`는 reason과 trusted approval attestation provenance가 필수이며, semantic/timeline/relationship conflict 후보에만 제한적으로 허용하고 runs log에 남긴다.
+- `force accept`는 reason과 trusted approval attestation provenance가 필수이며, semantic/timeline/relationship conflict 후보에만 제한적으로 허용하고 runs log에 남긴다. `approval_channel` 예시는 `OpenCrabs-chat`을 사용하고 attestation, accept, audit 전반에서 byte-identical 값이어야 한다.
 - `content migrate`는 report-only maintenance path로 취급하고, content mutation path와 분리한다.
-- `authenticated_actor`, approval attestation, staged input hash는 OpenCrabs 인증 세션과 staging tool output에서만 가져오고, prompt text나 Docker mount path에서 추측하지 않는다.
+- `authenticated_actor`, approval attestation, staged input hash는 OpenCrabs 인증 세션과 staging tool output에서만 가져오고, `auth_context_file`/`auth_context_hash`는 world root 밖 trusted wrapper input에서만 가져온다. prompt text나 Docker mount path에서 추측하지 않는다.
 - Docker 사용 시 job container에는 선택된 world root 하나만 마운트한다.
 - `--root`만 사용하는 Docker 실행은 command site에서 `--world-id`를 명시하거나 `harness.yaml` provenance를 먼저 검증할 때만 허용한다.
 - OpenCrabs credential/config volume과 world root volume은 분리한다.
