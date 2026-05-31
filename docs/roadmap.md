@@ -26,6 +26,7 @@ OpenCrabs 없이도 로컬 CLI로 파일 관리와 validation을 수행할 수 �
 
 ### 기능
 - `world-tool world init`
+- `world-tool world status`
 - `world-tool registry add/list/remove/default`
 - `world-tool input stage`
 - `world-tool doc list --scope active`
@@ -38,9 +39,9 @@ OpenCrabs 없이도 로컬 CLI로 파일 관리와 validation을 수행할 수 �
 - `world-tool draft accept`
 - `world-tool draft reject`
 - `world-tool run list`
-- `world-tool run recover`
 - `world-tool run get`
 - `world-tool run get --artifact <basename>`
+- `world-tool run recover`
 
 ### 구현 주의
 - path boundary와 symlink resolution을 가장 먼저 구현한다.
@@ -124,9 +125,9 @@ OpenCrabs가 `world-tool`을 의미 단위 tool로 호출하게 한다.
 - `world_force_accept_draft`
 - `world_reject_draft`
 - `world_list_runs`
-- `world_recover_run`
 - `world_get_run`
 - `world_get_run_artifact`
+- `world_recover_run`
 
 ### 완료 기준
 - OpenCrabs에서 dynamic tools가 로드됨
@@ -134,7 +135,8 @@ OpenCrabs가 `world-tool`을 의미 단위 tool로 호출하게 한다.
 - 범용 shell tool 없이 세계관 workflow를 수행할 수 있음
 - 긴 markdown body를 file/stdin 기반으로 전달하는 tool이 동작함
 - trusted wrapper/adapter가 authenticated session metadata를 받아 `auth_context_file`을 생성하고 hash를 계산해 `auth_context_hash`와 함께 tool 변수로 채움. production trusted auth context input은 signature/MAC 또는 configured wrapper trust-material 검증과 expected issuer/audience/scope policy를 만족해야 하며, `auth_context_hash`는 integrity binding만 담당함
-- `auth_context_file`은 expiry, scope, approver/session identifiers, approval channel, authenticated actor를 포함하며, wrapper는 세션 종료 또는 attestation 사용 후 이를 정리/무효화함. local fixture mode는 `WORLD_TOOL_TEST_AUTH_CONTEXT=1` explicit opt-in 테스트 전용 경로임
+- `auth_context_file`의 trusted contents는 expiry, scope, session metadata, approval channel, authenticated actor, downstream_action provenance 등이다. wrapper는 세션 종료 또는 attestation 사용 후 이를 정리/무효화한다. local fixture mode는 `WORLD_TOOL_TEST_AUTH_CONTEXT=1` explicit opt-in 테스트 전용 경로임
+- `approver_id`는 CLI/template input으로 별도 전달되는 non-authoritative audit/display label로 attestation과 audit에 기록됨.
 - approval attestation은 wrapper가 주입한 auth-context provenance를 `auth_context_file/auth_context_hash`, expected issuer/audience/scope policy, actor/channel 기준으로 검증하고, raw actor 문자열만으로 승인 provenance를 만들지 않음
 - `approval attest`는 invalid `auth_context_file` location과 path escape를 거부하며, world root 밖 trusted auth context input은 production trusted wrapper verification을 통과한 경우에만 read-only 예외로 허용함
 - registry/config file path validation은 null-root registry behavior에서 explicit absolute registry/config file path를 safe normalization/validation 후 허용하되, unsafe traversal, symlink escape, directory confusion, world-root document/artifact path escape는 거부함

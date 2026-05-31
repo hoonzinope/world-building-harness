@@ -60,7 +60,7 @@ Go CLI와 OpenCrabs bundle을 구현할 기본 디렉토리를 만든다.
 - `harness.yaml` 기본 설정 로딩
 - path normalization
 - symlink escape 차단
-- world root document/artifact 밖 read/write 차단. 단, registry/config 파일은 world root 밖에 둘 수 있으므로 registry path는 별도 path validation을 거치고 `registry add/list/remove/default`는 null-root registry file 설정에서도 동작해야 하며, `approval attest`의 trusted wrapper auth_context_file/auth_context_hash는 production에서는 signature/MAC 또는 configured wrapper trust-material 검증과 expected issuer/audience/scope policy를 통과한 경우에만 read-only 예외로 허용하고, `auth_context_hash`는 integrity binding만 담당한다
+- world root document/artifact 밖 read/write 차단. 단, registry/config 파일은 world root 밖에 둘 수 있으므로 registry path는 별도 path validation을 거치고 `registry add/list/remove/default`는 null-root registry file 설정에서도 동작해야 하며, `approval attest`의 trusted wrapper auth_context_file/auth_context_hash는 production에서는 configured wrapper-owned auth-context boundary 위치 검증을 먼저 통과한 뒤 signature/MAC 또는 configured wrapper trust-material 검증과 expected issuer/audience/scope policy를 통과한 경우에만 read-only 예외로 허용하고, `auth_context_hash`는 integrity binding만 담당한다
 - `runs/inbox/` staging path 검증
 - world root lock helper
 - atomic write helper
@@ -71,7 +71,7 @@ Go CLI와 OpenCrabs bundle을 구현할 기본 디렉토리를 만든다.
 
 ### 완료 기준
 - `world init`이 `content/`, `drafts/`, `runs/`, `archive/`, `graph/`, `harness.yaml`을 생성한다.
-- `../`, absolute path, symlink를 통한 root 밖 접근이 차단된다. 단, registry/config 파일은 path validation을 거친 null-root registry 설정에서 예외적으로 허용되며, `--auth-context-file`은 `approval attest`에서만 production trusted auth context input으로서 signature/MAC 또는 configured wrapper trust-material 검증과 expected issuer/audience/scope policy, 그리고 `--auth-context-hash` integrity binding을 함께 검증한 read-only 예외다. local fixture mode는 `WORLD_TOOL_TEST_AUTH_CONTEXT=1` explicit opt-in 테스트 전용 경로다.
+- `../`, absolute path, symlink를 통한 root 밖 접근이 차단된다. 단, registry/config 파일은 path validation을 거친 null-root registry 설정에서 예외적으로 허용되며, `--auth-context-file`은 `approval attest`에서만 configured wrapper-owned auth-context boundary 위치 검증을 먼저 통과한 production trusted auth context input으로서 signature/MAC 또는 configured wrapper trust-material 검증과 expected issuer/audience/scope policy, 그리고 `--auth-context-hash` integrity binding을 함께 검증한 read-only 예외다. local fixture mode는 `WORLD_TOOL_TEST_AUTH_CONTEXT=1` explicit opt-in 테스트 전용 경로다.
 - `--query-file`, `--title-file`, `--body-file`, `--reason-file`, `--retcon-reason-file`도 `runs/inbox/` 아래 상대 경로만 허용된다.
 - path violation은 JSON error와 non-zero exit code를 반환한다.
 - `input stage`와 `approval attest`만 `runs/inbox/`에 staging file을 생성할 수 있다.
@@ -176,9 +176,9 @@ draft를 canon과 비교해 구조 오류와 명백한 충돌을 탐지한다.
 - `world-tool draft accept`
 - `world-tool draft reject`
 - `world-tool run list`
-- `world-tool run recover`
 - `world-tool run get`
 - `world-tool run get --artifact <basename>`
+- `world-tool run recover`
 - accept 직전 validation 재실행
 - `--force`, `--reason-file`, `--reason-hash`, `--approval-attestation-file`, `--approval-attestation-hash`, `--approver-id`, `--approval-channel`, `--authenticated-actor`
 - diff binding flags: `--diff-run-id`, `--draft-hash`, `--target-base-hash`, `--patch-hash`
@@ -256,16 +256,17 @@ OpenCrabs가 `world-tool`을 범용 shell이 아니라 의미 단위 tool로 호
 - `world_force_accept_draft`
 - `world_reject_draft`
 - `world_list_runs`
-- `world_recover_run`
 - `world_get_run`
 - `world_get_run_artifact`
+- `world_recover_run`
 
 ### 완료 기준
 - 각 tool은 stdout JSON만 반환한다.
 - 긴 query/title/body/reason/retcon_reason은 `runs/inbox/` staging file 또는 stdin 방식으로 전달된다.
 - `world_stage_input`이 staging file을 만들고 후속 tool은 path/hash만 받는다.
-- trusted wrapper/adapter가 authenticated session metadata를 받아 `auth_context_file`을 생성하고, 해당 파일의 hash를 계산해 `auth_context_hash`와 함께 tool 변수로 채운다. production auth context input은 signature/MAC 또는 configured wrapper trust-material 검증과 expected issuer/audience/scope policy를 통과해야 하고, `auth_context_hash`는 integrity binding이다.
-- `auth_context_file`에는 expiry, scope, approver/session identifiers, approval channel, authenticated actor를 포함한 provenance metadata가 들어가며, wrapper는 세션 종료 또는 attestation 사용 후 이를 정리/무효화한다. local fixture mode는 `WORLD_TOOL_TEST_AUTH_CONTEXT=1` explicit opt-in 테스트 전용 경로다.
+- trusted wrapper/adapter가 authenticated session metadata를 받아 `auth_context_file`을 생성하고, 해당 파일의 hash를 계산해 `auth_context_hash`와 함께 tool 변수로 채운다. production auth context input은 configured wrapper-owned auth-context boundary 위치 검증을 먼저 통과한 뒤 signature/MAC 또는 configured wrapper trust-material 검증과 expected issuer/audience/scope policy를 통과해야 하고, `auth_context_hash`는 integrity binding이다.
+- `auth_context_file`의 trusted contents는 expiry, scope, session metadata, approval channel, authenticated actor, downstream_action provenance 등이다. wrapper는 세션 종료 또는 attestation 사용 후 이를 정리/무효화한다. local fixture mode는 `WORLD_TOOL_TEST_AUTH_CONTEXT=1` explicit opt-in 테스트 전용 경로다.
+- `approver_id`는 CLI/template input으로 별도 전달되는 non-authoritative audit/display label로 attestation과 audit에 기록된다.
 - `world_create_approval_attestation`은 wrapper가 주입한 `auth_context_file/auth_context_hash`, expected issuer/audience/scope policy, actor/channel provenance를 항상 검증하고, raw actor 문자열만으로 승인 provenance를 만들지 않는다.
 - approval attestation 관련 dynamic tool 변수는 trusted wrapper/adapter 경계에서만 채워지고, 사용자 입력만으로는 생성되거나 덮어쓰여서는 안 된다.
 - `world_accept_draft`는 diff binding 값을 필수로 받는다.

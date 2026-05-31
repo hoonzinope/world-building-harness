@@ -209,12 +209,14 @@ stateDiagram-v2
     Validating --> DraftPass: pass
     Validating --> DraftWarning: warning
     Validating --> DraftConflict: conflict/error
-    DraftPass --> AwaitingApproval
-    DraftWarning --> AwaitingApproval
+    DraftPass --> DiffReady: world_diff_draft
+    DraftWarning --> DiffReady: world_diff_draft
     DraftConflict --> NeedsRevision
     NeedsRevision --> DraftCreated: update draft
-    AwaitingApproval --> Accepted: user approves + accept tool passes
-    AwaitingApproval --> Rejected: user rejects
+    DiffReady --> ReasonStaged: world_stage_input(kind=reason)
+    ReasonStaged --> AttestationReady: world_create_approval_attestation
+    AttestationReady --> Accepted: world_accept_draft
+    AttestationReady --> Rejected: user rejects
     Accepted --> ArchivedAccepted
     Rejected --> ArchivedRejected
 ```

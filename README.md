@@ -51,7 +51,7 @@ world-tool draft accept
 
 ## 구현 후 Quickstart 목표
 아래는 CLI가 구현된 뒤 통과해야 하는 첫 성공 경로다.
-`approval attest` 단계는 OpenCrabs trusted wrapper/session metadata로부터 생성된 `auth_context_file`/`auth_context_hash`를 사용하며, 이 파일은 OpenCrabs trusted wrapper가 생성한다. 로컬 CLI 테스트에서는 명시적인 test fixture/mock auth context만 사용하고, 운영 provenance로는 취급하지 않는다. prompt, model output, staged files는 신뢰하지 않는다.
+`approval attest` 단계는 OpenCrabs trusted wrapper/session metadata로부터 생성된 `auth_context_file`/`auth_context_hash`를 사용하며, 이 파일은 OpenCrabs trusted wrapper가 생성한다. production 경로에서는 wrapper-owned auth-context boundary 위치 검증이 먼저고, 로컬 CLI 테스트에서는 명시적인 test fixture/mock auth context만 사용하는 test-only location exception을 둔다. 운영 provenance로는 취급하지 않는다. prompt, model output, staged files는 신뢰하지 않는다.
 `draft create`는 명시적 `--id`를 입력으로 받고, update/deprecate draft 생성은 `world-tool draft create --change-type update|deprecate --target-id ...`를 사용한다. `world-tool draft update`는 이미 생성된 active draft의 본문 수정용이다. 별도의 `world-tool draft deprecate` 명령은 없다. create에서 나온 id로 파생된 `draft_path`를 기준으로 validate, diff, approval attestation, accept가 이어진다. create diff의 JSON은 `target_exists: false`, `target_base_hash: null`이고, create 경로의 `approval attest`와 `draft accept`는 `--target-base-hash none`을 사용한다. update/deprecate만 sha256 `target_base_hash`를 사용한다.
 Quickstart는 아직 CLI 구현 후의 목표 예시다. `jq`와 `python3`가 필요하며, 아래 스크립트는 JSON 출력에서 값을 추출해 그대로 이어 붙이는 smoke test 형태다.
 
@@ -134,7 +134,7 @@ approval_attestation_hash=$(jq -r '.data.approval_attestation_hash' <<<"$approva
 accept_json=$(world-tool draft accept --world "$WORLD_ID" --draft "$draft_path" --diff-run-id "$diff_run_id" --draft-hash "$draft_hash" --target-base-hash "$target_base_hash" --patch-hash "$patch_hash" --approver-id "$APPROVER_ID" --approval-channel "$APPROVAL_CHANNEL" --approval-attestation-file "$approval_attestation_file" --approval-attestation-hash "$approval_attestation_hash" --authenticated-actor "$AUTHENTICATED_ACTOR" --reason-file "$reason_file" --reason-hash "$reason_hash" --json)
 jq -e --arg reason_file "$reason_file" --arg reason_hash "$reason_hash" --arg approval_attestation_file "$approval_attestation_file" --arg approval_attestation_hash "$approval_attestation_hash" '.ok == true and .command_status == "completed" and .data.approval.downstream_action == "world_accept_draft" and .data.approval.reason_file == $reason_file and .data.approval.reason_hash == $reason_hash and .data.approval.approval_attestation_file == $approval_attestation_file and .data.approval.approval_attestation_hash == $approval_attestation_hash' <<<"$accept_json" >/dev/null
 ```
-로컬 CLI 테스트용 auth context는 world root 밖의 임시 파일을 쓰는 local fixture/mock 전용이며, 운영 provenance가 아니다.
+로컬 CLI 테스트용 auth context는 world root 밖의 임시 파일을 쓰는 local fixture/mock 전용 test-only location exception이며, 운영 provenance가 아니다.
 
 ## 현재 주의점
 - 이 레포의 현재 파일은 문서뿐이다.
