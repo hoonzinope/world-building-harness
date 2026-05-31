@@ -26,6 +26,8 @@ canon과 충돌한다고 확정할 수는 없지만 검토가 필요한 부분�
 ### error
 파일 파싱 실패, 필수 필드 누락, schema 불일치 등으로 검증을 완료할 수 없다.
 
+validation 결과의 `error`와 `conflict`는 accept 단계에서 command-level `blocked`를 뜻한다. `draft validate` 자체는 검증 결과를 반환하는 command이며, 이 문서에서 `blocked`는 policy나 validation 때문에 accept를 진행할 수 없다는 의미로 쓴다.
+
 ## 3. Structural Rules
 ### VR-001: frontmatter 존재
 모든 active draft와 content 문서는 YAML frontmatter를 가져야 한다.
@@ -50,6 +52,12 @@ canon과 충돌한다고 확정할 수는 없지만 검토가 필요한 부분�
 
 legacy/import 문서에 `schema_version`이 없으면 migration 전까지 warning으로 낮출 수 있다. `world-tool draft create`가 만든 새 문서에는 `schema_version` 누락을 error로 처리한다.
 
+draft 문서의 추가 contract:
+- `change_type`은 필수이며 `create`, `update`, `deprecate` 중 하나여야 한다.
+- `change_type`이 `update` 또는 `deprecate`이면 `target_id`와 `retcon_reason`이 필수다.
+- `change_type`이 `create`이면 `target_id`와 `retcon_reason`은 null이거나 생략되어야 한다.
+- missing, 빈 문자열, 잘못된 enum 값은 error다.
+
 ### VR-003: type 허용값
 허용 type:
 - character
@@ -71,6 +79,16 @@ legacy/import 문서에 `schema_version`이 없으면 migration 전까지 warnin
 
 ### VR-005: 날짜 형식
 created_at과 updated_at은 `YYYY-MM-DD` 또는 RFC3339 timestamp여야 한다. world 안에서는 하나의 형식을 유지하는 것을 권장하며, 혼용은 warning이다.
+
+### VR-006: draft path/type 규칙
+활성 draft의 path는 type과 일치해야 한다.
+
+- `character`, `nation`, `organization`, `place`, `event`, `timeline`, `magic`, `glossary` draft는 [schema.md](schema.md)의 type-specific draft directory 아래에 있어야 한다.
+- `storylet` draft는 `drafts/storylets/` 아래에만 있어야 한다.
+- non-storylet draft가 `drafts/storylets/`에 있으면 error다.
+- `storylet` draft가 `drafts/storylets/` 밖에 있으면 error다.
+- active draft path와 type이 다르면 accept는 blocked다.
+- archive/accepted, archive/rejected, archive/deprecated는 active draft path 규칙의 예외다.
 
 ## 4. ID Rules
 ### VR-101: id 전역 중복 금지
@@ -110,32 +128,40 @@ draft validation에서는 related에 적힌 id가 content 또는 active draft에
 
 accept validation에서는 related id가 content에 있어야 한다. active draft에만 있는 id를 canon 문서가 참조하려고 하면 conflict다. 단, 향후 batch accept 기능에서는 같은 batch 안에서 함께 accept되는 draft target만 예외로 둘 수 있다.
 
-### VR-302: affiliation 존재성
-character의 affiliation이 존재하지 않는 organization/nation이면 warning이다.
+### VR-302: canonical relationship graph
+`relationships[]`는 canonical graph다. `affiliation`, `capital`, `located_in`, `participants`, `locations`는 convenience field이며, validator는 이를 아래 관계로 normalize한다.
 
-### VR-303: capital 참조
-nation의 capital이 place id로 존재하지 않으면 warning이다.
+- `affiliation` -> `member_of`
+- `capital` -> `capital_of`
+- `located_in` -> `located_in`
+- `participants` -> `participates_in`
+- `locations` -> `occurred_at`
+- `affiliation`은 strict membership shorthand다. 느슨한 관계는 `relationships[]`의 `affiliated_with`를 직접 사용한다.
 
-### VR-304: 상호 관계 불일치
-relationships에 A가 B의 부모라고 되어 있는데 B 문서에서 A가 형제로 되어 있으면 conflict 후보로 기록한다.
+convenience field와 explicit `relationships[]`가 같은 사실을 표현하지 않으면 conflict다. 편의 필드가 배열이라면 각 값은 별도 edge로 normalize된다. 잘못된 shape, 비문자열 id, 중복이지만 의미가 다른 edge는 error다.
 
-### VR-305: relationship target 존재성
+### VR-303: relationship target 존재성
 draft validation에서는 relationships[].target이 content 또는 active draft에 없으면 warning이다. strict mode에서는 error로 올릴 수 있다.
 
-accept validation에서는 relationships[].target이 content에 있어야 한다. active draft에만 있는 target은 conflict다.
+accept validation에서는 relationships[].target이 content에 있어야 한다. active draft에만 있는 target은 conflict이며 accept는 blocked다. batch accept가 생기면 같은 batch 안에서 함께 accept되는 target만 예외로 둘 수 있다.
 
-### VR-306: relationship type 허용값
+### VR-304: relationship type 허용값
 정적 검증 가능한 relationship type은 [schema.md](schema.md)의 allowlist로 관리한다.
 
 MVP 기본 모드에서 알 수 없는 type은 draft validation에서는 conflict, accept validation에서는 blocking conflict다. graph builder가 generic edge로 처리하는 것은 별도 `graph rebuild --allow-generic` 같은 후속 기능에서만 허용한다.
 
-### VR-307: relationship domain/range 검사
+### VR-305: relationship domain/range 검사
 allowlist에 정의된 source type과 target type이 맞지 않으면 draft validation에서는 conflict, accept validation에서는 blocking conflict다.
 
 예: `capital_of`의 source는 place여야 하고 target은 nation이어야 한다.
 
-### VR-308: symmetric relationship 정규화
-`ally_of`, `rival_of`, `sibling_of` 같은 symmetric relationship은 graph builder가 양방향 edge로 정규화한다. 한쪽 문서에만 있어도 error는 아니지만, 반대편 문서와 직접 모순되면 conflict 후보로 기록한다.
+### VR-306: inverse/symmetric contradiction 검사
+`parent_of`/`child_of`, `predecessor_of`/`successor_of`는 inverse metadata로 normalize한다. `sibling_of`, `ally_of`, `rival_of`는 symmetric edge다.
+
+- `ally_of`와 `rival_of`는 같은 source/target pair에서 동시에 존재하면 conflict다.
+- `parent_of`와 `child_of`는 같은 source/target pair에서 동시에 존재하면 conflict다.
+- `predecessor_of`와 `successor_of`는 같은 source/target pair에서 동시에 존재하면 conflict다.
+- symmetric edge는 한쪽 문서에만 있어도 되지만, 반대편 문서에서 정반대 관계가 발견되면 conflict 후보로 기록한다.
 
 ## 7. Terminology Rules
 ### VR-401: 동명 entity 검사
@@ -155,7 +181,7 @@ accept workflow 외부에서 content가 변경되면 policy violation으로 기�
 `change_type: create` draft는 기존 canon의 핵심 사실을 덮어쓸 수 없다. 기존 canon을 수정하려면 `change_type: update`와 `target_id`를 사용한다.
 
 ### VR-503: retcon 표시
-기존 canon을 의도적으로 수정하는 `change_type: update` 또는 `change_type: deprecate` draft는 frontmatter `retcon_reason` 또는 본문 `Canon Notes`에 사유를 남긴다. 누락 시 conflict다.
+기존 canon을 의도적으로 수정하는 `change_type: update` 또는 `change_type: deprecate` draft는 frontmatter `retcon_reason`을 필수로 가진다. 본문 `Canon Notes`는 보강 설명용이고, frontmatter를 대체하지 않는다. `retcon_reason`이 비어 있으면 error다.
 
 ### VR-504: archive 비활성화
 archive 아래 문서는 canon 또는 pending draft로 취급하지 않는다. accepted draft 원본은 추적용 보관물이며 content 문서가 canon이다.
@@ -164,9 +190,9 @@ archive 아래 문서는 canon 또는 pending draft로 취급하지 않는다. a
 OpenCrabs DB나 search index와 content가 불일치하면 content를 우선한다. OpenCrabs 쪽 데이터는 재색인 대상으로 기록한다.
 
 ### VR-506: target path와 base hash
-accept 대상 content path는 아래 규칙으로 deterministic하게 계산한다.
+accept 대상 content path와 active draft path는 아래 규칙으로 deterministic하게 계산한다.
 
-type to directory:
+content type to directory:
 - `character` -> `content/characters/`
 - `nation` -> `content/nations/`
 - `organization` -> `content/organizations/`
@@ -181,6 +207,17 @@ file name:
 - file name은 `<id>.md`다.
 - id는 이미 영문 소문자, 숫자, 언더스코어만 허용하므로 한글 title 처리와 transliteration은 필요하지 않다.
 
+draft type to directory:
+- `character` -> `drafts/characters/`
+- `nation` -> `drafts/nations/`
+- `organization` -> `drafts/organizations/`
+- `place` -> `drafts/places/`
+- `event` -> `drafts/events/`
+- `timeline` -> `drafts/timeline/`
+- `magic` -> `drafts/magic/`
+- `glossary` -> `drafts/glossary/`
+- `storylet` -> `drafts/storylets/`
+
 `change_type: create`는 위 규칙으로 새 target path를 계산한다. 이미 다른 id의 content 문서가 같은 target path를 점유하면 conflict다.
 
 `change_type: update`와 `change_type: deprecate`는 기존 content 문서의 path를 유지한다. rename/path move는 MVP 범위 밖이며 별도 migration command로 처리한다.
@@ -188,9 +225,34 @@ file name:
 draft diff 결과에는 draft hash, target content base hash, patch hash를 포함한다. draft accept는 해당 binding 값이 없거나 현재 상태와 다르면 `DIFF_BINDING_REQUIRED` 또는 `DIFF_BINDING_MISMATCH`로 blocked다.
 
 ### VR-507: storylet canon 금지
-MVP에서 `type: storylet` 문서는 `drafts/storylets/` 또는 `archive/` 아래에만 존재할 수 있다. `content/` 아래 storylet 문서 또는 `status: canon` storylet은 content validation error다.
+MVP에서 `type: storylet` active draft는 `drafts/storylets/` 아래에만 존재할 수 있다. `content/` 아래 storylet 문서 또는 `status: canon` storylet은 content validation `error`이며 accept에서는 blocked다. archive copy는 active draft scope 밖의 보관물이다.
 
-## 9. LLM-assisted Validation
+## 9. Migration Workflow
+legacy/import 문서처럼 schema가 완전히 정리되지 않은 대상은 warning-only로 끝내지 않고 migration artifact로 묶는다.
+
+### migration report
+각 migration run은 최소 다음 산출물을 남긴다.
+
+- `runs/<run-id>/migration.json`
+- `runs/<run-id>/migration.md`
+- `runs/<run-id>/migration-actions.jsonl`
+
+report에는 다음이 포함되어야 한다.
+
+- source 문서 목록
+- warning, conflict, error, blocked 항목 분리
+- 자동 수정 가능 항목과 수동 수정 필요 항목
+- path move 필요 여부
+- change_type/target_id/retcon_reason 보정 여부
+- before/after hash 또는 diff binding 정보
+
+### migration milestone boundary
+- `schema_version` 누락 같은 legacy/import 호환 이슈는 migration warning으로 시작할 수 있다.
+- `change_type` 누락, invalid enum, `target_id` 누락/불일치, `retcon_reason` 누락은 migration report에서 blocker로 분리한다.
+- migration command가 있으면 dry-run은 report만 생성하고, apply는 report와 artifact를 남긴 뒤에만 실행한다.
+- migration 완료 기준은 warning이 0이 아니라, warning이 action item으로 분류되고 blocked 항목이 없어졌는지로 판단한다.
+
+## 10. LLM-assisted Validation
 정적 rule로 잡기 어려운 부분은 OpenCrabs/Codex가 후보 검토를 도울 수 있다.
 
 검토 항목:
@@ -204,15 +266,17 @@ LLM-assisted 결과는 warning 또는 conflict candidate로만 취급한다.
 
 OpenCrabs/Codex는 semantic validation 후보를 생성할 수 있지만, validation status 확정과 accept 차단 여부는 `world-tool` validator가 결정한다. OpenCrabs가 반환한 structured output은 schema-valid처럼 보이더라도 신뢰하지 않고 재파싱한다.
 
-## 10. Accept Blocking Rules
+## 11. Accept Blocking Rules
 기본적으로 다음 상태는 accept를 차단한다.
 - validation status = error
 - validation status = conflict
 - 필수 frontmatter 누락
+- `change_type` 누락 또는 invalid enum
 - `change_type: create`의 id 중복
-- `change_type: update`의 target_id 누락 또는 target_id 불일치
+- `change_type: update` 또는 `change_type: deprecate`의 target_id 누락 또는 target_id 불일치
+- `change_type: update` 또는 `change_type: deprecate`의 retcon_reason 누락
 - content target path 충돌
-- 대상 draft가 drafts/ 밖 active draft가 아닌 경우
+- 대상 draft가 active draft path/type 규칙을 위반하는 경우
 - MVP에서 `type: storylet` draft를 content canon으로 accept하려는 경우
 - diff binding 누락 또는 불일치
 - relationship/related target이 content가 아니라 active draft에만 있는 경우
@@ -227,14 +291,15 @@ warning은 기본 accept를 차단하지 않는다. 단, accept reason에는 war
 - malformed markdown 또는 YAML parse failure
 - 필수 frontmatter 누락
 - `change_type: create` id 중복
-- `change_type: update` target_id 누락 또는 target_id 불일치
+- `change_type: update` 또는 `change_type: deprecate` target_id 누락 또는 target_id 불일치
+- `change_type: update` 또는 `change_type: deprecate` retcon_reason 누락
 - content target path 충돌
 - diff binding 누락 또는 불일치
 - storylet canon 승격
 - atomic write 실패
 - lock 획득 실패
 
-## 11. Validation Report 형식
+## 12. Validation Report 형식
 ```markdown
 # Validation Report
 

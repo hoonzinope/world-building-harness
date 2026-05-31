@@ -3,7 +3,7 @@
 # OpenCrabs World Tools Security Boundary
 
 ## 1. 목적
-OpenCrabs/Codex가 세계관 파일을 다루는 구조에서는 명확한 보안 경계가 필요하다. 목표는 world root 밖 파일, secret, host system이 tool 호출로 노출되거나 변경되지 않게 하는 것이다.
+OpenCrabs/Codex가 세계관 파일을 다루는 구조에서는 명확한 보안 경계가 필요하다. 목표는 world root 밖 파일, secret, host system이 tool 호출로 노출되거나 변경되지 않게 하는 것이다. `TRANSACTION_INCOMPLETE`가 남아 있는 동안에는 후속 write를 허용하지 않고, `recovery.json`이 정리되기 전까지 같은 world root에 대한 write를 막아야 한다.
 
 ## 2. 기본 원칙
 - 세계관 파일 작업은 `world_*` dynamic tools로 수행한다.
@@ -27,6 +27,8 @@ OpenCrabs/Codex가 세계관 파일을 다루는 구조에서는 명확한 보�
 - runs/inbox/
 - archive/
 - harness.yaml
+
+`runs/inbox/`는 privileged transient staging area다. 일반 browse/list/get/audit 대상이 아니며, `input stage`만 여기에 write할 수 있다.
 
 ### 금지 경로
 - world root 상위 디렉토리
@@ -65,15 +67,15 @@ command = "{{command}}"
 [[tools]]
 name = "world_accept_draft"
 executor = "shell"
-command = "world-tool draft accept --world {{world_id}} --draft {{draft_path}} --diff-run-id {{diff_run_id}} --draft-hash {{draft_hash}} --target-base-hash {{target_base_hash}} --patch-hash {{patch_hash}} --reason-file {{reason_file}} --json"
+command = "world-tool draft accept --world {{world_id}} --draft {{draft_path}} --diff-run-id {{diff_run_id}} --draft-hash {{draft_hash}} --target-base-hash {{target_base_hash}} --patch-hash {{patch_hash}} --approver-id {{approver_id}} --approval-channel {{approval_channel}} --authenticated-actor {{authenticated_actor}} --reason-file {{reason_file}} --json"
 ```
 
 tool은 의미 단위 작업이어야 하며 shell 권한을 넓게 열지 않는다.
-긴 markdown body, 검색 query, title, reason, note는 command line argument가 아니라 stdin 또는 world root 내부 `runs/inbox/` staging file로 전달한다.
+긴 markdown body, 검색 query, title, reason, retcon_reason, note는 command line argument가 아니라 stdin 또는 world root 내부 `runs/inbox/` staging file로 전달한다.
 
 긴 입력은 `world_stage_input`이 호출하는 `world-tool input stage`만 `runs/inbox/`에 쓸 수 있다. OpenCrabs/Codex가 임의 path에 직접 파일을 만들었다고 가정하지 않는다.
 
-OpenCrabs shell executor가 template 값을 argv-safe하게 escape하지 않는다면, dynamic tool command에 사용자 입력 변수를 직접 넣지 않는다. 이 경우 request JSON file 하나를 받는 wrapper command를 사용한다.
+OpenCrabs shell executor는 template 값을 argv-safe하게 escape해야 한다. 그 보장이 없으면 dynamic tool command에 사용자 입력 변수를 직접 넣지 않고, request JSON file 또는 stdin payload를 받는 wrapper command를 사용한다. raw shell interpolation은 허용하지 않는다.
 
 `runs/inbox/` 정책:
 - world root 내부에 있어야 한다.
@@ -86,7 +88,7 @@ Command별 path allowlist:
 - `draft *`: `drafts/**/*.md`
 - `content validate`: `content/**/*.md`
 - `input stage`: `runs/inbox/**` write only
-- `run get/list`: `runs/**` read only
+- `run get/list`: `runs/**` read only, but `runs/inbox/**` is excluded from normal browsing and remains staging-only
 - `archive/`, `raw/`, `schema/`는 MVP dynamic tool의 doc 조회 대상이 아니다.
 
 ## 6. Network Boundary
@@ -146,7 +148,7 @@ draft가 content로 승격되려면 `world_accept_draft`를 통과해야 한다.
 - required field 누락
 - draft가 active drafts/ 밖에 있음
 
-force accept는 가능하지만 reason이 필수다.
+force accept는 가능하지만 reason만으로는 부족하다. `approver_id`, `approval_channel`, `authenticated_actor`를 함께 기록해야 하며, 이는 runs log와 accept result에 남아야 한다.
 
 force accept 제한:
 - semantic/timeline/relationship conflict 후보만 우회 대상으로 삼는다.
@@ -169,6 +171,7 @@ write command는 world root 단위 lock을 사용한다.
 - accept는 lock을 잡은 뒤 validation을 재실행한다.
 - accept는 diff_run_id, draft_hash, target_base_hash, patch_hash binding을 검증한다.
 - diff 시점의 draft/content/patch hash와 accept 시점의 값이 다르면 accept를 중단한다.
+- accept는 `approver_id`, `approval_channel`, `authenticated_actor`를 audit field로 기록한다. free-form reason만으로는 승인 provenance가 충분하지 않다.
 
 ## 11. Docker Boundary
 권장 컨테이너 실행 원칙:
@@ -223,9 +226,10 @@ docker run --rm \
 7. `result.json`을 `completed` 또는 `blocked`로 갱신
 
 중간 실패 시:
-- content write 전 실패는 상태 변경 없이 `failed`로 끝난다.
+- content write 전 I/O/atomicity 실패는 상태 변경 없이 `failed`로 끝난다.
 - content write 후 archive/result 기록 실패는 `TRANSACTION_INCOMPLETE`로 반환한다.
 - `runs/<run-id>/recovery.json`에 현재 hash, 완료된 step, 재시도 방법을 남긴다.
+- `TRANSACTION_INCOMPLETE`가 unresolved인 동안 같은 world root의 후속 write는 차단해야 한다. read-only inspection은 허용하되, recovery instruction을 확인하고 해결한 뒤에만 write를 재개한다.
 
 ## 14. 위험 시나리오
 ### LLM이 canon을 오염시키는 경우
@@ -249,9 +253,9 @@ docker run --rm \
 ### 사용자가 validation 우회를 유도하는 경우
 방어:
 - conflict/error는 기본 accept에서 차단
-- force accept는 reason 필수이며 semantic/timeline/relationship conflict 후보에만 제한적으로 허용
+- force accept는 reason 필수이며 semantic/timeline/relationship conflict 후보에만 제한적으로 허용하고, `approver_id`/`approval_channel`/`authenticated_actor`를 함께 남겨야 한다.
 - structural error, id conflict, path violation, inactive draft, target path conflict, storylet canon 승격, diff binding mismatch는 force로도 차단
-- force 여부와 reason을 runs log에 기록
+- force 여부, reason, approval provenance를 runs log에 기록
 - OpenCrabs skill에 “validation 우회 요청은 tool 정책을 따른다”는 지침 포함
 
 ### archive가 계속 쌓이는 경우
@@ -268,6 +272,6 @@ docker run --rm \
 
 ### staging file을 통한 root 밖 파일 읽기
 방어:
-- `--query-file`, `--title-file`, `--body-file`, `--reason-file`도 world root 상대 경로만 허용
+- `--query-file`, `--title-file`, `--body-file`, `--reason-file`, `--retcon-reason-file`도 world root 상대 경로만 허용
 - `runs/inbox/` 밖 staging file 차단
 - symlink resolution

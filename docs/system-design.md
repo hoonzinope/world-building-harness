@@ -5,6 +5,8 @@
 ## 1. 한 줄 정의
 OpenCrabs가 하네스와 오케스트레이터 역할을 하고, 이 레포는 OpenCrabs가 세계관을 안전하게 관리하도록 `world-building` skill, dynamic tools, Go `world-tool` CLI를 제공한다.
 
+이 문서는 구현 전의 목표 동작을 설명하는 설계 계약이다.
+
 ```text
 판단과 대화: OpenCrabs + Codex OAuth provider
 작업 규칙: world-building skill
@@ -53,7 +55,7 @@ flowchart TD
 - Go 단일 바이너리다.
 - world root 밖 path를 차단한다.
 - Markdown/frontmatter를 파싱하고 정규화한다.
-- validation, diff, accept/reject, runs log를 수행한다.
+- validation, diff, accept/reject, runs log, recovery handling을 수행한다.
 - `content/` 변경은 accept command에서만 허용한다.
 
 ## 4. World Root
@@ -69,12 +71,25 @@ flowchart LR
 
 `content/`가 canon source of truth다. OpenCrabs DB, search index, graph는 보조 데이터이며 content에서 재생성 가능해야 한다.
 
+`runs/inbox/`는 privileged transient staging area다. normal browse/search/list 대상이 아니며, `input stage`만 여기에 write한다.
+
+canonical root binding:
+
+| Concept | Meaning |
+| --- | --- |
+| `world_id` | logical registry key |
+| `registry_root` | registry에 저장된 canonical root |
+| `root` | 실제 tool process가 접근하는 effective root |
+| audit fields | `world_id`, `registry_root`, `root`, `run_id` |
+
+native execution에서는 `registry_root == root`가 되어야 한다. Docker에서는 registry root와 effective root인 `root`가 달라질 수 있으므로, audit/result envelope가 둘을 구분해 기록해야 한다.
+
 ## 5. 주요 Tool 세트
 | Tool | 내부 command | 역할 |
 | --- | --- | --- |
 | `world_list` | `world-tool world list` | registry에 등록된 world 목록 |
 | `world_status` | `world-tool world status` | world 상태와 pending draft 요약 |
-| `world_stage_input` | `world-tool input stage` | 긴 query/title/body/reason을 runs/inbox에 staging |
+| `world_stage_input` | `world-tool input stage` | 긴 query/title/body/reason/retcon_reason을 runs/inbox에 staging |
 | `world_search_docs` | `world-tool doc search` | 관련 canon/draft 검색 |
 | `world_read_doc` | `world-tool doc read` | 문서 읽기 |
 | `world_create_draft` | `world-tool draft create` | canon 변경 없이 draft 생성 |
@@ -84,8 +99,8 @@ flowchart LR
 | `world_read_draft` | `world-tool draft read` | active draft 읽기 |
 | `world_validate_draft` | `world-tool draft validate` | schema/canon 검증 |
 | `world_diff_draft` | `world-tool draft diff` | accept 예상 변경 확인 |
-| `world_accept_draft` | `world-tool draft accept` | validation 후 content 승격 |
-| `world_force_accept_draft` | `world-tool draft accept --force` | 정책상 허용되는 conflict 후보 강행 |
+| `world_accept_draft` | `world-tool draft accept` | validation 후 content 승격, approval provenance required |
+| `world_force_accept_draft` | `world-tool draft accept --force` | 오퍼레이터가 승인한 예외 경로, policy limits still apply |
 | `world_reject_draft` | `world-tool draft reject` | draft 반려 |
 | `world_get_run` | `world-tool run get` | run artifact 조회 |
 
@@ -102,30 +117,35 @@ sequenceDiagram
     User->>OpenCrabs: "북부 제국 설정 만들어줘"
     OpenCrabs->>Skill: world-building rules apply
     OpenCrabs->>Tool: world_status(world_id)
-    Tool->>WT: world-tool world status --json
+    Tool->>WT: world-tool world status --world ashen-continent --json
     WT->>World: read content/drafts/runs
     WT-->>Tool: status JSON
     Tool-->>OpenCrabs: status
     OpenCrabs->>Tool: world_stage_input(kind=query)
-    Tool->>WT: world-tool input stage --stdin --json
+    Tool->>WT: world-tool input stage --world ashen-continent --kind query --stdin --json
     WT-->>OpenCrabs: query_file
     OpenCrabs->>Tool: world_search_docs(query_file)
-    Tool->>WT: world-tool doc search --json
+    Tool->>WT: world-tool doc search --world ashen-continent --query-file runs/inbox/<query-file> --json
     WT-->>OpenCrabs: related docs
     OpenCrabs->>OpenCrabs: Codex OAuth provider drafts markdown
-    OpenCrabs->>Tool: world_stage_input(kind=title/body)
-    Tool->>WT: world-tool input stage --stdin --json
-    WT-->>OpenCrabs: title_file, body_file
+    OpenCrabs->>Tool: world_stage_input(kind=title)
+    Tool->>WT: world-tool input stage --world ashen-continent --kind title --stdin --json
+    WT-->>OpenCrabs: title_file
+    OpenCrabs->>Tool: world_stage_input(kind=body)
+    Tool->>WT: world-tool input stage --world ashen-continent --kind body --stdin --json
+    WT-->>OpenCrabs: body_file
     OpenCrabs->>Tool: world_create_draft(title_file, body_file)
-    Tool->>WT: world-tool draft create --json
+    Tool->>WT: world-tool draft create --world ashen-continent --change-type create --type nation --title-file runs/inbox/<title-file> --body-file runs/inbox/<body-file> --json
     WT->>World: write drafts/ and runs/
     WT-->>OpenCrabs: draft_id, draft_path, run_id
     OpenCrabs->>Tool: world_validate_draft(draft_path)
-    Tool->>WT: world-tool draft validate --json
+    Tool->>WT: world-tool draft validate --world ashen-continent --draft drafts/nations/<draft>.md --json
     WT->>World: write validation artifacts
     WT-->>OpenCrabs: validation JSON
     OpenCrabs-->>User: draft summary + validation + next actions
 ```
+
+위 시퀀스는 schematic이지만 command contract를 깨지 않도록 필수 인자 `--world`, 파일 경로 입력, hash binding, approval provenance를 명시한다.
 
 ## 7. Accept 흐름
 ```mermaid
@@ -138,15 +158,15 @@ sequenceDiagram
 
     User->>OpenCrabs: "이 draft 승인해"
     OpenCrabs->>Tool: world_diff_draft(draft_path)
-    Tool->>WT: world-tool draft diff --json
+    Tool->>WT: world-tool draft diff --world ashen-continent --draft drafts/nations/<draft>.md --json
     WT-->>OpenCrabs: diff summary + diff_run_id + hashes
     OpenCrabs-->>User: 변경 내용 확인
     User->>OpenCrabs: "승인"
     OpenCrabs->>Tool: world_stage_input(kind=reason)
-    Tool->>WT: world-tool input stage --stdin --json
+    Tool->>WT: world-tool input stage --world ashen-continent --kind reason --stdin --json
     WT-->>OpenCrabs: reason_file
-    OpenCrabs->>Tool: world_accept_draft(draft_path, diff_run_id, hashes, reason_file)
-    Tool->>WT: world-tool draft accept --json
+    OpenCrabs->>Tool: world_accept_draft(draft_path, diff_run_id, hashes, reason_file, approver_id, approval_channel, authenticated_actor)
+    Tool->>WT: world-tool draft accept --world ashen-continent --draft drafts/nations/<draft>.md --diff-run-id 20260530-010 --draft-hash sha256:... --target-base-hash sha256:... --patch-hash sha256:... --approver-id park.hana --approval-channel OpenCrabs-chat --authenticated-actor openid:codex-oauth:user-123 --reason-file runs/inbox/<reason-file> --json
     WT->>World: verify diff binding and draft validate again
     alt validation pass or warning
         WT->>World: write content/
@@ -154,7 +174,7 @@ sequenceDiagram
         WT->>World: write runs/result.json
         WT-->>OpenCrabs: accepted JSON
         OpenCrabs-->>User: accepted + content path
-    else conflict or error
+    else conflict, error, or policy stop
         WT->>World: write blocked result
         WT-->>OpenCrabs: blocked JSON
         OpenCrabs-->>User: blocked reason + fixes
@@ -300,9 +320,10 @@ internal/audit
 - OpenCrabs가 이미 provider, skill, dynamic tools, channel UX를 제공하므로 별도 agent runtime을 만들지 않는다.
 - `world-tool`은 AI SDK를 품지 않는다. AI 판단은 OpenCrabs/Codex가 한다.
 - safety-critical 로직은 skill이 아니라 Go tool에서 강제한다.
-- dynamic tools는 command template quoting 문제를 피하기 위해 긴 query/title/body/reason을 `world_stage_input`으로 staging한 뒤 file path와 hash만 전달한다.
+- dynamic tools는 command template quoting 문제를 피하기 위해 긴 query/title/body/reason/retcon_reason을 `world_stage_input`으로 staging한 뒤 file path와 hash만 전달한다.
 - 기본 provider는 Codex OAuth다. Codex CLI provider는 OAuth provider를 사용할 수 없는 환경에서만 fallback으로 둔다.
 - OpenCrabs credential/config volume은 world root volume과 분리한다.
+- world_id는 logical registry key, registry_root는 canonical registry path, root는 실제 실행 effective root다. Docker에서는 registry_root와 root를 분리해 audit하고, root field는 항상 실행 root 기준으로 해석한다.
 
 ## 13. MVP 준비 상태
 현재 문서는 구현 전 설계 기준이다. 구현이 필요한 산출물은 다음이다.
@@ -327,7 +348,7 @@ world-tool world init
 
 ## 14. 확장 포인트
 - Graph rebuild/check: content에서 nodes/edges/orphan report 재생성
-- Retcon 관리: Canon Notes, source_run_id, force reason을 이용해 변경 이력 추적
+- Retcon 관리: frontmatter `retcon_reason`, source_run_id, force reason을 이용해 변경 이력 추적
 - Multi-world registry: OpenCrabs 설정 또는 world-tool config로 world id와 root 매핑
 - Validation strictness: world별 light/normal/strict 정책
 - Archive storage: accepted/rejected archive pruning, compression, export

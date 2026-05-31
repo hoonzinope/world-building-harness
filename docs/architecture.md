@@ -141,6 +141,6 @@ accepted/rejected/deprecated draft를 보관한다. archive는 active validation
 - `world-tool`은 선택된 world root 밖을 읽거나 쓰지 않는다.
 - `content/`는 `world_accept_draft`에서만 변경된다.
 - `draft accept`는 diff binding과 validation을 재실행한다.
-- `force accept`는 reason이 필수이며, semantic/timeline/relationship conflict 후보에만 제한적으로 허용하고 runs log에 남긴다.
+- `force accept`는 reason과 approval provenance가 필수이며, semantic/timeline/relationship conflict 후보에만 제한적으로 허용하고 runs log에 남긴다.
 - Docker 사용 시 job container에는 선택된 world root 하나만 마운트한다.
 - OpenCrabs credential/config volume과 world root volume은 분리한다.

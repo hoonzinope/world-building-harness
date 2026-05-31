@@ -2,13 +2,13 @@
 
 OpenCrabs를 세계관 빌딩 하네스이자 오케스트레이터로 사용하기 위한 문서/도구 설계 레포다.
 
-현재 상태는 **구현 전 설계 기준**이다. 아직 Go CLI, OpenCrabs skill, dynamic tools, sample world root는 이 레포에 구현되어 있지 않다. 이 문서들은 그 구현을 위한 제품 경계와 명령 계약을 고정한다.
+이 문서 세트는 **구현 전 설계 기준**이다. 아직 Go CLI, OpenCrabs skill, dynamic tools, sample world root는 이 레포에 구현되어 있지 않다. 이 문서들은 그 구현을 위한 제품 경계와 명령 계약을 고정한다.
 
 ## 목표
 - OpenCrabs 대화에서 세계관 설정을 draft로 생성한다.
 - `world-tool` Go CLI가 validation, diff, accept/reject, audit log를 deterministic하게 수행한다.
 - `content/` Markdown을 canon source of truth로 유지한다.
-- `content/` 변경은 사용자 승인 이후 `world_accept_draft` 경로에서만 허용한다.
+- `content/` 변경은 원칙적으로 사용자 승인 후 `world_accept_draft` 경로에서만 허용한다. `force accept`는 오퍼레이터가 명시적으로 승인한 예외 경로일 뿐이며, 정상 validation/policy guardrail을 약화시키는 일반 우회로가 아니다.
 - 모든 tool output은 JSON 계약을 따른다.
 
 ## 문서 읽는 순서
@@ -53,7 +53,7 @@ world-tool draft create --world ashen-continent --change-type create --type nati
 world-tool draft validate --world ashen-continent --draft drafts/nations/<id>.md --json
 world-tool draft diff --world ashen-continent --draft drafts/nations/<id>.md --json
 world-tool input stage --world ashen-continent --kind reason --stdin --json
-world-tool draft accept --world ashen-continent --draft drafts/nations/<id>.md --diff-run-id <run> --draft-hash <hash> --target-base-hash <hash> --patch-hash <hash> --reason-file runs/inbox/<reason-file> --json
+world-tool draft accept --world ashen-continent --draft drafts/nations/<id>.md --diff-run-id <run> --draft-hash <hash> --target-base-hash <hash> --patch-hash <hash> --approver-id <user> --approval-channel OpenCrabs-chat --authenticated-actor <actor> --reason-file runs/inbox/<reason-file> --json
 ```
 
 ## 현재 주의점

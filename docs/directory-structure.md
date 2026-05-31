@@ -58,6 +58,7 @@ world-root/
 │   ├── events/
 │   ├── timeline/
 │   ├── magic/
+│   ├── glossary/
 │   └── storylets/
 ├── raw/
 ├── graph/
@@ -93,6 +94,9 @@ world-root/
 - OpenCrabs/Codex 생성 결과는 기본적으로 drafts에 저장한다.
 - draft는 canon이 아니다.
 - draft는 validate와 accept를 거쳐야 content로 승격된다.
+- non-storylet draft는 `schema.md`에 정의된 type별 draft directory 아래에 저장한다.
+- glossary draft는 `drafts/glossary/` 아래에 저장한다.
+- storylet draft는 `drafts/storylets/` 아래에만 저장한다.
 - accept 이후 draft 원본은 archive/accepted/로 이동한다.
 
 ## 5. runs/
@@ -118,7 +122,7 @@ runs/
 - 모든 write tool은 run id를 가진다.
 - 재현 가능한 수준의 입력과 출력을 남긴다.
 - secret과 환경변수는 저장하지 않는다.
-- `runs/inbox/`는 dynamic tool이 긴 query/title/body/reason을 world root 내부에 staging하는 임시 입력 위치다.
+- `runs/inbox/`는 dynamic tool이 긴 query/title/body/reason/retcon_reason을 world root 내부에 staging하는 임시 입력 위치다.
 - `runs/inbox/` 파일은 `world-tool input stage`만 생성한다.
 - `runs/.lock` 또는 동등한 lock은 write command 동시 실행을 막기 위해 사용한다.
 - accept/diff artifact는 target content의 before/after hash를 남긴다.

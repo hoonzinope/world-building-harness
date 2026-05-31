@@ -71,7 +71,7 @@ Go CLI와 OpenCrabs bundle을 구현할 기본 디렉토리를 만든다.
 ### 완료 기준
 - `world init`이 `content/`, `drafts/`, `runs/`, `archive/`, `graph/`, `harness.yaml`을 생성한다.
 - `../`, absolute path, symlink를 통한 root 밖 접근이 차단된다.
-- `--query-file`, `--title-file`, `--body-file`, `--reason-file`도 `runs/inbox/` 아래 상대 경로만 허용된다.
+- `--query-file`, `--title-file`, `--body-file`, `--reason-file`, `--retcon-reason-file`도 `runs/inbox/` 아래 상대 경로만 허용된다.
 - path violation은 JSON error와 non-zero exit code를 반환한다.
 - `input stage`만 `runs/inbox/`에 staging file을 생성할 수 있다.
 
@@ -126,8 +126,11 @@ draft를 canon과 비교해 구조 오류와 명백한 충돌을 탐지한다.
 - validation report JSON
 - validation artifact 저장
 - required field rule
+- draft path/type rule
+- change_type/target_id/retcon_reason rule
 - id uniqueness rule
 - relationship target existence rule
+- relationship normalization and consistency rule
 - timeline/event consistency rule
 - target path conflict rule
 - target content base hash 계산
@@ -136,8 +139,11 @@ draft를 canon과 비교해 구조 오류와 명백한 충돌을 탐지한다.
 - validation status는 `pass`, `warning`, `conflict`, `error` 중 하나다.
 - 새 draft의 schema_version 누락과 parse 실패는 `error`로 반환된다.
 - legacy/import content의 schema_version 누락은 migration warning으로 반환된다.
+- draft의 `change_type` 누락, invalid enum, `update/deprecate`의 `target_id` 또는 `retcon_reason` 누락은 `error`로 반환된다.
+- active draft path/type 규칙 위반은 `error`로 반환된다.
 - `change_type: create`에서 기존 canon id와 중복되는 draft는 `conflict`로 반환된다.
-- `change_type: update`에서 target_id가 없거나 id가 target_id와 다르면 `error`로 반환된다.
+- `change_type: update` 또는 `change_type: deprecate`에서 target_id가 없거나 id가 target_id와 다르면 `error`로 반환된다.
+- relationship convenience field와 relationships[]가 충돌하면 `conflict`로 반환된다.
 - accept validation에서 active draft에만 존재하는 relationship target은 `conflict`로 반환된다.
 - 알 수 없는 relationship type과 domain/range mismatch는 `conflict`로 반환된다.
 - validation 결과는 `runs/<run-id>/validation.json`에 저장된다.
@@ -150,7 +156,7 @@ draft를 canon과 비교해 구조 오류와 명백한 충돌을 탐지한다.
 - `world-tool draft diff`
 - `world-tool draft accept`
 - accept 직전 validation 재실행
-- `--force`와 `--reason-file`
+- `--force`, `--reason-file`, `--approver-id`, `--approval-channel`, `--authenticated-actor`
 - diff binding flags: `--diff-run-id`, `--draft-hash`, `--target-base-hash`, `--patch-hash`
 - conflict/error 기본 차단
 - content atomic write
@@ -164,9 +170,9 @@ draft를 canon과 비교해 구조 오류와 명백한 충돌을 탐지한다.
 
 ### 완료 기준
 - accept는 validation을 다시 실행한다.
-- accept는 diff binding이 없거나 불일치하면 실패한다.
-- conflict/error가 있으면 기본 accept가 실패한다.
-- force accept는 reason 없이는 실패하며 structural error, id conflict, path violation, target path conflict, storylet canon 승격, diff binding mismatch는 우회할 수 없다.
+- accept는 diff binding이 없거나 불일치하면 blocked다.
+- conflict/error가 있으면 기본 accept가 blocked다.
+- force accept는 reason 또는 approval provenance가 없으면 blocked이며 structural error, id conflict, path violation, target path conflict, storylet canon 승격, diff binding mismatch는 우회할 수 없다.
 - accept 성공 시 content 문서가 생성 또는 갱신된다.
 - accept 성공 시 draft 원본은 `archive/accepted/`로 이동한다.
 - 모든 변경은 runs artifact로 추적 가능하다.
@@ -213,7 +219,7 @@ OpenCrabs가 `world-tool`을 범용 shell이 아니라 의미 단위 tool로 호
 
 ### 완료 기준
 - 각 tool은 stdout JSON만 반환한다.
-- 긴 query/title/body/reason은 `runs/inbox/` staging file 또는 stdin 방식으로 전달된다.
+- 긴 query/title/body/reason/retcon_reason은 `runs/inbox/` staging file 또는 stdin 방식으로 전달된다.
 - `world_stage_input`이 staging file을 만들고 후속 tool은 path/hash만 받는다.
 - `world_accept_draft`는 diff binding 값을 필수로 받는다.
 - 범용 `world_exec_shell` 같은 tool은 제공하지 않는다.
@@ -247,10 +253,15 @@ OpenCrabs, `world-tool`, skill/tools bundle을 컨테이너에서 운영할 수 
 - `examples/worlds/ashen-continent/content/...`
 - character/place/event 최소 3개 canon 문서
 - pass draft fixture
+- missing change_type fixture
 - conflict draft fixture
 - update/retcon draft fixture
+- missing retcon_reason fixture
 - target path collision fixture
+- relationship domain/range mismatch fixture
+- active draft only target at accept fixture
 - storylet accept block fixture
+- storylet content validation fixture
 - force denied fixture
 - lock/base-hash mismatch fixture
 - relationship allowlist fixture
@@ -261,8 +272,13 @@ OpenCrabs, `world-tool`, skill/tools bundle을 컨테이너에서 운영할 수 
 ### 완료 기준
 - `world init -> registry add -> input stage -> draft create -> draft validate -> draft diff -> draft accept`가 샘플 world에서 통과한다.
 - conflict draft는 기본 accept에서 차단된다.
+- missing change_type draft는 validation `error`로 보고되고 accept에서 blocked된다.
+- missing retcon_reason draft는 validation `error`로 보고되고 accept에서 blocked된다.
 - diff binding mismatch는 accept에서 차단된다.
+- relationship domain/range mismatch는 conflict로 탐지된다.
+- target이 active draft에만 존재하면 accept에서 blocked된다.
 - storylet draft는 content canon accept에서 차단된다.
+- storylet content path/status 위반은 validation `error`로 보고되고 accept에서 blocked된다.
 - 알 수 없는 relationship type은 conflict로 탐지된다.
 - rejected draft는 `archive/rejected/`로 이동한다.
 - accepted draft는 `content/`에 반영되고 `archive/accepted/`로 이동한다.
@@ -277,15 +293,22 @@ MVP 이후 장기 운영에 필요한 안정성 기능을 추가한다.
 - graph rebuild/check
 - archive pruning/compression/export
 - retcon/versioning report
-- schema migration
+- schema migration and migration report
 - OpenCrabs tool calling retry/timeout 정책
 - semantic search integration
 - storylet/exporter
+- migration dry-run/apply workflow
 
 ### 완료 기준
 - 장편 세계관에서 archive와 runs가 늘어나도 운영 정책이 있다.
 - graph는 content에서 재생성 가능한 인덱스로 유지된다.
 - validator가 확정 판정기가 아니라 conflict 후보 탐지기라는 경계가 유지된다.
+
+### Migration workflow
+- migration dry-run은 report와 artifact만 남기고 content를 변경하지 않는다.
+- migration apply는 warning-only legacy/import 이슈를 actionable report로 묶고, blocked 항목과 분리한다.
+- migration report는 source 문서, path move 여부, field normalization 결과, before/after hash, blocker 목록을 포함한다.
+- migration 완료 기준은 warning이 사라졌는지가 아니라, warning이 의사결정 가능한 action item으로 정리되고 blocked 항목이 남지 않았는지다.
 
 ## 14. 권장 구현 순서
 최소 vertical slice는 다음 순서로 구현한다.

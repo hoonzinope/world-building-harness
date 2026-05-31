@@ -38,7 +38,7 @@ OpenCrabs 없이도 로컬 CLI로 파일 관리와 validation을 수행할 수 �
 ### 구현 주의
 - path boundary와 symlink resolution을 가장 먼저 구현한다.
 - Markdown parser와 YAML frontmatter parser는 round-trip 안정성을 기준으로 선택한다.
-- 긴 draft body, 검색 query, title, reason은 command-line argument가 아니라 stdin 또는 world root 내부 `runs/inbox/` staging file로 받는다.
+- 긴 draft body, 검색 query, title, reason, retcon_reason은 command-line argument가 아니라 stdin 또는 world root 내부 `runs/inbox/` staging file로 받는다.
 - 모든 command는 `commands.md`의 JSON envelope와 exit code 정책을 일관되게 지킨다.
 - write command는 world root lock을 사용한다.
 - diff와 accept는 hash binding으로 묶는다.
@@ -64,7 +64,7 @@ OpenCrabs/Codex 생성물을 안정적으로 검사할 rule 기반 validator를 
 - orphan related id 검사
 - validation report 생성
 - world별 validation strictness 설정
-- Canon Notes/source_run_id 기반 retcon 추적
+- frontmatter `retcon_reason`/source_run_id 기반 retcon 추적
 
 ### 완료 기준
 - 구조 오류를 error로 탐지
@@ -221,10 +221,10 @@ OpenCrabs DB나 graph를 canon 원본처럼 다루면 content Markdown과 불일
 validator는 확정 판정기가 아니라 충돌 후보 탐지기다.
 
 ### OpenCrabs tool calling 안정성
-Tool 호출 실패, malformed JSON, timeout에 따라 UX가 흔들릴 수 있다. 모든 tool은 `schema_version`, `ok`, `command_status`, `data.validation_status`, `error.code`를 포함한 명확한 JSON envelope를 반환하고 OpenCrabs skill은 실패 시 재시도보다 사용자에게 상태를 설명해야 한다.
+Tool 호출 실패, malformed JSON, timeout에 따라 UX가 흔들릴 수 있다. 모든 tool은 `schema_version`, `ok`, `command_status`, `data`, `issues`, `available_actions`를 포함한 명확한 JSON envelope를 반환하고, validation 결과는 `data.validation_status`, 실패 원인은 `error.code`로 구분한다. OpenCrabs skill은 실패 시 재시도보다 사용자에게 상태를 설명해야 한다.
 
 ### warning 무시 유도
-사용자가 “warning 무시하고 accept”를 요청할 수 있다. conflict/error는 tool에서 차단하고, force는 reason과 audit log를 필수로 한다.
+사용자가 “warning 무시하고 accept”를 요청할 수 있다. conflict/error는 tool에서 차단하고, force는 reason, approval provenance, audit log를 필수로 한다.
 
 ### archive storage 증가
 accepted/rejected archive가 계속 쌓일 수 있다. archive pruning, compression, export 정책을 나중 phase에서 추가한다.

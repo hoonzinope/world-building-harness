@@ -5,7 +5,7 @@
 ## 1. 역할 정의
 OpenCrabs는 이 구조에서 하네스이자 오케스트레이터다. 사용자는 OpenCrabs와 대화하고, OpenCrabs는 Codex OAuth provider를 통해 판단/생성을 수행하며, 세계관 파일 작업은 dynamic tools가 호출하는 `world-tool`이 수행한다. Codex CLI provider는 fallback으로만 사용한다.
 
-이 레포는 OpenCrabs를 확장하기 위한 다음 자산을 제공할 예정이다.
+이 레포는 OpenCrabs를 확장하기 위한 다음 자산을 정의하는 설계 계약이다.
 
 - `opencrabs/skills/world-building/SKILL.md`
 - `opencrabs/tools/world-tools.toml`
@@ -66,7 +66,7 @@ opencrabs/tools/world-tools.toml
 
 canonical dynamic tool:
 
-아래 예시는 OpenCrabs shell executor가 template 값을 argv-safe하게 escape하고 stdin payload를 지원한다고 가정한다. raw string interpolation만 지원한다면 그대로 사용하지 말고, request JSON file 하나를 받는 wrapper command를 둔다.
+아래 예시는 표준 command shape를 보여주는 pre-implementation contract다. OpenCrabs shell executor는 template 값을 argv-safe하게 escape해야 하며, 그렇지 못하면 raw text를 직접 보간하지 말고 request JSON file 또는 stdin payload를 받는 wrapper command로 바꿔야 한다.
 
 ```toml
 [[tools]]
@@ -109,13 +109,13 @@ command = "world-tool draft create --world {{world_id}} --change-type create --t
 name = "world_create_update_draft"
 description = "Create an update/retcon draft for an existing canon document"
 executor = "shell"
-command = "world-tool draft create --world {{world_id}} --change-type update --target-id {{target_id}} --title-file {{title_file}} --body-file {{body_file}} --json"
+command = "world-tool draft create --world {{world_id}} --change-type update --target-id {{target_id}} --title-file {{title_file}} --body-file {{body_file}} --retcon-reason-file {{retcon_reason_file}} --json"
 
 [[tools]]
 name = "world_create_deprecate_draft"
 description = "Create a deprecation draft for an existing canon document"
 executor = "shell"
-command = "world-tool draft create --world {{world_id}} --change-type deprecate --target-id {{target_id}} --title-file {{title_file}} --body-file {{body_file}} --json"
+command = "world-tool draft create --world {{world_id}} --change-type deprecate --target-id {{target_id}} --title-file {{title_file}} --body-file {{body_file}} --retcon-reason-file {{retcon_reason_file}} --json"
 
 [[tools]]
 name = "world_update_draft"
@@ -143,15 +143,15 @@ command = "world-tool draft diff --world {{world_id}} --draft {{draft_path}} --j
 
 [[tools]]
 name = "world_accept_draft"
-description = "Promote a validated draft into canon after explicit user approval"
+description = "Promote a validated draft into canon after explicit user approval and approval provenance"
 executor = "shell"
-command = "world-tool draft accept --world {{world_id}} --draft {{draft_path}} --diff-run-id {{diff_run_id}} --draft-hash {{draft_hash}} --target-base-hash {{target_base_hash}} --patch-hash {{patch_hash}} --reason-file {{reason_file}} --json"
+command = "world-tool draft accept --world {{world_id}} --draft {{draft_path}} --diff-run-id {{diff_run_id}} --draft-hash {{draft_hash}} --target-base-hash {{target_base_hash}} --patch-hash {{patch_hash}} --approver-id {{approver_id}} --approval-channel {{approval_channel}} --authenticated-actor {{authenticated_actor}} --reason-file {{reason_file}} --json"
 
 [[tools]]
 name = "world_force_accept_draft"
-description = "Force promote a draft when world-tool policy allows it and explicit reason is provided"
+description = "Force promote a draft only on an operator-approved path with approval provenance"
 executor = "shell"
-command = "world-tool draft accept --world {{world_id}} --draft {{draft_path}} --diff-run-id {{diff_run_id}} --draft-hash {{draft_hash}} --target-base-hash {{target_base_hash}} --patch-hash {{patch_hash}} --force --reason-file {{reason_file}} --json"
+command = "world-tool draft accept --world {{world_id}} --draft {{draft_path}} --diff-run-id {{diff_run_id}} --draft-hash {{draft_hash}} --target-base-hash {{target_base_hash}} --patch-hash {{patch_hash}} --force --approver-id {{approver_id}} --approval-channel {{approval_channel}} --authenticated-actor {{authenticated_actor}} --reason-file {{reason_file}} --json"
 
 [[tools]]
 name = "world_reject_draft"
@@ -166,9 +166,9 @@ executor = "shell"
 command = "world-tool run get --world {{world_id}} --run-id {{run_id}} --json"
 ```
 
-긴 markdown body, 검색 query, title, reason은 command template에 직접 넣지 않는다. 먼저 `world_stage_input`으로 world root 내부 `runs/inbox/`에 staging하고, 후속 tool에는 `query_file`, `title_file`, `body_file`, `reason_file`과 hash/binding 값만 넘긴다.
+긴 markdown body, 검색 query, title, reason, retcon_reason은 command template에 직접 넣지 않는다. 먼저 `world_stage_input`으로 world root 내부 `runs/inbox/`에 staging하고, 후속 tool에는 `query_file`, `title_file`, `body_file`, `reason_file`, `retcon_reason_file`과 hash/binding 값만 넘긴다.
 
-template 변수는 OpenCrabs가 넣더라도 신뢰하지 않는다. `world-tool`은 `world_id`, `kind`, `type`, `target_id`, `path`, `draft_path`, `query_file`, `title_file`, `body_file`, `reason_file`, `run_id`, `diff_run_id`, `draft_hash`, `target_base_hash`, `patch_hash`를 다시 검증한다.
+template 변수는 OpenCrabs가 넣더라도 신뢰하지 않는다. `world-tool`은 `world_id`, `kind`, `type`, `target_id`, `path`, `draft_path`, `query_file`, `title_file`, `body_file`, `reason_file`, `retcon_reason_file`, `approver_id`, `approval_channel`, `authenticated_actor`, `run_id`, `diff_run_id`, `draft_hash`, `target_base_hash`, `patch_hash`를 다시 검증한다.
 
 ## 6. World Registry
 OpenCrabs나 `world-tool`은 world id를 world root로 해석해야 한다.
@@ -209,6 +209,17 @@ registry path 자체는 world root 안에 둘 필요가 없다. 단, registry가
 
 `--world`와 `--root`가 동시에 지정되면 실패한다. `world list`는 registry만 읽고 world root를 열지 않는다.
 
+canonical root binding:
+
+| Concept | Meaning |
+| --- | --- |
+| `world_id` | registry가 식별하는 logical world key |
+| `registry_root` | registry에 저장된 world root의 canonical path |
+| `root` | 실제 tool process가 접근하는 effective root |
+| audit fields | `world_id`, `registry_root`, `root`, `run_id` |
+
+native execution에서는 `registry_root == root`여야 한다. Docker에서는 registry_root와 effective root인 `root`가 달라질 수 있으므로, registry resolution과 audit logging이 둘을 구분해 기록해야 한다.
+
 world id 규칙:
 - 영문 소문자, 숫자, 하이픈만 허용한다.
 - path separator, whitespace, shell metacharacter는 금지한다.
@@ -219,7 +230,7 @@ world id 규칙:
 2. `world-tool registry add --world ashen-continent --root /host/worlds/ashen-continent --title "잿빛 대륙" --json`
 3. 필요하면 `world-tool registry default --world ashen-continent --json`
 
-Docker에서 registry가 host path를 가리키고 tool container가 `/workspace/world`로 mount하는 경우, registry root와 container root가 달라질 수 있다. 이 운영 방식에서는 dynamic tool command가 `--world` 대신 `--root /workspace/world`를 쓰거나, container 내부 registry를 별도로 둔다.
+Docker에서 registry가 host path를 가리키고 tool container가 `/workspace/world`로 mount하는 경우, registry root와 effective in-container root가 달라질 수 있다. 이 운영 방식에서는 registry resolution이 logical `world_id`를 유지하되, audit/result envelope에 `registry_root`와 `root`를 모두 남겨야 한다. container 안에서 registry를 읽을 수 없으면 `--root /workspace/world`로 root를 고정하고, `world_id`는 audit metadata로 유지한다.
 
 ## 7. 대화 플로우
 ```text
@@ -228,14 +239,15 @@ OpenCrabs: skill rules 적용
 OpenCrabs: 검색 query를 world_stage_input으로 staging
 OpenCrabs/Codex: 관련 canon 조회를 위해 world_search_docs 호출
 OpenCrabs/Codex: draft markdown 생성
-OpenCrabs: title/body를 world_stage_input으로 staging
+OpenCrabs: title를 world_stage_input으로 staging
+OpenCrabs: body를 world_stage_input으로 staging
 OpenCrabs: world_create_draft 호출
 OpenCrabs: world_validate_draft 호출
 OpenCrabs: draft path, validation status, 다음 행동 제안
 사용자: 승인해
 OpenCrabs: world_diff_draft 호출 후 diff_run_id와 hash를 사용자 확인에 묶음
 OpenCrabs: reason을 world_stage_input으로 staging
-OpenCrabs: world_accept_draft 호출(diff_run_id, draft_hash, target_base_hash, patch_hash 포함)
+OpenCrabs: world_accept_draft 호출(diff_run_id, draft_hash, target_base_hash, patch_hash, approver_id, approval_channel, authenticated_actor 포함)
 world-tool: validation 재실행 후 content 승격
 ```
 
@@ -273,9 +285,9 @@ OpenCrabs는 raw stdout을 사용자에게 그대로 보여주지 않고, tool �
 stdout에 JSON이 있으면 `schema_version`, `ok`, `command_status`, `data.validation_status`, `error.code`를 우선 사용한다. stdout이 비어 있거나 JSON parse가 실패하면 dynamic tool 자체 실패로 처리한다.
 
 ### validation conflict
-OpenCrabs는 accept를 강행하지 않고 conflict 이유와 수정안을 사용자에게 보여준다.
+OpenCrabs는 accept를 강행하지 않고 blocked 이유와 수정안을 사용자에게 보여준다.
 
-사용자가 강행을 요청하면 OpenCrabs는 `world_force_accept_draft`를 사용한다. tool이 `FORCE_NOT_ALLOWED` 또는 `VALIDATION_BLOCKED`를 반환하면 강행하지 않고 이유를 설명한다.
+사용자가 강행을 요청하면 OpenCrabs는 `world_force_accept_draft`를 사용한다. 이 경로도 `approver_id`, `approval_channel`, `authenticated_actor`를 요구한다. tool이 `FORCE_NOT_ALLOWED` 또는 `VALIDATION_BLOCKED`를 반환하면 강행하지 않고 blocked 이유를 설명한다.
 
 ### path violation
 `world-tool`은 world root 밖 경로 접근을 error로 반환한다.
