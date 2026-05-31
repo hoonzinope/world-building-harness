@@ -35,6 +35,9 @@ OpenCrabs 없이도 로컬 CLI로 파일 관리와 validation을 수행할 수 �
 - `world-tool approval attest`
 - `world-tool draft accept`
 - `world-tool draft reject`
+- `world-tool run recover`
+- `world-tool run get`
+- `world-tool run get --artifact <basename>`
 
 ### 구현 주의
 - path boundary와 symlink resolution을 가장 먼저 구현한다.
@@ -51,6 +54,9 @@ OpenCrabs 없이도 로컬 CLI로 파일 관리와 validation을 수행할 수 �
 - validate 결과가 runs에 저장됨
 - accept 시 content로 승격됨
 - accepted draft가 archive/accepted/로 이동함
+- unresolved recovery가 있으면 write command가 차단되고 `world-tool run recover`만 write 예외로 동작함
+- `world-tool run get`은 redacted run metadata를 조회함
+- `world-tool run get --artifact <basename>`은 basename allowlist와 path boundary 검증을 통과한 safe artifact만 노출함
 
 ## 4. Phase 2: Schema & Validator 강화
 ### 목표
@@ -167,6 +173,10 @@ OpenCrabs 대화에서 draft 생성, 검증, 승인 흐름이 자연스럽게 �
 - lock/base-hash mismatch fixture
 - relationship allowlist fixture
 - accept/reject fixture
+- registry/config safe absolute path normalization fixture
+- registry/config traversal rejection fixture
+- registry/config symlink escape rejection fixture
+- registry/config directory-confusion rejection fixture
 - missing auth context approval attestation fixture
 - auth context hash mismatch approval attestation fixture
 - auth context expiry approval attestation fixture
@@ -182,6 +192,7 @@ OpenCrabs 대화에서 draft 생성, 검증, 승인 흐름이 자연스럽게 �
 - diff binding mismatch가 accept에서 차단됨
 - storylet draft가 content canon으로 승격되지 않음
 - path boundary safety fixtures는 `../` traversal, absolute path, symlink escape, unsafe run artifact basename traversal, invalid `--auth-context-file` location 사례를 모두 커버한다.
+- registry/config boundary fixtures는 safe absolute path normalization, traversal rejection, symlink escape rejection, directory-confusion rejection을 각각 커버한다.
 - approval attestation 안전 fixture는 누락된 auth context, hash mismatch, expiry, scope denial, fixture opt-in missing, actor/channel mismatch, accept-time hash/binding mismatch 사례를 모두 커버한다. production trusted auth context input criteria는 signature/MAC 또는 configured wrapper trust-material verification plus expected issuer/audience/scope policy이며, local fixture mode는 `WORLD_TOOL_TEST_AUTH_CONTEXT=1` explicit opt-in만 허용한다.
 - accepted draft가 archive/accepted/로 이동함
 - runs artifact가 재현 가능한 형태로 남음

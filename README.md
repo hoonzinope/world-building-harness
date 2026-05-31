@@ -117,8 +117,7 @@ cat > "$AUTH_CONTEXT_FILE" <<JSON
   "fixture_mode": true
 }
 JSON
-auth_context_hash=$(shasum -a 256 "$AUTH_CONTEXT_FILE" | awk '{print $1}')
-auth_context_hash="sha256:$auth_context_hash"
+auth_context_hash=$(python3 -c 'import hashlib, pathlib, sys; print("sha256:" + hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest())' "$AUTH_CONTEXT_FILE")
 
 approval_attest_json=$(WORLD_TOOL_TEST_AUTH_CONTEXT=1 world-tool approval attest --world "$WORLD_ID" --diff-run-id "$diff_run_id" --draft-hash "$draft_hash" --target-base-hash "$target_base_hash" --patch-hash "$patch_hash" --approver-id "$APPROVER_ID" --approval-channel "$APPROVAL_CHANNEL" --downstream-action world_accept_draft --authenticated-actor "$AUTHENTICATED_ACTOR" --auth-context-file "$AUTH_CONTEXT_FILE" --auth-context-hash "$auth_context_hash" --reason-hash "$reason_hash" --json)
 approval_attestation_file=$(jq -r '.data.approval_attestation_file' <<<"$approval_attest_json")

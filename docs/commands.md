@@ -240,19 +240,21 @@ OpenCrabs는 `ok`, `command_status`, `data.validation_status`, `data.block_reaso
 
 ### 3.2 available_actions enum and recommended mapping
 
-허용값은 최소한 다음을 포함한다: `world_update_draft`, `world_accept_draft`, `world_force_accept_draft`, `world_reject_draft`, `world_create_approval_attestation`, `world_recover_run`, `world_get_run_artifact`, `world_stage_input`, `world_diff_draft`, `world_validate_draft`.
+허용값은 최소한 다음을 포함한다: `world_update_draft`, `world_read_draft`, `world_accept_draft`, `world_force_accept_draft`, `world_reject_draft`, `world_create_approval_attestation`, `world_recover_run`, `world_get_run`, `world_get_run_artifact`, `world_stage_input`, `world_diff_draft`, `world_validate_draft`.
 
 | 상태/결과 | recommended `available_actions` |
 | --- | --- |
-| validation `pass` | `world_accept_draft`, `world_update_draft`, `world_reject_draft`, 필요 시 `world_diff_draft` |
-| validation `warning` | `world_accept_draft`, `world_update_draft`, `world_reject_draft`, `world_diff_draft` |
+| validation `pass` | `world_diff_draft`, `world_update_draft`, `world_reject_draft` |
+| validation `warning` | `world_diff_draft`, `world_update_draft`, `world_reject_draft` |
 | validation `conflict` | `world_update_draft`, `world_reject_draft`, `world_diff_draft`, `world_validate_draft` |
 | validation `error` | `world_update_draft`, `world_reject_draft`, `world_validate_draft` |
 | `MISSING_TARGET` blocked on create/update/diff/accept | `world_update_draft`, `world_reject_draft`, `world_diff_draft`, `world_validate_draft` |
-| `DIFF_BINDING_REQUIRED` or `DIFF_BINDING_MISMATCH` | `world_create_approval_attestation`, `world_diff_draft`, `world_validate_draft`, `world_update_draft` |
+| `DIFF_BINDING_REQUIRED` or `DIFF_BINDING_MISMATCH` | `world_diff_draft`, `world_validate_draft`, `world_update_draft` |
 | `TRANSACTION_INCOMPLETE` or recovery-needed state | `world_recover_run`, `world_get_run_artifact` |
 | staged input / run artifact inspection | `world_stage_input`, `world_get_run_artifact` |
 
+`world_accept_draft`는 fresh diff가 다시 생성되고, 그 diff에 정확히 바인딩된 `world_create_approval_attestation`이 downstream action까지 성공적으로 만든 뒤에만 광고할 수 있다. `validation pass`와 `warning`은 그 전 단계의 탐색용으로만 `world_diff_draft`/`world_update_draft`/`world_reject_draft`를 권장한다.
+`DIFF_BINDING_REQUIRED`와 `DIFF_BINDING_MISMATCH`에서는 attestation이 아직 유효한 현재 diff에 바인딩될 수 없으므로 `world_create_approval_attestation`를 권장하지 않는다. 먼저 `world_diff_draft`로 fresh diff를 다시 만들고, 필요하면 `world_validate_draft`와 `world_update_draft`로 정리한 뒤 attestation을 생성해야 한다.
 `world_force_accept_draft`는 `FORCE_NOT_ALLOWED`가 아니고 trusted attestation이 존재할 때만 권장된다.
 
 ### 3.3 command별 block_reason / issue code 매핑
@@ -616,7 +618,7 @@ Transaction/recovery 정책:
 - content write는 temp file 작성 후 atomic rename으로 수행한다.
 - archive move도 같은 filesystem 안에서 atomic rename을 사용한다.
 - content write 성공 후 archive/result 기록이 실패하면 `ok: false`, `command_status: "failed"`, `error.code: "TRANSACTION_INCOMPLETE"`를 반환하고 recovery instruction을 `runs/<run-id>/recovery.json`에 남긴다. 이 경우 partial mutation이 이미 발생했을 수 있다.
-- 실패 응답에는 `data.recovery` metadata를 포함하고 `available_actions`는 `["world_recover_run"]`를 가리켜야 한다.
+- 실패 응답에는 `data.recovery` metadata를 포함하고 `available_actions`는 `["world_recover_run", "world_get_run_artifact"]` 같은 복구/안전 조회 조합을 가리켜야 한다. write replay나 원래 write command 재실행은 허용하지 않는다.
 - recovery는 content hash와 archive 상태를 기준으로 idempotent하게 재시도할 수 있어야 한다.
 - `runs/<run-id>/recovery.json`가 unresolved인 동안에는 같은 world root를 쓰는 모든 write command와 write artifact/report command가 blocked다. 여기에는 같은 root의 `world init`, `input stage`, `approval attest`, `draft create`, `draft update`, `draft validate`의 validation artifact writer, `draft diff`, `draft accept`, `draft reject`, `content validate`의 artifact writer, `content migrate`의 report writer, 기타 content report writer가 포함된다. read-only command는 계속 허용된다.
 - `run recover`만 이 차단의 예외이며, `TRANSACTION_INCOMPLETE` 또는 unresolved `recovery.json`를 복구하는 유일한 운영자용 repair command다. 이 command는 원래 write command를 다시 실행하지 않고, 기록된 transaction state만 안전하게 수습한다.

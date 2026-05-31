@@ -391,12 +391,10 @@ MVP 이후 장기 운영과 maintenance path를 추가한다.
 - 장편 세계관에서 archive와 runs가 늘어나도 운영 정책이 있다.
 - graph는 content에서 재생성 가능한 인덱스로 유지된다.
 - validator가 확정 판정기가 아니라 conflict 후보 탐지기라는 경계가 유지된다.
-- migration command는 report-only maintenance path이며 content를 변경하지 않는다.
-- migration command는 report-only이며 content를 직접 변경하는 mutating mode를 제공하지 않는다.
+- `content migrate`는 `--dry-run`만 허용하고 report/artifact만 emit하며 content를 직접 변경하지 않는 report-only maintenance path다. no-option과 `--apply`는 `INVALID_ARGUMENT`다.
 
 ### Migration workflow
-- `content migrate`는 `--dry-run`만 허용하는 post-MVP hardening maintenance path이며 content를 변경하지 않는다. no-option과 `--apply`는 `INVALID_ARGUMENT`다.
-- `content migrate --dry-run`은 warning-only legacy/import 이슈를 actionable report로 묶고 blocked 항목과 분리하되 content를 직접 변경하지 않는다. no-option과 `--apply`는 `INVALID_ARGUMENT`다.
+- `content migrate --dry-run`은 warning-only legacy/import 이슈를 actionable report로 묶고 blocked 항목과 분리하되 content를 직접 변경하지 않는다.
 - migration report는 source 문서, path move 여부, field normalization 결과, before/after hash, blocker 목록을 포함한다.
 - migration 완료 기준은 warning이 사라졌는지가 아니라, warning이 의사결정 가능한 action item으로 정리되고 blocked 항목이 남지 않았는지다.
 
