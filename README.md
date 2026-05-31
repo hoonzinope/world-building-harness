@@ -61,13 +61,22 @@ APPROVAL_CHANNEL="OpenCrabs-chat"
 AUTHENTICATED_ACTOR="oc-user-01"
 AUTH_ISSUER="opencrabs-trusted-wrapper"
 AUTH_AUDIENCE="$WORLD_ID"
+REGISTRY_FILE=$(mktemp -t world-registry.XXXXXX)
 AUTH_CONTEXT_FILE="/tmp/opencrabs-auth-context.json"
+cleanup() {
+  rm -f "$REGISTRY_FILE"
+  if [[ -n "${AUTH_CONTEXT_FILE:-}" ]]; then
+    rm -f "$AUTH_CONTEXT_FILE"
+  fi
+}
+trap cleanup EXIT
+export WORLD_TOOL_REGISTRY="$REGISTRY_FILE"
 issued_at=$(python3 -c 'from datetime import datetime, timedelta, timezone; now=datetime.now(timezone.utc).replace(microsecond=0); print(now.isoformat().replace("+00:00", "Z"))')
 expires_at=$(python3 -c 'from datetime import datetime, timedelta, timezone; now=datetime.now(timezone.utc).replace(microsecond=0) + timedelta(hours=1); print(now.isoformat().replace("+00:00", "Z"))')
 
-world_init_json=$(world-tool world init --root "$WORLD_ROOT" --world-id "$WORLD_ID" --json)
-registry_json=$(world-tool registry add --world "$WORLD_ID" --root "$WORLD_ROOT" --title "잿빛 대륙" --json)
-world_list_json=$(world-tool world list --json)
+world_init_json=$(world-tool world init --registry "$REGISTRY_FILE" --root "$WORLD_ROOT" --world-id "$WORLD_ID" --json)
+registry_json=$(world-tool registry add --registry "$REGISTRY_FILE" --world "$WORLD_ID" --root "$WORLD_ROOT" --title "잿빛 대륙" --json)
+world_list_json=$(world-tool world list --registry "$REGISTRY_FILE" --json)
 
 title_json=$(printf '%s\n' '잿빛 대륙' | world-tool input stage --world "$WORLD_ID" --kind title --stdin --json)
 title_file=$(jq -r '.data.input_path' <<<"$title_json")
@@ -101,6 +110,7 @@ cat > "$AUTH_CONTEXT_FILE" <<JSON
   "session_id": "sess_123456",
   "authenticated_actor": "$AUTHENTICATED_ACTOR",
   "approval_channel": "$APPROVAL_CHANNEL",
+  "downstream_action": "world_accept_draft",
   "issued_at": "$issued_at",
   "expires_at": "$expires_at",
   "fixture_mode": true
@@ -109,7 +119,7 @@ JSON
 auth_context_hash=$(shasum -a 256 "$AUTH_CONTEXT_FILE" | awk '{print $1}')
 auth_context_hash="sha256:$auth_context_hash"
 
-approval_attest_json=$(WORLD_TOOL_TEST_AUTH_CONTEXT=1 world-tool approval attest --world "$WORLD_ID" --diff-run-id "$diff_run_id" --draft-hash "$draft_hash" --target-base-hash "$target_base_hash" --patch-hash "$patch_hash" --approver-id "$APPROVER_ID" --approval-channel "$APPROVAL_CHANNEL" --authenticated-actor "$AUTHENTICATED_ACTOR" --auth-context-file "$AUTH_CONTEXT_FILE" --auth-context-hash "$auth_context_hash" --reason-hash "$reason_hash" --json)
+approval_attest_json=$(WORLD_TOOL_TEST_AUTH_CONTEXT=1 world-tool approval attest --world "$WORLD_ID" --diff-run-id "$diff_run_id" --draft-hash "$draft_hash" --target-base-hash "$target_base_hash" --patch-hash "$patch_hash" --approver-id "$APPROVER_ID" --approval-channel "$APPROVAL_CHANNEL" --downstream-action world_accept_draft --authenticated-actor "$AUTHENTICATED_ACTOR" --auth-context-file "$AUTH_CONTEXT_FILE" --auth-context-hash "$auth_context_hash" --reason-hash "$reason_hash" --json)
 approval_attestation_file=$(jq -r '.data.approval_attestation_file' <<<"$approval_attest_json")
 approval_attestation_hash=$(jq -r '.data.approval_attestation_hash' <<<"$approval_attest_json")
 

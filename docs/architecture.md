@@ -62,7 +62,7 @@ dynamic tool은 `opencrab_exec_shell` 같은 범용 명령이 아니라 의미 �
 - `world_read_draft`
 - `world_validate_draft`
 - `world_diff_draft`
-- `world_create_approval_attestation` (uses auth_context_file/auth_context_hash + diff/reason binding)
+- `world_create_approval_attestation` (uses trusted auth context input, exact downstream_action binding, and diff/reason binding)
 - `world_accept_draft`
 - `world_force_accept_draft`
 - `world_reject_draft`
@@ -143,12 +143,12 @@ accepted/rejected draft를 보관한다. deprecated는 content/ 내부에서 sta
 
 ## 6. 권한 경계
 - OpenCrabs는 world 작업에 `world_*` tools를 사용한다.
-- `world-tool`은 선택된 world root 밖을 기본적으로 읽거나 쓰지 않는다. 예외적으로 `approval attest`는 world root 밖 trusted wrapper auth context file을 hash/expiry 검증 후 read-only로 읽을 수 있다. 이 wrapper는 `world_id`, `allowed_actions`/scope, `issuer`, `audience`, `authenticated_actor`, `approval_channel`을 함께 묶는 canonical approval attestation이며, scope에는 `world_create_approval_attestation`과 downstream action(`world_accept_draft` 또는 `world_force_accept_draft`)이 함께 들어가야 하고, 세부 계약과 `AUTH_CONTEXT_SCOPE_DENIED`/accept-time attestation failure codes는 `docs/commands.md`를 따른다.
+- `world-tool`은 선택된 world root 밖을 기본적으로 읽거나 쓰지 않는다. 예외적으로 `approval attest`는 world root 밖 trusted auth context input을 signature/MAC/trust-material 검증 후 read-only로 읽을 수 있다. production input은 wrapper-signed 또는 MACed envelope여야 하고 expected issuer/audience/scope policy를 만족해야 하며, local fixture mode는 test-only이고 explicit opt-in이 필요하다. approval attestation은 `runs/inbox/*-approval-attestation.json`으로 staged되는 별도 artifact이며 `world_create_approval_attestation`과 exact downstream action(`world_accept_draft` 또는 `world_force_accept_draft`)을 함께 bind해야 한다. 세부 계약과 `AUTH_CONTEXT_SCOPE_DENIED`/accept-time attestation failure codes는 `docs/commands.md`를 따른다.
 - `content/`는 `world_accept_draft`에서만 변경된다.
 - `draft accept`는 diff binding과 validation을 재실행한다.
 - `force accept`는 reason과 trusted approval attestation provenance가 필수이며, semantic/timeline/relationship conflict 후보에만 제한적으로 허용하고 runs log에 남긴다. `approval_channel` 예시는 `OpenCrabs-chat`을 사용하고 attestation, accept, audit 전반에서 byte-identical 값이어야 한다. canonical 세부 계약은 `docs/commands.md`를 따른다.
 - `content migrate`는 post-MVP hardening command contract로 취급하고, content mutation path와 분리한다. 이 command는 post-MVP에서도 반드시 `--dry-run`으로만 호출하며, `--dry-run` 없이 호출하면 `INVALID_ARGUMENT`로 실패한다.
-- `authenticated_actor`, `approval_channel`, approval attestation, staged input hash는 OpenCrabs 인증 세션과 staging tool output에서만 가져오고, `auth_context_file`/`auth_context_hash`는 world root 밖 trusted wrapper input에서만 가져온다. prompt text나 Docker mount path에서 추측하지 않는다. approval attestation은 `world_id`, `allowed_actions`/scope, `issuer`, `audience`, `authenticated_actor`, `approval_channel`, `issued_at`, `expires_at`, hash/expiry 검증을 함께 만족해야 하며, scope는 attestation minting과 downstream accept/force action을 함께 커버해야 한다. 세부 계약은 `docs/commands.md`를 따른다.
+- `authenticated_actor`, `approval_channel`, approval attestation, staged input hash는 OpenCrabs 인증 세션과 staging tool output에서만 가져오고, `auth_context_file`/`auth_context_hash`는 world root 밖 trusted auth context input에서만 가져온다. prompt text나 Docker mount path에서 추측하지 않는다. production auth context input은 wrapper-signed 또는 MACed envelope여야 하고 configured wrapper trust material으로 검증되며 expected issuer/audience/scope policy를 만족해야 한다. approval attestation은 `world_id`, `allowed_actions`/scope, `issuer`, `audience`, `authenticated_actor`, `approval_channel`, `issued_at`, `expires_at`, hash/expiry 검증을 함께 만족해야 하며, scope는 `world_create_approval_attestation`과 exact downstream accept/force action을 함께 커버해야 한다. staged approval attestation의 `downstream_action`은 accept/force 명령과 정확히 일치해야 한다. 세부 계약은 `docs/commands.md`를 따른다.
 - Docker 사용 시 job container에는 선택된 world root 하나만 마운트한다.
 - `--root`만 사용하는 Docker 실행은 command site에서 `--world-id`를 명시하거나 `harness.yaml` provenance를 먼저 검증할 때만 허용한다.
 - OpenCrabs credential/config volume과 world root volume은 분리한다.

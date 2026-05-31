@@ -8,7 +8,7 @@ OpenCrabs/Codex가 세계관 파일을 다루는 구조에서는 명확한 보�
 ## 2. 기본 원칙
 - 세계관 파일 작업은 `world_*` dynamic tools로 수행한다.
 - dynamic tools는 `world-tool` Go CLI를 호출한다.
-- `world-tool`은 선택된 world root 밖 파일을 기본적으로 읽거나 쓰지 않는다. 유일한 read 예외는 `approval attest`가 `--auth-context-file`/`--auth-context-hash`로 hash/expiry 검증하는 OpenCrabs trusted wrapper auth context 파일이며, 이 파일도 쓰거나 run artifact로 복사하지 않는다. 이 wrapper는 `world_id`, `allowed_actions`/scope, `issuer`, `audience`, `authenticated_actor`, `approval_channel`을 함께 묶는 canonical approval attestation이고, 그 scope는 `world_create_approval_attestation`과 그 attestation이 뒷받침할 downstream action(`world_accept_draft` 또는 `world_force_accept_draft`)까지 authorize해야 한다. attestation 생성만 허용하는 scope는 content mutation에 충분하지 않으며, 세부 계약과 `AUTH_CONTEXT_SCOPE_DENIED`는 `docs/commands.md`를 따른다.
+- `world-tool`은 선택된 world root 밖 파일을 기본적으로 읽거나 쓰지 않는다. 유일한 read 예외는 `approval attest`가 `--auth-context-file`/`--auth-context-hash`로 검증하는 trusted auth context input이며, 이 파일도 쓰거나 run artifact로 복사하지 않는다. production auth context input은 wrapper-signed 또는 MACed envelope여야 하고 configured wrapper trust material으로 검증되며 expected issuer/audience/scope policy를 만족해야 한다. local fixture mode는 test-only이고 explicit opt-in이 필요하다. 이 input은 `world_id`, `allowed_actions`/scope, `issuer`, `audience`, `authenticated_actor`, `approval_channel`, and the exact `downstream_action`을 함께 묶는 wrapper provenance다. approval attestation은 `runs/inbox/*-approval-attestation.json`에 staged되는 별도 아티팩트이며, `world_create_approval_attestation`과 exact downstream action(`world_accept_draft` 또는 `world_force_accept_draft`)을 함께 bind해야 한다. auth context input의 exact downstream action이 없거나 `--downstream-action`과 mismatch면 `AUTH_CONTEXT_SCOPE_DENIED`다. attestation 생성만 허용하는 scope는 content mutation에 충분하지 않으며, staged attestation의 accept/force binding mismatch는 `APPROVAL_ATTESTATION_BINDING_MISMATCH`로 다룬다. 세부 계약은 `docs/commands.md`를 따른다.
 - `content/`는 accept tool에서만 변경된다.
 - draft 생성과 canon 승격은 분리한다.
 - OpenCrabs/Codex 출력은 후보이며 tool validation을 통과해야 한다.
@@ -91,7 +91,7 @@ Command별 path allowlist:
 - `draft read/validate/diff/accept/reject`: draft paths under `drafts/**/*.md`, staged reason/approval attestation inputs under `runs/inbox/**` read/consume only where the command defines them
 - `content validate`: `content/**/*.md`
 - `input stage`: `runs/inbox/**` write only
-- `approval attest`: `runs/inbox/**` write only for approval attestation artifacts; `--auth-context-file`/`--auth-context-hash` may read a trusted wrapper path outside the world root in read-only mode after hash/expiry validation. 이 wrapper는 canonical approval attestation이며 `world_id`, `allowed_actions`/scope, `issuer`, `audience`, `authenticated_actor`, `approval_channel`을 묶고, 그 scope는 `world_create_approval_attestation`과 downstream action(`world_accept_draft` 또는 `world_force_accept_draft`)을 함께 authorize해야 한다. attestation 생성만 허용하는 scope는 content mutation에 충분하지 않으며, 상세 필드 계약은 `docs/commands.md`를 따른다.
+- `approval attest`: `runs/inbox/**` write only for approval attestation artifacts; `--auth-context-file`/`--auth-context-hash` may read a trusted auth context input path outside the world root in read-only mode after signature/MAC/trust-material verification plus expected issuer/audience/scope checks. 승인 attestation은 `runs/inbox/*-approval-attestation.json`으로 staged되며 `world_create_approval_attestation`과 exact downstream action(`world_accept_draft` 또는 `world_force_accept_draft`)을 함께 bind해야 한다. attestation 생성만 허용하는 scope는 content mutation에 충분하지 않으며, 상세 필드 계약은 `docs/commands.md`를 따른다.
 - `run get`: 기본 redacted manifest/status summary만 반환하고, explicit safe artifact allowlist 또는 dedicated safe-artifact command가 있을 때만 추가 artifact를 읽는다. `runs/inbox/**`는 제외한다.
 - `run list`: immutable run index/summary files only, `runs/inbox/**` 제외
 - `run recover`: unresolved `recovery.json`을 정리하는 repair path
@@ -154,7 +154,7 @@ draft가 content로 승격되려면 `world_accept_draft`를 통과해야 한다.
 - required field 누락
 - draft가 active drafts/ 밖에 있음
 
-force accept는 가능하지만 reason만으로는 부족하다. `reason_file`/`reason_hash`, `approval_attestation_file`/`approval_attestation_hash`, `approver_id`, `approval_channel`, `authenticated_actor`를 함께 기록해야 하며, 이는 runs log와 accept result에 남아야 한다. `approval_channel` 예시는 `OpenCrabs-chat`을 사용하고, attestation, accept, audit 전반에서 byte-identical 값이어야 한다. `approval_channel`과 `authenticated_actor`는 `world_create_approval_attestation`이 확인한 OpenCrabs trusted auth context wrapper로부터 와야 하며, 이 wrapper는 `world_id`, `allowed_actions`/scope, `issuer`, `audience`, `issued_at`, `expires_at`, hash/expiry 검증을 함께 만족해야 한다. 그 wrapper scope는 `world_create_approval_attestation`과 downstream action(`world_accept_draft` 또는 `world_force_accept_draft`)을 함께 authorize해야 하고, attestation 생성만 허용하는 scope는 content mutation에 충분하지 않다. 모델 출력이나 staging file에서 오면 안 되며, scope가 허용되지 않으면 `AUTH_CONTEXT_SCOPE_DENIED`로 실패해야 한다.
+force accept는 가능하지만 reason만으로는 부족하다. `reason_file`/`reason_hash`, `approval_attestation_file`/`approval_attestation_hash`, `approver_id`, `approval_channel`, `authenticated_actor`를 함께 기록해야 하며, 이는 runs log와 accept result에 남아야 한다. `approval_channel` 예시는 `OpenCrabs-chat`을 사용하고, attestation, accept, audit 전반에서 byte-identical 값이어야 한다. `approval_channel`과 `authenticated_actor`는 `world_create_approval_attestation`이 확인한 trusted auth context input과 그로부터 staged된 approval attestation으로부터 와야 하며, production input은 wrapper-signed 또는 MACed envelope와 configured trust material, expected issuer/audience/scope policy를 만족해야 한다. 그 input scope는 `world_create_approval_attestation`과 exact downstream action(`world_accept_draft` 또는 `world_force_accept_draft`)을 함께 authorize해야 하고, exact downstream-action binding이 없거나 mismatch면 `AUTH_CONTEXT_SCOPE_DENIED`로 실패해야 한다. attestation 생성만 허용하는 scope는 content mutation에 충분하지 않으며, staged attestation의 accept/force binding mismatch는 `APPROVAL_ATTESTATION_BINDING_MISMATCH`다. 모델 출력이나 staging file에서 오면 안 된다.
 
 force accept 제한:
 - semantic/timeline/relationship conflict 후보만 우회 대상으로 삼는다.
@@ -177,9 +177,9 @@ write command는 world root 단위 lock을 사용한다.
 - lock 획득 실패는 `LOCK_BUSY` JSON error로 반환한다.
 - accept는 lock을 잡은 뒤 validation을 재실행한다.
 - accept는 diff_run_id, draft_hash, target_base_hash, patch_hash binding을 검증한다.
-- create 경로는 target absence check와 CLI `--target-base-hash none`을 사용하고, update/deprecate 경로는 sha256 `target_base_hash`를 사용한다. `diff_run_id`, `draft_hash`, `target_base_hash`, `patch_hash`는 `world_diff_draft`의 출력에서 가져와야 하며, create 경로에서는 JSON의 `target_base_hash: null`을 CLI template 변수 `target_base_hash="none"`으로 매핑해야 한다. staged file hash는 `world_stage_input`의 출력에서 가져오고, approval attestation이 이 값들과 canonical trusted auth context를 묶어야 한다. accept 시점에 world-tool이 다시 계산한 값과 일치해야 한다.
+- create 경로는 target absence check와 CLI `--target-base-hash none`을 사용하고, update/deprecate 경로는 sha256 `target_base_hash`를 사용한다. `diff_run_id`, `draft_hash`, `target_base_hash`, `patch_hash`는 `world_diff_draft`의 출력에서 가져와야 하며, create 경로에서는 JSON의 `target_base_hash: null`을 CLI template 변수 `target_base_hash="none"`으로 매핑해야 한다. staged file hash는 `world_stage_input`의 출력에서 가져오고, staged approval attestation은 exact downstream action binding과 함께 이 값들을 묶어야 한다. accept 시점에 world-tool이 다시 계산한 값과 일치해야 한다.
 - diff 시점의 draft/content/patch hash와 accept 시점의 값이 다르면 accept를 중단한다.
-- accept는 `reason_file`/`reason_hash`, `approval_attestation_file`/`approval_attestation_hash`, `approver_id`, `approval_channel`, `authenticated_actor`를 audit field로 기록한다. free-form reason이나 actor 문자열만으로는 승인 provenance가 충분하지 않다. canonical 세부 계약은 `docs/commands.md`를 따른다.
+- accept는 `reason_file`/`reason_hash`, `approval_attestation_file`/`approval_attestation_hash`, `approver_id`, `approval_channel`, `authenticated_actor`를 audit field로 기록한다. free-form reason이나 actor 문자열만으로는 승인 provenance가 충분하지 않다. staged approval attestation의 embedded downstream_action은 accept/force command와 exact match여야 한다. canonical 세부 계약은 `docs/commands.md`를 따른다.
 
 ## 11. Docker Boundary
 권장 컨테이너 실행 원칙:
@@ -288,4 +288,4 @@ Docker root-only 실행에서는 world_id provenance를 bind mount path에서 �
 - `--query-file`, `--title-file`, `--body-file`, `--reason-file`, `--retcon-reason-file`도 world root 상대 경로만 허용
 - `runs/inbox/` 밖 staging file 차단
 - symlink resolution
-- `--auth-context-file`은 staging file이 아니며, `approval attest`에서만 world root 밖 trusted wrapper path를 hash/expiry와 함께 읽는 예외다.
+- `--auth-context-file`은 staging file이 아니며, `approval attest`에서만 world root 밖 trusted auth context input path를 signature/MAC/trust-material verification, expected issuer/audience/scope checks, 그리고 필요한 경우 hash/expiry와 함께 읽는 예외다.
