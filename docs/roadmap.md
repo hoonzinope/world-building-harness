@@ -28,6 +28,7 @@ OpenCrabs 없이도 로컬 CLI로 파일 관리와 validation을 수행할 수 �
 - `world-tool world init`
 - `world-tool registry add/list/remove/default`
 - `world-tool input stage`
+- `world-tool doc list --scope active`
 - `world-tool doc read/search --scope active`
 - `world-tool draft create/update/read/list`
 - `world-tool draft validate`
@@ -64,6 +65,7 @@ OpenCrabs/Codex 생성물을 안정적으로 검사할 rule 기반 validator를 
 
 ### 기능
 - frontmatter 검사
+- `world-tool content validate`
 - id 중복 검사
 - change_type create/update/deprecate 검사
 - required field 검사

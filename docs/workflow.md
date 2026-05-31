@@ -80,17 +80,17 @@ receive user request in OpenCrabs
 목적: 사용자가 승인한 draft를 canon content로 승격한다.
 
 ### 단계
-1. OpenCrabs가 사용자에게 명시적 승인 확인
-2. `world_diff_draft`로 변경 내용 표시
-3. 사용자에게 diff summary를 확인받는다
-4. reason을 `world_stage_input`으로 staging
+1. `world_diff_draft`로 변경 내용을 표시한다.
+2. 사용자에게 diff summary를 확인받는다.
+3. OpenCrabs가 사용자에게 명시적 승인을 받는다.
+4. reason을 `world_stage_input`으로 staging한다.
 5. `world_create_approval_attestation`으로 trusted auth context input과 diff/reason hash binding을 staging한다. approval attestation은 `runs/inbox/*-approval-attestation.json`에 저장되는 별도 staged artifact이며, `world_id`, `allowed_actions`/scope, `issuer`, `audience`, `authenticated_actor`, `approval_channel`, `issued_at`, `expires_at`, `downstream_action`과 hash/expiry 검증을 함께 만족해야 한다. production auth context input은 wrapper-signed 또는 MACed envelope여야 하고 configured wrapper trust material으로 검증되며 expected issuer/audience/scope policy를 만족해야 한다. local fixture mode는 test-only이고 explicit opt-in이 필요하다. `world_create_approval_attestation`은 downstream action으로 `world_accept_draft` 또는 `world_force_accept_draft` 중 정확히 하나를 받아 staged attestation에 저장해야 하며, auth context input의 exact downstream action과 accept/force는 그 값과 exact match여야 한다. exact downstream action이 없거나 mismatch면 `AUTH_CONTEXT_SCOPE_DENIED`, staged attestation이 later accept/force binding과 mismatch면 `APPROVAL_ATTESTATION_BINDING_MISMATCH`다. 세부 계약은 `docs/commands.md`를 따른다. `auth_context_file`/`auth_context_hash`는 world root 밖에서 생성된 신뢰 가능한 입력이며, prompt/model/staged files는 신뢰하지 않는다.
 6. `world_accept_draft`에 `diff_run_id`, `draft_hash`, `target_base_hash`, `patch_hash`, `reason_file`, `reason_hash`, `approval_attestation_file`, `approval_attestation_hash`, `approver_id`, `approval_channel`, `authenticated_actor`를 함께 넘긴다. `world_force_accept_draft`도 같은 staged approval attestation의 downstream_action과 exact match여야 한다.
-7. tool 내부에서 diff binding, approval attestation, validation 재실행을 검증
-8. validation/policy/precondition/domain blocked result이면 blocked로 중단
-9. content 생성 또는 갱신
-10. accepted draft를 `archive/accepted/`로 이동
-11. runs log와 result JSON 저장
+7. tool 내부에서 diff binding, approval attestation, validation 재실행을 검증한다.
+8. validation/policy/precondition/domain blocked result이면 blocked로 중단한다.
+9. content 생성 또는 갱신한다.
+10. accepted draft를 `archive/accepted/`로 이동한다.
+11. runs log와 result JSON을 저장한다.
 
 ### 정책
 - accept는 tool이 강제하는 deterministic workflow다.
