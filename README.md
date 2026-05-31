@@ -55,15 +55,16 @@ Quickstart는 아직 CLI 구현 후의 목표 예시다. `jq`와 `python3`가 �
 set -euo pipefail
 
 WORLD_ID="ashen-continent"
-WORLD_ROOT="./examples/worlds/ashen-continent"
+WORLD_ROOT=$(mktemp -d -t world-root.XXXXXX)
 APPROVER_ID="oc-user-01"
 APPROVAL_CHANNEL="OpenCrabs-chat"
 AUTHENTICATED_ACTOR="oc-user-01"
 AUTH_ISSUER="opencrabs-trusted-wrapper"
 AUTH_AUDIENCE="$WORLD_ID"
 REGISTRY_FILE=$(mktemp -t world-registry.XXXXXX)
-AUTH_CONTEXT_FILE="/tmp/opencrabs-auth-context.json"
+AUTH_CONTEXT_FILE=$(mktemp -t opencrabs-auth-context.XXXXXX)
 cleanup() {
+  rm -rf "$WORLD_ROOT"
   rm -f "$REGISTRY_FILE"
   if [[ -n "${AUTH_CONTEXT_FILE:-}" ]]; then
     rm -f "$AUTH_CONTEXT_FILE"

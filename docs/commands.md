@@ -69,7 +69,7 @@ Top-level field 규칙:
 - `registry list`와 `world list`는 `world_id`, `registry_root`, `root`, `run_id`를 모두 null로 둔다. `registry add`, `registry remove`, `registry default`는 world root를 열지 않지만 `world_id`에 selected/target id를 담고 `registry_root`, `root`, `run_id`는 null이다.
 - `ok: false`인 경우 `error.code`와 `error.message`가 필수다.
 - validation severity는 top-level에 두지 않고 `data.validation_status`에만 둔다.
-- `data.block_reason`은 `command_status: "blocked"`일 때만 사용한다. validation issue code는 `issues[].code` 또는 equivalent issue field에 넣는다. `VALIDATION_BLOCKED`는 `data.block_reason` 전용 envelope code이고, `ID_CONFLICT`, `TARGET_PATH_CONFLICT`, `TIMELINE_CONFLICT` 같은 원인 코드는 underlying issue code로 `issues[].code`에 둔다. `MISSING_TARGET`는 예외적으로 `draft create --change-type update|deprecate`, `draft diff`, `draft accept`에서는 blocked `data.block_reason`으로도 쓰이고, `draft validate` completed 결과에서는 validation issue `issues[].code`로도 쓸 수 있다.
+- `data.block_reason`은 `command_status: "blocked"`일 때만 사용한다. `VALIDATION_BLOCKED`는 validation conflict/error를 묶는 aggregate `data.block_reason` 전용 code이고, section 3.3에 나열된 command-level blocked code는 `data.block_reason`으로 사용할 수 있다. validation/domain cause code는 `issues[].code` 또는 equivalent issue field에 넣는다. `MISSING_TARGET`는 예외적으로 `draft create --change-type update|deprecate`, `draft diff`, `draft accept`에서는 blocked `data.block_reason`으로도 쓰이고, `draft validate` completed 결과에서는 validation issue `issues[].code`로도 쓸 수 있다.
 
 Minimum `data` shape:
 
@@ -236,7 +236,7 @@ OpenCrabs는 `ok`, `command_status`, `data.validation_status`, `data.block_reaso
 | `IO_ERROR` | failed | 아니오 | filesystem or persistence failure |
 | `INTERNAL_ERROR` | failed | 아니오 | panic or unexpected internal failure |
 
-`data.block_reason`는 command-level stop 이유이고 `issues[].code`는 underlying validation issue code다. 둘을 섞지 않는다. `VALIDATION_BLOCKED`는 block_reason 전용 envelope code이고, `ID_CONFLICT`, `TARGET_PATH_CONFLICT`, `TIMELINE_CONFLICT` 같은 issue code는 `issues[].code`에 둔다. `MISSING_TARGET`는 예외적으로 blocked reason과 validation issue code 양쪽에서 문맥에 따라 쓸 수 있다. `draft validate`는 validation 자체가 완료되면 항상 completed로 끝나며, `issues[].code`만 채울 수 있다.
+`data.block_reason`는 command-level stop 이유이고 `issues[].code`는 underlying validation/domain cause code다. 둘을 섞지 않는다. `VALIDATION_BLOCKED`는 validation conflict/error를 묶는 aggregate `data.block_reason` 전용 code이고, section 3.3에 나열된 command-level blocked code만 `data.block_reason`으로 허용한다. `MISSING_TARGET`는 예외적으로 blocked reason과 validation issue code 양쪽에서 문맥에 따라 쓸 수 있다. `draft validate`는 validation 자체가 완료되면 항상 completed로 끝나며, `issues[].code`만 채울 수 있다.
 
 ### 3.2 available_actions enum and recommended mapping
 
@@ -602,7 +602,7 @@ Accept 정책:
 - `--force`는 `MISSING_TARGET` 계열(blocked cases 포함 missing target, missing related target, missing relationship target, missing update/deprecate target, active-draft-only target), path/type/id/schema 불일치, structural error, id conflict, target path conflict, inactive draft, storylet canon 승격, diff binding mismatch, atomic write 실패, lock 실패는 우회할 수 없다.
 - `change_type: deprecate`가 accept되면 target content를 `content/` 아래에서 in-place로 deprecated 상태와 deprecation audit metadata로 갱신하고, canon 파일은 제거하지 않는다. 해당 deprecate draft는 accepted draft와 동일하게 archive된다.
 - `type: storylet`은 MVP에서 content canon accept 대상이 아니며 `STORYLET_NOT_CANON_TARGET`으로 blocked다.
-- accept 성공 시 `data.approval`은 `approver_id`, `approval_channel`, `authenticated_actor`, `approval_attestation_file`, `reason_file`를 포함해야 한다. alias를 정의하지 않는 한 path suffix 이름은 쓰지 않는다.
+- accept 성공 시 `data.approval`은 `approver_id`, `approval_channel`, `authenticated_actor`, `approval_attestation_file`, `approval_attestation_hash`, `reason_file`, `reason_hash`, `downstream_action`를 포함해야 한다. alias를 정의하지 않는 한 path suffix 이름은 쓰지 않는다.
 
 Diff binding 정책:
 - accept는 `--diff-run-id`, `--draft-hash`, `--target-base-hash`, `--patch-hash` 중 하나라도 없으면 `DIFF_BINDING_REQUIRED`로 blocked다.

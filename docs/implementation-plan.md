@@ -176,6 +176,7 @@ draft를 canon과 비교해 구조 오류와 명백한 충돌을 탐지한다.
 - `world-tool approval attest`
 - `world-tool run recover`
 - `world-tool run get`
+- `world-tool run get --artifact <basename>`
 - accept 직전 validation 재실행
 - `--force`, `--reason-file`, `--reason-hash`, `--approval-attestation-file`, `--approval-attestation-hash`, `--approver-id`, `--approval-channel`, `--authenticated-actor`
 - diff binding flags: `--diff-run-id`, `--draft-hash`, `--target-base-hash`, `--patch-hash`
@@ -195,6 +196,7 @@ draft를 canon과 비교해 구조 오류와 명백한 충돌을 탐지한다.
 - accept는 validation을 다시 실행한다.
 - `run recover`는 unresolved recovery를 해결하고 recovery artifact를 기록한다.
 - `run get`은 recovery inspection에 필요한 최소 run metadata와 artifact 참조를 조회할 수 있다.
+- `run get --artifact <basename>`은 basename allowlist를 통과한 safe artifact만 제공하고, `runs/inbox/**`는 제외하며, redacted/safe artifact만 노출한다.
 - accept는 diff binding이 없거나 불일치하면 blocked다.
 - conflict/error가 있으면 기본 accept가 blocked다.
 - force accept는 missing target, missing related target, missing relationship target, missing update/deprecate target, active draft-only target, path/type/id/schema 불일치, structural error, id conflict, target path conflict, diff binding mismatch, storylet canon 승격, atomic write 실패, lock 실패는 우회할 수 없다. reason 누락은 `INVALID_ARGUMENT` failed로, auth context/attestation provenance 문제는 대응하는 `AUTH_CONTEXT_*` 또는 attestation/hash mismatch failed로 처리한다.
@@ -288,6 +290,14 @@ OpenCrabs가 `world-tool`을 범용 shell이 아니라 의미 단위 tool로 호
 - related-only-active-draft target fixture
 - staged input hash mismatch fixture
 - target path collision fixture
+- registry safe absolute path normalization fixture
+- registry traversal rejection fixture
+- registry symlink escape rejection fixture
+- registry directory-confusion rejection fixture
+- config safe absolute path normalization fixture
+- config traversal rejection fixture
+- config symlink escape rejection fixture
+- config directory-confusion rejection fixture
 - `../` traversal fixture
 - absolute path fixture
 - symlink escape fixture
@@ -330,6 +340,7 @@ OpenCrabs가 `world-tool`을 범용 shell이 아니라 의미 단위 tool로 호
 - related id 또는 relationship target이 active draft에만 존재하면 draft validate에서는 warning, accept/diff에서는 `command_status: "blocked"`, `data.block_reason: "MISSING_TARGET"`, `data.validation_status: "conflict"`로 처리된다.
 - staged input hash mismatch는 hash binding을 소비하는 모든 command에서 command-level `INPUT_HASH_MISMATCH`로 반환된다.
 - path boundary safety fixtures는 `../` traversal, absolute path, symlink escape, unsafe run artifact basename traversal, invalid `--auth-context-file` location 사례를 모두 커버한다.
+- registry/config boundary fixtures는 safe absolute path normalization, traversal rejection, symlink escape rejection, directory-confusion rejection을 각각 커버한다.
 - recovery resolution fixture는 recovery artifact가 해결된 뒤 동일 draft가 다시 accept될 수 있어야 한다는 점을 검증한다.
 - storylet draft는 content canon accept에서 차단된다.
 - storylet content path/status 위반은 validation `error`로 보고되고 accept에서 blocked된다.

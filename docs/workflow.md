@@ -129,6 +129,7 @@ receive user request in OpenCrabs
 ```text
 runs/
 └── 20260530-001/
+    ├── run.json
     ├── request.json
     ├── tool-call.json
     ├── draft.md
@@ -136,10 +137,12 @@ runs/
     ├── validation.md
     ├── diff.patch
     ├── events.jsonl
-    └── result.json
+    ├── result.json
+    └── recovery.json (optional)
 ```
 
 accept/diff run은 target content의 before/after hash를 포함한다.
+`recovery.json`은 transactional/recovery-capable run이거나 recovery가 필요한 경우에만 추가로 생성된다.
 
 `events.jsonl` 예시:
 

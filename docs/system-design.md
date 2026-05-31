@@ -238,7 +238,7 @@ stateDiagram-v2
     "draft_hash": "sha256:..."
   },
   "issues": [],
-  "available_actions": ["world_read_draft", "world_validate_draft", "world_diff_draft", "world_reject_draft", "world_accept_draft"]
+  "available_actions": ["world_read_draft", "world_validate_draft", "world_diff_draft", "world_update_draft", "world_reject_draft"]
 }
 ```
 
