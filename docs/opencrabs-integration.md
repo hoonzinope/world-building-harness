@@ -336,7 +336,7 @@ OpenCrabs는 accept를 강행하지 않고 blocked 이유와 수정안을 사용
 사용자가 강행을 요청하면 OpenCrabs는 `world_force_accept_draft`를 사용한다. 이 경로도 `approval_attestation_file`, `approval_attestation_hash`, `approver_id`, `approval_channel`, `authenticated_actor`를 요구하며, `approval_channel`은 attest/accept/audit 전반에서 byte-identical이어야 한다. tool이 `FORCE_NOT_ALLOWED` 또는 `VALIDATION_BLOCKED`를 반환하면 강행하지 않고 blocked 이유를 설명한다. attestation 생성만 허용하는 auth context input은 content mutation을 정당화하지 못하며, mutation scope가 없으면 `AUTH_CONTEXT_SCOPE_DENIED`로 실패해야 한다. staged approval attestation은 `runs/inbox/*-approval-attestation.json`에 기록한다.
 
 ### path violation
-`world-tool`은 world root 밖 경로 접근을 error로 반환한다. 단, `approval attest`의 `auth_context_file`은 world root 밖 trusted auth context input을 read-only로 읽는 예외다. production에서는 wrapper-signed 또는 MACed envelope를 configured wrapper trust material으로 검증하고 expected issuer/audience/scope policy를 만족해야 하며, local fixture mode는 test-only이고 explicit opt-in이 필요하다. hash/expiry만으로는 충분하지 않다.
+`world-tool`은 world root 밖 경로 접근을 error로 반환한다. 예외는 두 가지뿐이다. 첫째, registry/config 경로는 `--registry`, `WORLD_TOOL_REGISTRY`, `~/.opencrabs/worlds.yaml`, `~/.config/world-tool/worlds.yaml`에 한해 read/write가 가능하지만, normalize와 symlink 검사를 통과한 configured registry/config 접근만 허용한다. 둘째, `approval attest`의 `auth_context_file`은 signature/MAC/trust-material 검증과 issuer/audience/scope 검증을 통과한 trusted auth context input에 한해 read-only로 읽을 수 있다. 이 두 예외 모두 선택된 world root 밖의 `content/`, staging, `runs/` 경로를 허용하지 않는다. production에서는 wrapper-signed 또는 MACed envelope를 configured wrapper trust material으로 검증하고 expected issuer/audience/scope policy를 만족해야 하며, local fixture mode는 test-only이고 explicit opt-in이 필요하다. hash/expiry만으로는 충분하지 않다.
 
 ## 10. 설계 원칙
 - OpenCrabs가 하네스다.

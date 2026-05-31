@@ -187,7 +187,7 @@ OpenCrabs 대화에서 draft 생성, 검증, 승인 흐름이 자연스럽게 �
 - OpenCrabs skill + tools 수동 테스트 스크립트
 
 ### 완료 기준
-- init → registry add → input stage → draft create → draft validate → draft diff → draft accept가 샘플 world에서 동작함
+- init → registry add → input stage(title/body) → draft create → draft validate → draft diff → input stage(reason) → approval attest → draft accept가 샘플 world에서 동작함
 - conflict draft가 accept에서 차단됨
 - diff binding mismatch가 accept에서 차단됨
 - storylet draft가 content canon으로 승격되지 않음

@@ -221,7 +221,7 @@ OpenCrabs는 `ok`, `command_status`, `data.validation_status`, `data.block_reaso
 | `APPROVAL_ATTESTATION_HASH_MISMATCH` | failed | 아니오 | staged approval attestation hash mismatch at accept time |
 | `APPROVAL_ATTESTATION_EXPIRED` | failed | 아니오 | accept-time staged approval attestation expiry exceeded |
 | `APPROVAL_ATTESTATION_BINDING_MISMATCH` | failed | 아니오 | staged approval attestation payload mismatch against command/world/diff/reason/actor/channel/scope bindings |
-| `ID_CONFLICT` | blocked | 예 | canonical id already exists; create blocked reason 또는 validation issue code로 사용 |
+| `ID_CONFLICT` | blocked | 예 | canonical id already exists in content or active draft target; create blocked reason 또는 validation issue code로 사용 |
 | `TARGET_PATH_CONFLICT` | blocked | 예 | target path would collide before mutation; accept blocked reason 또는 validation issue code로 사용 |
 | `MISSING_TARGET` | blocked | 예 | missing canon target; `draft create --change-type update|deprecate`, `draft diff`, `draft accept`의 blocked reason으로도, `draft validate` completed 결과의 validation issue code로도 쓰인다 |
 | `DRAFT_NOT_ACTIVE` | blocked | 예 | draft not active at accept/diff time |
@@ -263,11 +263,12 @@ OpenCrabs는 `ok`, `command_status`, `data.validation_status`, `data.block_reaso
 
 | Command / case | `command_status` | `data.block_reason` | issue code / note |
 | --- | --- | --- | --- |
-| `draft create` id 중복 | `blocked` | `ID_CONFLICT` | issue code는 필요 시 동일 코드 또는 equivalent |
+| `draft create` id 중복 | `blocked` | `ID_CONFLICT` | same id exists in content or active draft target; issue code는 필요 시 동일 코드 또는 equivalent |
 | `draft create --change-type update|deprecate` missing canon target | `blocked` | `MISSING_TARGET` | no-write; accept/diff와 동일하게 blocked reason으로 사용 |
 | `draft validate` missing target | `completed` | 없음 | `issues[].code: MISSING_TARGET` |
 | `draft diff` target 계열 누락 | `blocked` | `MISSING_TARGET` | related/relationship/active-draft-only 포함; blocked reason으로 사용 |
 | `draft accept` target 계열 누락 | `blocked` | `MISSING_TARGET` | related/relationship/active-draft-only 포함; blocked reason으로 사용 |
+| `content migrate --dry-run` migration blockers | `blocked` | `MIGRATION_BLOCKED` | blockers listed in migration report/findings |
 | `draft accept` validation internal conflict/error | `blocked` | `VALIDATION_BLOCKED` | issue code detail는 `TIMELINE_CONFLICT` 같은 underlying validation code |
 | `draft accept` diff binding mismatch | `blocked` | `DIFF_BINDING_MISMATCH` | issue code detail에 mismatch 원인 기록 |
 | `draft accept` missing diff binding | `blocked` | `DIFF_BINDING_REQUIRED` | missing `--diff-run-id`/`--draft-hash`/`--target-base-hash`/`--patch-hash`; no mutation |
@@ -288,7 +289,8 @@ OpenCrabs는 `ok`, `command_status`, `data.validation_status`, `data.block_reaso
 | `doc list/read/search --scope drafts` | `drafts/**/*.md` |
 | `doc list/read/search --scope active` | `content/**/*.md`, `drafts/**/*.md` |
 | `doc search --query-file` | `runs/inbox/**` read/consume only for staged query payloads |
-| `draft create/update` | generated draft paths under `drafts/**/*.md` from document-types metadata using explicit type+id; staged title/body/retcon_reason inputs under `runs/inbox/**` read/consume only |
+| `draft create` | generated draft paths under `drafts/**/*.md` from document-types metadata using explicit type+id; staged title/body/retcon_reason inputs under `runs/inbox/**` read/consume only |
+| `draft update` | `drafts/**/*.md` under `--draft`; staged update inputs under `runs/inbox/**` read/consume only |
 | `draft read/validate/diff/accept/reject` | draft paths under `drafts/**/*.md`; staged reason/approval attestation inputs under `runs/inbox/**` read/consume only where the command defines them |
 | `input stage` | `runs/inbox/**` write only |
 | `approval attest` | `runs/inbox/**` write only for approval attestation artifacts; trusted auth context is read from a wrapper-owned file outside the world root |
@@ -453,7 +455,7 @@ world-tool draft read --world ashen-continent --draft drafts/nations/nation_ashe
 - `create`는 `--type`과 `--id`가 필수이고 `--target-id`를 받지 않는다.
 - `update`와 `deprecate`는 `--target-id`가 explicit draft/content id다. 이 change type에서는 `--id`를 받지 않으며, `--id`를 넘기면 `INVALID_ARGUMENT`로 실패한다. `draft create --change-type update|deprecate --target-id ...`에서 target id가 canon content에 없으면 draft를 쓰지 않고 `command_status: "blocked"`, `data.block_reason: "MISSING_TARGET"`, `data.validation_status: "conflict"`를 반환한다.
 - `world-tool`은 document-types metadata를 조회해 `type`에 대한 `id` format/prefix를 검증하고, draft/content path를 `type+id`에서 직접 파생한다. title에서 implicit ID를 생성하지 않는다.
-- `create`는 같은 id가 content에 있으면 `ID_CONFLICT`로 blocked다.
+- `create`는 같은 id가 content나 active draft target에 있으면 `ID_CONFLICT`로 blocked다.
 - `update`와 `deprecate`는 `--target-id`와 `--retcon-reason-file`이 필수이고, `--target-id`가 content에 존재해야 한다.
 - `update`와 `deprecate` draft의 id는 `target_id`와 같아야 한다.
 - `update`는 기존 content path를 유지한다. rename은 `draft update`의 책임이 아니며 별도 migration command family로 처리한다.
