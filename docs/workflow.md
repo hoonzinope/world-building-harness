@@ -149,7 +149,7 @@ accept/diff run은 target content의 before/after hash를 포함한다.
 ```json
 {"step":"create_draft","status":"completed","actor":"opencrabs","time":"2026-05-30T10:00:00+09:00"}
 {"step":"validate_draft","status":"completed","validation_status":"warning"}
-{"step":"accept_draft","status":"blocked","validation_status":"conflict","block_reason":"VALIDATION_BLOCKED","issues":[{"code":"TIMELINE_CONFLICT","rule":"VR-220","severity":"conflict","message":"timeline conflict blocks accept until the draft is updated"}],"approver_id":"park.hana","approval_channel":"OpenCrabs-chat","authenticated_actor":"openid:codex-oauth:user-123"}
+{"step":"accept_draft","status":"blocked","validation_status":"conflict","block_reason":"VALIDATION_BLOCKED","issues":[{"code":"TIMELINE_CONFLICT","rule":"VR-220","severity":"conflict","message":"timeline conflict blocks accept until the draft is updated"}],"approval_attestation_file":"runs/inbox/20260530-001-approval-attestation.json","approval_attestation_hash":"sha256:3f2a0c7d4b1e8a9f6c2d5b7e1a9c4d8f0b2e6c1a5d7f8e9c0b1a2d3e4f5a6b7","reason_file":"runs/inbox/20260530-001-reason.txt","reason_hash":"sha256:8a1d2c3e4f5a6b7c9d0e1f2a3b4c5d6e7f8091a2b3c4d5e6f7a8b9c0d1e2f3a4","downstream_action":"world_accept_draft","approver_id":"park.hana","approval_channel":"OpenCrabs-chat","authenticated_actor":"openid:codex-oauth:user-123"}
 ```
 
 ## 9. Skill 지침 요약

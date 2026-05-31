@@ -81,7 +81,7 @@ Minimum `data` shape:
 | `input stage` | `kind`, `input_path`, `input_hash` | input 본문은 반환하지 않는다 |
 | `doc read/search` | `path` 또는 `results` | raw body는 explicit read에서만, search는 snippet만 허용한다 |
 | `draft create/update/read/list/validate/diff/accept/reject` | `draft_path`, `draft_hash` or `drafts`, `validation_status` when applicable, `diff_*`/`approval` only where relevant | reason/body/attestation payload는 hash와 path 중심으로 redact한다 |
-| `approval attest` | `approval_attestation_file`, `approval_attestation_hash`, `world_id`, `issuer`, `audience`, `scope_verification`, `downstream_action`, `reason_hash`, `authenticated_actor`, `approver_id`, `approval_channel`, `diff_run_id`, `draft_hash`, `target_base_hash`, `patch_hash` | auth context 원문과 session secret은 반환하지 않고, `scope_verification`에는 `world_create_approval_attestation`과 downstream action allowlist를 요약해 담는다 |
+| `approval attest` | `approval_attestation_file`, `approval_attestation_hash`, `world_id`, `issuer`, `audience`, `scope_verification`, `downstream_action`, `reason_hash`, `authenticated_actor`, `approver_id`, `approval_channel`, `issued_at`, `expires_at`, `diff_run_id`, `draft_hash`, `target_base_hash`, `patch_hash` | auth context 원문과 session secret은 반환하지 않고, `scope_verification`에는 `world_create_approval_attestation`과 downstream action allowlist를 요약해 담는다 |
 | `content validate` | `validation_status`, `blockers`, `findings` or equivalent summary | content 본문 전체는 반환하지 않는다 |
 | `content migrate --dry-run` | `migration_run_id`, `migration_report_path`, `migration_actions_path`, `candidates`, `blockers`, `partial_apply` | report artifact 본문은 raw dump 대신 요약과 경로 중심으로 노출한다 |
 | `run list/get/get artifact/recover` | `runs` or `manifest`/`status_summary` or single artifact fields or `recovery_*` | staged inbox payload와 unredacted sensitive artifact는 노출하지 않는다 |
@@ -219,6 +219,7 @@ OpenCrabs는 `ok`, `command_status`, `data.validation_status`, `data.block_reaso
 | `AUTH_CONTEXT_SCOPE_DENIED` | failed | 아니오 | auth context scope or exact downstream-action binding mismatch for world/action/issuer/audience bindings |
 | `AUTH_CONTEXT_TEST_MODE_REQUIRED` | failed | 아니오 | fixture opt-in missing |
 | `APPROVAL_ATTESTATION_HASH_MISMATCH` | failed | 아니오 | staged approval attestation hash mismatch at accept time |
+| `APPROVAL_ATTESTATION_EXPIRED` | failed | 아니오 | accept-time staged approval attestation expiry exceeded |
 | `APPROVAL_ATTESTATION_BINDING_MISMATCH` | failed | 아니오 | staged approval attestation payload mismatch against command/world/diff/reason/actor/channel/scope bindings |
 | `ID_CONFLICT` | blocked | 예 | canonical id already exists; create blocked reason 또는 validation issue code로 사용 |
 | `TARGET_PATH_CONFLICT` | blocked | 예 | target path would collide before mutation; accept blocked reason 또는 validation issue code로 사용 |
@@ -269,7 +270,9 @@ OpenCrabs는 `ok`, `command_status`, `data.validation_status`, `data.block_reaso
 | `draft accept` target 계열 누락 | `blocked` | `MISSING_TARGET` | related/relationship/active-draft-only 포함; blocked reason으로 사용 |
 | `draft accept` validation internal conflict/error | `blocked` | `VALIDATION_BLOCKED` | issue code detail는 `TIMELINE_CONFLICT` 같은 underlying validation code |
 | `draft accept` diff binding mismatch | `blocked` | `DIFF_BINDING_MISMATCH` | issue code detail에 mismatch 원인 기록 |
+| `draft accept` missing diff binding | `blocked` | `DIFF_BINDING_REQUIRED` | missing `--diff-run-id`/`--draft-hash`/`--target-base-hash`/`--patch-hash`; no mutation |
 | `draft accept` approval attestation hash mismatch | `failed` | 없음 | accept-time provenance/artifact failure; `error.code: APPROVAL_ATTESTATION_HASH_MISMATCH`; staged attestation file hash does not match supplied hash |
+| `draft accept` approval attestation expiry exceeded | `failed` | 없음 | accept-time provenance/artifact failure; `error.code: APPROVAL_ATTESTATION_EXPIRED`; staged attestation expired before content mutation |
 | `draft accept` approval attestation payload mismatch | `failed` | 없음 | accept-time provenance/artifact failure; `error.code: APPROVAL_ATTESTATION_BINDING_MISMATCH`; attestation payload, command/world/diff/reason/actor/channel/scope bindings must all match |
 | `draft accept` inactive draft | `blocked` | `DRAFT_NOT_ACTIVE` | issue code detail |
 | `draft accept` storylet canon | `blocked` | `STORYLET_NOT_CANON_TARGET` | issue code detail |
@@ -540,7 +543,7 @@ world-tool approval attest \
 동작:
 - OpenCrabs trusted wrapper/session metadata에서 authenticated actor와 channel provenance를 확인한다.
 - `runs/inbox/<run-id>-approval-attestation.json`을 생성하고 `approval_attestation_file`, `approval_attestation_hash`를 반환한다.
-- attestation payload에는 `world_id`, `authenticated_actor`, `approver_id`, `approval_channel`, `issuer`, `audience`, `scope_verification`, `downstream_action`, `diff_run_id`, `draft_hash`, `target_base_hash`, `patch_hash`, `reason_hash`, `session_id`, `created_at`을 포함한다.
+- attestation payload에는 `world_id`, `authenticated_actor`, `approver_id`, `approval_channel`, `issuer`, `audience`, `scope_verification`, `downstream_action`, `diff_run_id`, `draft_hash`, `target_base_hash`, `patch_hash`, `reason_hash`, `issued_at`, `expires_at`, `session_id`, `created_at`을 포함한다.
 - create diff/accept은 `--target-base-hash none`을 사용하고 attestation payload와 JSON 결과에서는 `target_base_hash: null`로 기록한다. update/deprecate는 sha256 해시를 사용한다.
 - trusted auth/session metadata가 없으면 `command_status: "failed"`와 `error.code: "AUTH_CONTEXT_MISSING"`을 반환한다. hash mismatch는 `AUTH_CONTEXT_HASH_MISMATCH`, expiry 초과는 `AUTH_CONTEXT_EXPIRED`, world/action/issuer/audience scope mismatch는 `AUTH_CONTEXT_SCOPE_DENIED`, fixture opt-in 누락은 `AUTH_CONTEXT_TEST_MODE_REQUIRED`로 실패한다.
 
@@ -601,7 +604,7 @@ world-tool draft accept \
 Accept 정책:
 - `draft accept`와 `draft accept --force`는 `--reason-file`, `--reason-hash`, `--approver-id`, `--approval-channel`, `--approval-attestation-file`, `--approval-attestation-hash`, `--authenticated-actor`를 모두 요구한다. `reason-file`만으로는 충분하지 않다.
 - `--reason-file`과 `--reason-hash`는 짝을 이뤄야 하며, `world-tool`은 acceptance metadata를 기록하기 전에 재해시해서 검증한다.
-- `--authenticated-actor`는 단독으로는 신뢰되지 않는다. CLI는 `--approval-attestation-file`과 `--approval-attestation-hash`를 함께 넘겨야 하며, 이 attestation은 trusted wrapper/session metadata가 생성한 파일이어야 한다. attestation은 world-root-relative `runs/inbox/*-approval-attestation.json` path여야 하고 `approval attest`로 생성된 것만 허용한다. alternate staging directories, symlinks, absolute paths, 그리고 `runs/inbox/` 밖의 path는 모두 거부한다. `world-tool`은 파일 해시를 다시 계산한 뒤 attestation 내부의 `world_id`, `issuer`, `audience`, `scope_verification`, `downstream_action`, `authenticated_actor`, `approver_id`, `approval_channel`, `diff_run_id`, `draft_hash`, `target_base_hash`, `patch_hash`, `reason_hash`가 command/world/auth context와 command flags에 모두 일치하는지, 그리고 `downstream_action`이 실제 invoked downstream action과 정확히 일치하는지 검증한 다음에만 `approval.authenticated_actor`를 기록한다. `world_accept_draft`는 `downstream_action: world_accept_draft`, `world_force_accept_draft`는 `downstream_action: world_force_accept_draft`를 요구하며, `scope_verification` allowlist에 둘 다 포함되어 있어도 exact `downstream_action`이 다르면 `APPROVAL_ATTESTATION_BINDING_MISMATCH`로 실패해야 한다. staged attestation file hash가 불일치하면 `APPROVAL_ATTESTATION_HASH_MISMATCH`, payload/command binding mismatch가 있으면 `APPROVAL_ATTESTATION_BINDING_MISMATCH`를 사용한다.
+- `--authenticated-actor`는 단독으로는 신뢰되지 않는다. CLI는 `--approval-attestation-file`과 `--approval-attestation-hash`를 함께 넘겨야 하며, 이 attestation은 trusted wrapper/session metadata가 생성한 파일이어야 한다. attestation은 world-root-relative `runs/inbox/*-approval-attestation.json` path여야 하고 `approval attest`로 생성된 것만 허용한다. alternate staging directories, symlinks, absolute paths, 그리고 `runs/inbox/` 밖의 path는 모두 거부한다. `world-tool`은 파일 해시를 다시 계산한 뒤 attestation 내부의 `world_id`, `issuer`, `audience`, `scope_verification`, `downstream_action`, `authenticated_actor`, `approver_id`, `approval_channel`, `issued_at`, `expires_at`, `diff_run_id`, `draft_hash`, `target_base_hash`, `patch_hash`, `reason_hash`가 command/world/auth context와 command flags에 모두 일치하는지, 그리고 `downstream_action`이 실제 invoked downstream action과 정확히 일치하는지 검증한 다음에만 `approval.authenticated_actor`를 기록한다. accept 시점에는 staged attestation의 `expires_at`이 현재 시각 기준으로 아직 유효한지 먼저 검증해야 하며, 만료되었으면 `APPROVAL_ATTESTATION_EXPIRED`로 content mutation 전에 실패해야 한다. `world_accept_draft`는 `downstream_action: world_accept_draft`, `world_force_accept_draft`는 `downstream_action: world_force_accept_draft`를 요구하며, `scope_verification` allowlist에 둘 다 포함되어 있어도 exact `downstream_action`이 다르면 `APPROVAL_ATTESTATION_BINDING_MISMATCH`로 실패해야 한다. staged attestation file hash가 불일치하면 `APPROVAL_ATTESTATION_HASH_MISMATCH`, payload/command binding mismatch가 있으면 `APPROVAL_ATTESTATION_BINDING_MISMATCH`를 사용한다.
 - `pass`는 explicit approval provenance가 있으면 accept 가능하다.
 - `warning`은 기본 accept 가능하지만, warning과 approval provenance를 runs log에 남긴다.
 - `conflict`와 `error`는 기본 accept에서 `command_status: "blocked"`로 반환한다.
