@@ -133,7 +133,7 @@ OpenCrabs가 `world-tool`을 의미 단위 tool로 호출하게 한다.
 - `approval attest`는 invalid `auth_context_file` location과 path escape를 거부하며, world root 밖 trusted auth context input은 production trusted wrapper verification을 통과한 경우에만 read-only 예외로 허용함
 - registry/config file path validation은 null-root registry behavior에서 explicit absolute registry/config file path를 safe normalization/validation 후 허용하되, unsafe traversal, symlink escape, directory confusion, world-root document/artifact path escape는 거부함
 - safe artifact retrieval은 명시적 basename allowlist와 path boundary 검증만 허용함
-- recovery inspection은 `world_recover_run`과 `world_get_run`의 최소 metadata 조회로 가능해야 함
+- recovery inspection은 `world_get_run`과 필요 시 `world_get_run_artifact`의 조회로 가능해야 하며, `world_recover_run`은 unresolved recovery 상태만 해소해야 함
 - diff 확인과 accept 실행이 같은 diff_run_id/hash binding으로 묶임
 
 ## 7. Phase 5: OpenCrabs Integration UX

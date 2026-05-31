@@ -84,7 +84,7 @@ Minimum `data` shape:
 | `approval attest` | `approval_attestation_file`, `approval_attestation_hash`, `world_id`, `issuer`, `audience`, `scope_verification`, `downstream_action`, `reason_hash`, `authenticated_actor`, `approver_id`, `approval_channel`, `issued_at`, `expires_at`, `diff_run_id`, `draft_hash`, `target_base_hash`, `patch_hash` | auth context 원문과 session secret은 반환하지 않고, `scope_verification`에는 `world_create_approval_attestation`과 downstream action allowlist를 요약해 담는다 |
 | `content validate` | `validation_status`, `blockers`, `findings` or equivalent summary | content 본문 전체는 반환하지 않는다 |
 | `content migrate --dry-run` | `migration_run_id`, `migration_report_path`, `migration_actions_path`, `candidates`, `blockers`, `partial_apply` | report artifact 본문은 raw dump 대신 요약과 경로 중심으로 노출한다 |
-| `run list/get/get artifact/recover` | `runs` or `manifest`/`status_summary` or single artifact fields or `recovery_*` | staged inbox payload와 unredacted sensitive artifact는 노출하지 않는다 |
+| `run list/get/get artifact/recover` | `runs` or `manifest`/`status_summary` or single artifact fields or `recovery_*` | staged inbox payload와 unredacted sensitive artifact는 노출하지 않는다; future privileged export가 필요하면 별도의 explicitly specified command로 분리하고 own auth/redaction contract를 둔다 |
 
 `command_status` 허용값:
 - `completed`: command가 정상 완료됨
@@ -110,7 +110,7 @@ validation 결과는 top-level `command_status`와 섞지 않고 `data.validatio
   "issues": [
     {
       "code": "TIMELINE_CONFLICT",
-      "rule": "VR-220",
+      "rule": "VR-203",
       "severity": "conflict",
       "message": "timeline conflict blocks accept until the draft is updated",
       "path": "drafts/nations/nation_northern_empire.md"
@@ -140,7 +140,7 @@ blocked envelope:
   "issues": [
     {
       "code": "TIMELINE_CONFLICT",
-      "rule": "VR-220",
+      "rule": "VR-203",
       "severity": "conflict",
       "message": "timeline conflict blocks accept until the draft is updated",
       "path": "drafts/nations/nation_northern_empire.md"
@@ -297,7 +297,7 @@ OpenCrabs는 `ok`, `command_status`, `data.validation_status`, `data.block_reaso
 | `input stage` | `runs/inbox/**` write only |
 | `approval attest` | `runs/inbox/**` write only for approval attestation artifacts; trusted auth context is read from a wrapper-owned file outside the world root |
 | `run list` | immutable run index/summary files only; `runs/inbox/**` excluded |
-| `run get` | default redacted manifest only; explicit single `--artifact <basename>` allowlist only; multiple artifacts require repeated `run get` calls; sensitive artifacts require privileged access or a separate command; `runs/inbox/**` excluded |
+| `run get` | default redacted manifest/status only; explicit single safe-artifact basename allowlist only; multiple artifacts require repeated `run get` calls; MVP `run get`/dynamic tools do not expose sensitive artifacts or `runs/inbox/**`; any future privileged export must be a separate specified command with its own auth/redaction contract |
 | `content validate` | `content/**/*.md` |
 
 `doc` command는 `runs/`, `archive/`, `raw/`, `schema/`를 읽지 않는다. archive 조회가 필요하면 향후 별도 `archive` resource를 둔다.
@@ -666,7 +666,7 @@ world-tool run recover --world ashen-continent --run-id 20260530-001 --json
 - 최근 실행 목록과 immutable summary만 조회
 - `run get`은 기본적으로 redacted manifest와 상태 요약만 반환한다. 이때 `data`에는 최소 `manifest`와 `status_summary`가 들어가며 둘 다 redacted다.
 - `run get`은 명시적인 safe artifact allowlist만 허용한다. `--artifact <artifact_name>`는 단일 값만 허용하며, 여러 artifact가 필요하면 `run get`을 반복 호출한다. basename allowlist에서만 선택할 수 있다. 예: `manifest.json`, `summary.json`, `result-summary.json`, `validation.json`, redacted `recovery.json`
-- sensitive artifact, raw staged input, inbox payload, unredacted result/body/reason는 `run get`로 노출하지 않는다. 이런 자료는 별도의 privileged command나 explicit privileged flag가 있어야 한다.
+- sensitive artifact, raw staged input, inbox payload, unredacted result/body/reason는 `run get`이나 dynamic tools에서 노출하지 않는다. MVP 범위에서 privileged access 또는 explicit privileged flag로 우회하지 않는다. 이런 자료가 future에 필요하면 separate, explicitly specified command로만 다루고, 그 command는 own auth/redaction contract를 가져야 한다.
 - `world_get_run_artifact`는 `run get`의 explicit safe artifact retrieval 전용 mapping이다. arbitrary path는 허용하지 않는다. 이 command의 `data`는 단일 artifact object shape로 `run_id`, `artifact_name`, `artifact_hash`, `media_type`, `size_bytes`, `redacted`, `content`를 포함하고 `content_path`는 반환하지 않으며, 여러 artifact가 필요하면 반복 호출한다.
 - `run recover`는 `TRANSACTION_INCOMPLETE` 또는 unresolved `recovery.json`를 해결하는 운영자용 command다. 대상 run의 `recovery.json`, 현재 content hash, archive state, result state를 다시 읽고, 이미 복구가 끝났다면 no-op으로 끝낸다.
 - `run recover`는 멱등적이어야 하며, 반복 호출해도 duplicate write를 만들지 않는다. 복구가 필요한 경우에만 남은 단계를 수행하고 `recovery.json`를 resolved로 표시한다.

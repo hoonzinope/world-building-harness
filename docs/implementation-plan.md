@@ -231,7 +231,7 @@ OpenCrabs가 `world-tool`을 범용 shell이 아니라 의미 단위 tool로 호
 ### 산출물
 - `opencrabs/tools/world-tools.toml`
 - approval attestation trusted wrapper/adapter contract
-- `auth_context_file` staging, hashing, and cleanup contract
+- `auth_context_file` creation/injection, hashing, and cleanup contract; staging is reserved for `runs/inbox/*-approval-attestation.json`
 - `auth_context_hash` derivation and verification contract
 - auth context expiry/scope/session metadata propagation contract
 - `world_stage_input`
@@ -338,6 +338,7 @@ OpenCrabs가 `world-tool`을 범용 shell이 아니라 의미 단위 tool로 호
 - target id mismatch draft는 validation `error`로 보고되고 accept에서 blocked된다.
 - create id conflict draft는 validation `conflict`로 보고되고 accept에서 blocked된다.
 - missing retcon_reason draft는 validation `error`로 보고되고 accept에서 blocked된다.
+- missing update/deprecate target fixture는 no draft write를 보장하고 `command_status: "blocked"`, `data.block_reason: "MISSING_TARGET"`로 종료되며 draft-bound available actions를 노출하지 않는다.
 - convenience-vs-explicit relationship conflict는 conflict로 탐지된다.
 - inverse/symmetric contradiction은 conflict로 탐지된다.
 - diff binding mismatch는 accept에서 차단된다.
