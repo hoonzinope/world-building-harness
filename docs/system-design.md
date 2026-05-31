@@ -385,12 +385,14 @@ internal/audit
 world-tool world init
 → world-tool registry add
 → world-tool world list
+→ world-tool world status
 → world-tool input stage --kind title
 → world-tool input stage --kind body
 → world-tool draft create
 → world-tool draft validate
 → world-tool draft diff
 → world-tool input stage --kind reason
+→ explicit approval checkpoint # diff binding + staged reason file/hash
 → world-tool approval attest
 → world-tool draft accept
 ```

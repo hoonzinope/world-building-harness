@@ -39,12 +39,14 @@ examples/worlds/                   sample world roots and fixtures
 world-tool world init
 world-tool registry add
 world-tool world list
+world-tool world status
 world-tool input stage  # title
 world-tool input stage  # body
 world-tool draft create
 world-tool draft validate
 world-tool draft diff
 world-tool input stage  # reason
+explicit approval checkpoint  # diff binding + staged reason file/hash
 world-tool approval attest
 world-tool draft accept
 ```
@@ -83,6 +85,8 @@ world_init_json=$(world-tool world init --root "$WORLD_ROOT" --world-id "$WORLD_
 registry_json=$(world-tool registry add --registry "$REGISTRY_FILE" --world "$WORLD_ID" --root "$WORLD_ROOT" --title "잿빛 대륙" --json)
 world_list_json=$(world-tool world list --registry "$REGISTRY_FILE" --json)
 jq -e --arg world_id "$WORLD_ID" '.ok == true and any(.data.worlds[]?; . == $world_id or .world_id == $world_id or .id == $world_id)' <<<"$world_list_json" >/dev/null
+world_status_json=$(world-tool world status --world "$WORLD_ID" --json)
+jq -e --arg world_id "$WORLD_ID" '.ok == true and .data.world_id == $world_id' <<<"$world_status_json" >/dev/null
 
 title_json=$(printf '%s\n' '잿빛 대륙' | world-tool input stage --world "$WORLD_ID" --kind title --stdin --json)
 title_file=$(jq -r '.data.input_path' <<<"$title_json")

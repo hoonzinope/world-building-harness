@@ -264,8 +264,8 @@ OpenCrabs가 `world-tool`을 범용 shell이 아니라 의미 단위 tool로 호
 - 각 tool은 stdout JSON만 반환한다.
 - 긴 query/title/body/reason/retcon_reason은 `runs/inbox/` staging file 또는 stdin 방식으로 전달된다.
 - `world_stage_input`이 staging file을 만들고 후속 tool은 path/hash만 받는다.
-- trusted wrapper/adapter가 authenticated session metadata를 받아 `auth_context_file`을 생성하고, 해당 파일의 hash를 계산해 `auth_context_hash`와 함께 tool 변수로 채운다. production auth context input은 configured wrapper-owned auth-context boundary 위치 검증을 먼저 통과한 뒤 signature/MAC 또는 configured wrapper trust-material 검증과 expected issuer/audience/scope policy를 통과해야 하고, `auth_context_hash`는 integrity binding이다.
-- `auth_context_file`의 trusted contents는 expiry, scope, session metadata, approval channel, authenticated actor, downstream_action provenance 등이다. wrapper는 세션 종료 또는 attestation 사용 후 이를 정리/무효화한다. local fixture mode는 `WORLD_TOOL_TEST_AUTH_CONTEXT=1` explicit opt-in 테스트 전용 경로다.
+- trusted wrapper/adapter가 authenticated session metadata를 받아 `auth_context_file`을 생성하고, 해당 파일의 hash를 계산해 `auth_context_hash`와 함께 tool 변수로 채운다. production auth context input은 configured wrapper-owned auth-context boundary의 normalized regular file 또는 trusted request-file/FD alternative를 먼저 통과해야 하며, traversal/symlink/selected world root/runtime-owned run dir/staged inbox는 hash/parse/signature/MAC/trust-material 검증 전에 거부되어야 한다. 그 다음 signature/MAC 또는 configured wrapper trust-material 검증과 expected issuer/audience/scope policy를 통과해야 하고, `auth_context_hash`는 integrity binding이다.
+- `auth_context_file`의 trusted contents는 expiry, scope, session metadata, approval channel, authenticated actor, downstream_action provenance 등이다. wrapper는 세션 종료 또는 attestation 사용 후 이를 정리/무효화한다. local fixture mode는 `WORLD_TOOL_TEST_AUTH_CONTEXT=1` explicit opt-in 테스트 전용 경로이며, local fixture는 production auth context provenance로 승격될 수 없다.
 - `approver_id`는 CLI/template input으로 별도 전달되는 non-authoritative audit/display label로 attestation과 audit에 기록된다.
 - `world_create_approval_attestation`은 wrapper가 주입한 `auth_context_file/auth_context_hash`, expected issuer/audience/scope policy, actor/channel provenance를 항상 검증하고, raw actor 문자열만으로 승인 provenance를 만들지 않는다.
 - approval attestation 관련 dynamic tool 변수는 trusted wrapper/adapter 경계에서만 채워지고, 사용자 입력만으로는 생성되거나 덮어쓰여서는 안 된다.
@@ -341,7 +341,7 @@ OpenCrabs가 `world-tool`을 범용 shell이 아니라 의미 단위 tool로 호
 - manual OpenCrabs test script 또는 checklist
 
 ### 완료 기준
-- `world init -> registry add -> input stage(title/body) -> draft create -> draft validate -> draft diff -> input stage(reason) -> approval attest -> draft accept`가 샘플 world에서 통과한다.
+- `world init -> registry add -> input stage(title/body) -> draft create -> draft validate -> draft diff -> input stage(reason) -> explicit approval over diff binding + staged reason file/hash checkpoint -> approval attest -> draft accept`가 샘플 world에서 통과한다.
 - conflict draft는 기본 accept에서 차단된다.
 - invalid change_type draft는 validation `error`로 보고되고 accept에서 blocked된다.
 - create에 target_id 또는 retcon_reason이 들어간 draft는 validation `error`로 보고되고 accept에서 blocked된다.
