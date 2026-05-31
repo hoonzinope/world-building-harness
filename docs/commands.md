@@ -19,6 +19,7 @@ world-tool [global flags] <resource> <action> [command flags]
 ```bash
 --world <id>            OpenCrabs/world registry의 world id
 --root <path>           직접 world root를 지정할 때 사용
+--world-id <id>         --root 모드에서 logical world id를 고정할 때 사용
 --registry <path>       world registry 파일 경로
 --json                  machine-readable JSON output
 --run-id <id>           기존 run에 후속 event/artifact 추가
@@ -26,9 +27,11 @@ world-tool [global flags] <resource> <action> [command flags]
 --verbose               상세 로그 출력(stderr only)
 ```
 
-`registry list`와 `world list`는 `--world`/`--root`를 받지 않는다. `registry add`는 `--world`와 `--root`를 함께 받는다. `world init`은 `--root`만 받는다. 그 외 command는 `--world`와 `--root` 중 정확히 하나가 필수이며, 둘 다 지정하면 실패한다.
+`registry list`와 `world list`는 `--world`/`--root`를 받지 않는다. `registry add`는 `--world`와 `--root`를 함께 받는다. `world init`은 `--root`를 받으며 새 world 생성 시 `--world-id`를 함께 받는다. 그 외 command는 `--world`와 `--root` 중 정확히 하나가 필수이며, 둘 다 지정하면 실패한다.
 
-`world init`은 아직 `harness.yaml`이 없는 디렉토리에 사용할 수 있는 유일한 command다. 그 외 command에서 `--root`는 symlink를 해석한 absolute path로 normalize한 뒤 `harness.yaml`이 있는 world root여야 한다.
+`--root` 모드에서는 logical world id를 반드시 고정해야 한다. 새 world를 만드는 `world init`은 `--world-id`를 필수로 받으며, 이미 `harness.yaml`이 있는 root를 여는 command는 `harness.yaml`의 world id를 우선 사용한다. `harness.yaml`이 없는데 `--root`만 주어졌다면 `--world-id`가 없으면 실패한다.
+
+`world init`은 아직 `harness.yaml`이 없는 디렉토리에 사용할 수 있는 유일한 command다. 그 외 command에서 `--root`는 symlink를 해석한 absolute path로 normalize한 뒤 `harness.yaml`이 있는 world root여야 하며, JSON envelope는 이 normalize된 root와 resolved world id를 사용해서 항상 deterministically 작성된다.
 
 Canonical command order:
 - `world-tool draft validate`
@@ -62,7 +65,7 @@ Canonical command order:
 
 Top-level field 규칙:
 - 모든 JSON은 `schema_version`, `ok`, `command_status`, `command`, `data`, `issues`, `available_actions`를 가진다.
-- world root를 여는 command는 `world_id`, `registry_root`, `root`, `run_id`를 가진다. `registry_root`는 registry 또는 명시적 `--root`로 선택된 canonical root이고, `root`는 현재 process가 실제로 접근하는 effective root다. container/bind-mount 환경에서는 둘이 다를 수 있다.
+- world root를 여는 command는 `world_id`, `registry_root`, `root`, `run_id`를 가진다. `world_id`는 `--world`나 `--root`+`--world-id`, 또는 `harness.yaml`에서 resolved된 값이다. `registry_root`는 registry 또는 명시적 `--root`로 선택된 canonical root이고, `root`는 현재 process가 실제로 접근하는 effective root다. container/bind-mount 환경에서는 둘이 다를 수 있다.
 - `registry list`, `world list`, `registry add`처럼 world root를 열지 않는 command는 `world_id`, `registry_root`, `root`, `run_id`를 null로 둘 수 있다.
 - `ok: false`인 경우 `error.code`와 `error.message`가 필수다.
 - validation severity는 top-level에 두지 않고 `data.validation_status`에만 둔다.
@@ -179,6 +182,7 @@ OpenCrabs는 `ok`, `command_status`, `data.validation_status`, `data.block_reaso
 - `PATH_OUTSIDE_ROOT`
 - `PATH_NOT_MARKDOWN`
 - `PATH_SCOPE_DENIED`
+- `INPUT_HASH_MISMATCH`
 - `DRAFT_NOT_ACTIVE`
 - `DIFF_BINDING_REQUIRED`
 - `DIFF_BINDING_MISMATCH`
@@ -233,7 +237,7 @@ world-tool registry default --world ashen-continent --json
 ```bash
 world-tool world list --json
 world-tool world status --world ashen-continent --json
-world-tool world init --root ./worlds/ashen-continent --json
+world-tool world init --root ./worlds/ashen-continent --world-id ashen-continent --json
 ```
 
 동작:
@@ -282,12 +286,13 @@ world-tool input stage --world ashen-continent --kind retcon_reason --stdin --js
 - symlink는 허용하지 않는다.
 - 기본 크기 상한은 입력 하나당 1 MiB다.
 - 후속 command가 staging file을 읽으면 해당 run artifact로 복사하고 inbox 원본은 삭제하거나 consumed marker를 남긴다.
+- staged input을 후속 command가 소비할 때는 반드시 해당 파일 경로와 대응하는 hash를 함께 넘겨야 한다. `world-tool`은 파일을 다시 해시해서 `input_hash`와 비교하고, 불일치하면 `command_status: "failed"`와 `error.code: "INPUT_HASH_MISMATCH"`를 반환한다.
 
 ## 8. doc
 ```bash
-world-tool doc list --world ashen-continent --scope content --json
+world-tool doc list --world ashen-continent --scope active --json
 world-tool doc read --world ashen-continent --path content/nations/nation_ashen_empire.md --json
-world-tool doc search --world ashen-continent --query-file runs/inbox/20260530-004-query.txt --json
+world-tool doc search --world ashen-continent --scope active --query-file runs/inbox/20260530-004-query.txt --query-hash sha256:... --json
 ```
 
 동작:
@@ -295,7 +300,7 @@ world-tool doc search --world ashen-continent --query-file runs/inbox/20260530-0
 - path boundary와 scope 검사 후 문서 읽기
 - title, tag, id, full-text 기반 검색
 
-`--query "text"`는 local CLI 편의 기능으로만 허용한다. OpenCrabs dynamic tools는 `input stage`로 만든 `--query-file`만 사용한다.
+`--query "text"`는 local CLI 편의 기능으로만 허용한다. OpenCrabs dynamic tools는 `input stage`로 만든 `--query-file`과 `--query-hash`를 함께 사용한다. `--scope`를 생략하면 local CLI에서는 `active`를 기본으로 쓸 수 있지만, canonical dynamic tool mapping에서는 `--scope active`를 명시한다.
 
 ## 9. draft
 ```bash
@@ -304,7 +309,9 @@ world-tool draft create \
   --change-type create \
   --type nation \
   --title-file runs/inbox/20260530-004-title.txt \
+  --title-hash sha256:... \
   --body-file runs/inbox/20260530-005-body.md \
+  --body-hash sha256:... \
   --json
 
 world-tool draft create \
@@ -312,8 +319,11 @@ world-tool draft create \
   --change-type update \
   --target-id nation_ashen_empire \
   --title-file runs/inbox/20260530-006-title.txt \
+  --title-hash sha256:... \
   --body-file runs/inbox/20260530-007-body.md \
+  --body-hash sha256:... \
   --retcon-reason-file runs/inbox/20260530-007-retcon-reason.txt \
+  --retcon-reason-hash sha256:... \
   --json
 
 world-tool draft create \
@@ -321,11 +331,14 @@ world-tool draft create \
   --change-type deprecate \
   --target-id nation_ashen_empire \
   --title-file runs/inbox/20260530-009-title.txt \
+  --title-hash sha256:... \
   --body-file runs/inbox/20260530-009-body.md \
+  --body-hash sha256:... \
   --retcon-reason-file runs/inbox/20260530-009-retcon-reason.txt \
+  --retcon-reason-hash sha256:... \
   --json
 
-world-tool draft update --world ashen-continent --draft drafts/nations/nation_ashen_empire.md --body-file runs/inbox/20260530-008-body.md --json
+world-tool draft update --world ashen-continent --draft drafts/nations/nation_ashen_empire.md --body-file runs/inbox/20260530-008-body.md --body-hash sha256:... --json
 world-tool draft list --world ashen-continent --json
 world-tool draft read --world ashen-continent --draft drafts/nations/nation_ashen_empire.md --json
 ```
@@ -340,23 +353,24 @@ world-tool draft read --world ashen-continent --draft drafts/nations/nation_ashe
 - `create`는 `--type`이 필수이고 `--target-id`를 받지 않는다.
 - `create`는 같은 id가 content에 있으면 `ID_CONFLICT`로 blocked다.
 - `update`와 `deprecate`는 `--target-id`와 `--retcon-reason-file`이 필수이고, `--target-id`가 content에 존재해야 한다.
-- `update` draft의 id는 `target_id`와 같아야 한다.
+- `update`와 `deprecate` draft의 id는 `target_id`와 같아야 한다.
 - `update`는 기존 content path를 유지한다. rename은 `draft update`의 책임이 아니며 별도 migration command family로 처리한다.
+- `create` 계열에서 `--title-file`, `--body-file`, `--retcon-reason-file`은 각각 `--title-hash`, `--body-hash`, `--retcon-reason-hash`와 짝을 이뤄야 하며, `world-tool`은 파일 내용을 다시 해시해서 검증한다.
+- 해시 불일치는 `command_status: "failed"`와 `error.code: "INPUT_HASH_MISMATCH"`로 처리한다.
 - `update`와 `deprecate`는 `--retcon-reason-file` 내용을 frontmatter `retcon_reason`으로 기록해야 한다. 본문 `Canon Notes`는 보강 설명용이고 frontmatter를 대체하지 않는다.
 
 ## 10. content
 ```bash
 world-tool content validate --world ashen-continent --json
 world-tool content migrate --world ashen-continent --dry-run --json
-world-tool content migrate --world ashen-continent --apply --from-run-id 20260530-020 --json
 ```
 
 동작:
 - content 전체 구조와 참조 검증
 - storylet canon 존재 여부 차단
 - schema migration 필요 문서 보고
-- `content migrate --dry-run`은 content를 변경하지 않고 `runs/<run-id>/migration.json`, `migration.md`, `migration-actions.jsonl`을 생성
-- `content migrate --apply`는 dry-run report의 action을 재검증한 뒤 적용하고 before/after hash와 blocker를 기록
+- `content migrate`는 이 계약에서 report-only다. partial apply나 `--apply`는 허용하지 않는다.
+- `content migrate --dry-run`은 content를 변경하지 않고 `runs/<run-id>/migration.json`, `migration.md`, `migration-actions.jsonl`을 생성한다. 반환 `data`에는 최소한 `migration_run_id`, `migration_report_path`, `migration_actions_path`, `candidates`, `blockers`, `partial_apply: false`가 있어야 하고, `available_actions`는 비어 있어야 한다.
 - migration blocker가 남아 있으면 `command_status: "blocked"`와 `data.block_reason: "MIGRATION_BLOCKED"`를 반환
 
 ## 11. draft validate
@@ -409,6 +423,7 @@ world-tool draft accept \
   --approval-channel chat \
   --authenticated-actor openid:codex-oauth:user-123 \
   --reason-file runs/inbox/20260530-011-reason.txt \
+  --reason-hash sha256:... \
   --json
 
 world-tool draft accept \
@@ -423,6 +438,7 @@ world-tool draft accept \
   --approval-channel chat \
   --authenticated-actor openid:codex-oauth:user-123 \
   --reason-file runs/inbox/20260530-011-reason.txt \
+  --reason-hash sha256:... \
   --json
 ```
 
@@ -437,8 +453,9 @@ world-tool draft accept \
 - transaction result 기록
 
 Accept 정책:
-- `draft accept`와 `draft accept --force`는 `--reason-file`, `--approver-id`, `--approval-channel`, `--authenticated-actor`를 모두 요구한다. `reason-file`만으로는 충분하지 않다.
-- command는 authenticated actor를 `approval.authenticated_actor`로 기록해야 하며, actor를 식별할 수 없으면 blocked다.
+- `draft accept`와 `draft accept --force`는 `--reason-file`, `--reason-hash`, `--approver-id`, `--approval-channel`, `--authenticated-actor`를 모두 요구한다. `reason-file`만으로는 충분하지 않다.
+- `--reason-file`과 `--reason-hash`는 짝을 이뤄야 하며, `world-tool`은 acceptance metadata를 기록하기 전에 재해시해서 검증한다.
+- `--authenticated-actor`는 OpenCrabs의 trusted session/channel metadata에서만 공급되어야 하며, 모델/사용자 텍스트나 파일 내용에서 유도한 값은 신뢰하지 않는다. `world-tool`은 이 값이 신뢰된 세션 주체와 일치하는지 검증하고 `approval.authenticated_actor`에 그대로 기록한다.
 - `pass`는 explicit approval metadata가 있으면 accept 가능하다.
 - `warning`은 기본 accept 가능하지만, warning과 approval metadata를 runs log에 남긴다.
 - `conflict`와 `error`는 기본 accept에서 `command_status: "blocked"`로 반환한다.
@@ -460,6 +477,7 @@ Transaction/recovery 정책:
 - content write 성공 후 archive/result 기록이 실패하면 `command_status: "blocked"`와 `data.block_reason: "TRANSACTION_INCOMPLETE"`를 반환하고 recovery instruction을 `runs/<run-id>/recovery.json`에 남긴다.
 - recovery는 content hash와 archive 상태를 기준으로 idempotent하게 재시도할 수 있어야 한다.
 - `runs/<run-id>/recovery.json`가 unresolved인 동안에는 같은 world root를 쓰는 write command와 해당 draft를 바꾸는 write command가 blocked다. 여기에는 `world init`, `input stage`, `draft create`, `draft update`, `draft accept`, `draft reject`와 같은 쓰기 command가 포함된다. read-only command는 계속 허용된다.
+- `run recover`는 이 차단의 예외이며, unresolved `recovery.json`를 안전하게 재실행하거나 정리하기 위한 유일한 운영자용 repair command다.
 
 ## 14. draft reject
 ```bash
@@ -467,23 +485,31 @@ world-tool draft reject \
   --world ashen-continent \
   --draft drafts/nations/nation_ashen_empire.md \
   --reason-file runs/inbox/20260530-012-reason.txt \
+  --reason-hash sha256:... \
   --json
 ```
 
 동작:
 - draft를 `archive/rejected/`로 이동
 - runs log에 반려 사유 기록
+- `--reason-file`과 `--reason-hash`는 짝을 이뤄야 한다.
+- `world-tool`은 rejection reason을 기록하기 전에 `--reason-file`과 `--reason-hash`를 재해시해서 검증한다.
 
 ## 15. run
 ```bash
 world-tool run list --world ashen-continent --json
 world-tool run get --world ashen-continent --run-id 20260530-001 --json
+world-tool run recover --world ashen-continent --run-id 20260530-001 --json
 ```
 
 동작:
 - 최근 실행 목록
 - run artifact 조회
 - validation/diff/result 요약
+- `run recover`는 `TRANSACTION_INCOMPLETE` 또는 unresolved `recovery.json`를 해결하는 운영자용 command다. 대상 run의 `recovery.json`, 현재 content hash, archive state, result state를 다시 읽고, 이미 복구가 끝났다면 no-op으로 끝낸다.
+- `run recover`는 멱등적이어야 하며, 반복 호출해도 duplicate write를 만들지 않는다. 복구가 필요한 경우에만 남은 단계를 수행하고 `recovery.json`를 resolved로 표시한다.
+- `run recover`가 성공하면 이후 write command는 다시 허용된다.
+- `run recover`의 결과 `data`는 최소한 `recovery_run_id`, `recovery_path`, `recovery_status`, `recovered_at`을 포함해야 하며, `available_actions`는 비어 있어도 된다.
 
 ## 16. OpenCrabs Dynamic Tool 매핑
 `~/.opencrabs/tools.toml`에는 의미 단위 tool을 등록한다.
@@ -493,7 +519,7 @@ world-tool run get --world ashen-continent --run-id 20260530-001 --json
 ```toml
 [[tools]]
 name = "world_stage_input"
-description = "Stage long user/model input into runs/inbox and return input_path"
+description = "Stage long user/model input into runs/inbox and return input_path and input_hash"
 executor = "shell"
 command = "world-tool input stage --world {{world_id}} --kind {{kind}} --stdin --json"
 
@@ -513,7 +539,7 @@ command = "world-tool world status --world {{world_id}} --json"
 name = "world_search_docs"
 description = "Search canon and active draft documents"
 executor = "shell"
-command = "world-tool doc search --world {{world_id}} --query-file {{query_file}} --json"
+command = "world-tool doc search --world {{world_id}} --scope active --query-file {{query_file}} --query-hash {{query_hash}} --json"
 
 [[tools]]
 name = "world_read_doc"
@@ -525,25 +551,25 @@ command = "world-tool doc read --world {{world_id}} --path {{path}} --json"
 name = "world_create_draft"
 description = "Create a draft without modifying canon content"
 executor = "shell"
-command = "world-tool draft create --world {{world_id}} --change-type create --type {{type}} --title-file {{title_file}} --body-file {{body_file}} --json"
+command = "world-tool draft create --world {{world_id}} --change-type create --type {{type}} --title-file {{title_file}} --title-hash {{title_hash}} --body-file {{body_file}} --body-hash {{body_hash}} --json"
 
 [[tools]]
 name = "world_create_update_draft"
 description = "Create an update/retcon draft for an existing canon document"
 executor = "shell"
-command = "world-tool draft create --world {{world_id}} --change-type update --target-id {{target_id}} --title-file {{title_file}} --body-file {{body_file}} --retcon-reason-file {{retcon_reason_file}} --json"
+command = "world-tool draft create --world {{world_id}} --change-type update --target-id {{target_id}} --title-file {{title_file}} --title-hash {{title_hash}} --body-file {{body_file}} --body-hash {{body_hash}} --retcon-reason-file {{retcon_reason_file}} --retcon-reason-hash {{retcon_reason_hash}} --json"
 
 [[tools]]
 name = "world_create_deprecate_draft"
 description = "Create a deprecation draft for an existing canon document"
 executor = "shell"
-command = "world-tool draft create --world {{world_id}} --change-type deprecate --target-id {{target_id}} --title-file {{title_file}} --body-file {{body_file}} --retcon-reason-file {{retcon_reason_file}} --json"
+command = "world-tool draft create --world {{world_id}} --change-type deprecate --target-id {{target_id}} --title-file {{title_file}} --title-hash {{title_hash}} --body-file {{body_file}} --body-hash {{body_hash}} --retcon-reason-file {{retcon_reason_file}} --retcon-reason-hash {{retcon_reason_hash}} --json"
 
 [[tools]]
 name = "world_update_draft"
 description = "Update an active draft without modifying canon content"
 executor = "shell"
-command = "world-tool draft update --world {{world_id}} --draft {{draft_path}} --body-file {{body_file}} --json"
+command = "world-tool draft update --world {{world_id}} --draft {{draft_path}} --body-file {{body_file}} --body-hash {{body_hash}} --json"
 
 [[tools]]
 name = "world_read_draft"
@@ -567,19 +593,25 @@ command = "world-tool draft diff --world {{world_id}} --draft {{draft_path}} --j
 name = "world_accept_draft"
 description = "Promote a validated draft into canon after explicit user approval metadata is recorded"
 executor = "shell"
-command = "world-tool draft accept --world {{world_id}} --draft {{draft_path}} --diff-run-id {{diff_run_id}} --draft-hash {{draft_hash}} --target-base-hash {{target_base_hash}} --patch-hash {{patch_hash}} --approver-id {{approver_id}} --approval-channel {{approval_channel}} --authenticated-actor {{authenticated_actor}} --reason-file {{reason_file}} --json"
+command = "world-tool draft accept --world {{world_id}} --draft {{draft_path}} --diff-run-id {{diff_run_id}} --draft-hash {{draft_hash}} --target-base-hash {{target_base_hash}} --patch-hash {{patch_hash}} --approver-id {{approver_id}} --approval-channel {{approval_channel}} --authenticated-actor {{authenticated_actor}} --reason-file {{reason_file}} --reason-hash {{reason_hash}} --json"
 
 [[tools]]
 name = "world_force_accept_draft"
 description = "Force promote a draft when policy allows it and approval metadata is recorded"
 executor = "shell"
-command = "world-tool draft accept --world {{world_id}} --draft {{draft_path}} --diff-run-id {{diff_run_id}} --draft-hash {{draft_hash}} --target-base-hash {{target_base_hash}} --patch-hash {{patch_hash}} --force --approver-id {{approver_id}} --approval-channel {{approval_channel}} --authenticated-actor {{authenticated_actor}} --reason-file {{reason_file}} --json"
+command = "world-tool draft accept --world {{world_id}} --draft {{draft_path}} --diff-run-id {{diff_run_id}} --draft-hash {{draft_hash}} --target-base-hash {{target_base_hash}} --patch-hash {{patch_hash}} --force --approver-id {{approver_id}} --approval-channel {{approval_channel}} --authenticated-actor {{authenticated_actor}} --reason-file {{reason_file}} --reason-hash {{reason_hash}} --json"
 
 [[tools]]
 name = "world_reject_draft"
 description = "Archive a draft as rejected with a reason"
 executor = "shell"
-command = "world-tool draft reject --world {{world_id}} --draft {{draft_path}} --reason-file {{reason_file}} --json"
+command = "world-tool draft reject --world {{world_id}} --draft {{draft_path}} --reason-file {{reason_file}} --reason-hash {{reason_hash}} --json"
+
+[[tools]]
+name = "world_recover_run"
+description = "Resolve a partially committed transaction using run recovery state"
+executor = "shell"
+command = "world-tool run recover --world {{world_id}} --run-id {{run_id}} --json"
 
 [[tools]]
 name = "world_get_run"
@@ -588,6 +620,6 @@ executor = "shell"
 command = "world-tool run get --world {{world_id}} --run-id {{run_id}} --json"
 ```
 
-OpenCrabs는 query/title/body/reason/retcon_reason을 command template에 직접 넣지 않는다. 먼저 `world_stage_input`으로 `runs/inbox/` path를 만들고, 후속 tool에는 path와 hash만 넘긴다.
+OpenCrabs는 query/title/body/reason/retcon_reason을 command template에 직접 넣지 않는다. 먼저 `world_stage_input`으로 `runs/inbox/` path를 만들고, 후속 tool에는 path와 hash만 넘긴다. `world_search_docs`는 `--scope active`를 명시하고, 각 후속 command는 대응하는 `--*-hash`를 함께 전달해야 한다.
 
-모든 template 변수는 OpenCrabs가 넣더라도 신뢰하지 않는다. `world-tool`이 `world_id`, `kind`, `type`, `target_id`, `path`, `draft_path`, `query_file`, `title_file`, `body_file`, `reason_file`, `retcon_reason_file`, `approver_id`, `approval_channel`, `authenticated_actor`, `run_id`, `diff_run_id`, `draft_hash`, `target_base_hash`, `patch_hash`를 다시 검증한다.
+모든 template 변수는 OpenCrabs가 넣더라도 신뢰하지 않는다. `world-tool`이 `world_id`, `kind`, `type`, `scope`, `target_id`, `path`, `draft_path`, `query_file`, `query_hash`, `title_file`, `title_hash`, `body_file`, `body_hash`, `reason_file`, `reason_hash`, `retcon_reason_file`, `retcon_reason_hash`, `approver_id`, `approval_channel`, `authenticated_actor`, `run_id`, `diff_run_id`, `draft_hash`, `target_base_hash`, `patch_hash`를 다시 검증한다.

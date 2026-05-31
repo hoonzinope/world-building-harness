@@ -55,6 +55,7 @@ legacy/import 문서에 `schema_version`이 없으면 migration 전까지 warnin
 draft 문서의 추가 contract:
 - `change_type`은 필수이며 `create`, `update`, `deprecate` 중 하나여야 한다.
 - `change_type`이 `update` 또는 `deprecate`이면 `target_id`와 `retcon_reason`이 필수다.
+- `update`와 `deprecate` draft는 target canon을 덮어쓰는 계약이므로 draft id와 `target_id`가 같아야 한다.
 - `change_type`이 `create`이면 `target_id`와 `retcon_reason`은 null이거나 생략되어야 한다.
 - missing, 빈 문자열, 잘못된 enum 값은 error다.
 
@@ -129,16 +130,17 @@ draft validation에서는 related에 적힌 id가 content 또는 active draft에
 accept validation에서는 related id가 content에 있어야 한다. active draft에만 있는 id를 canon 문서가 참조하려고 하면 conflict다. 단, 향후 batch accept 기능에서는 같은 batch 안에서 함께 accept되는 draft target만 예외로 둘 수 있다.
 
 ### VR-302: canonical relationship graph
-`relationships[]`는 canonical graph다. `affiliation`, `capital`, `located_in`, `participants`, `locations`는 convenience field이며, validator는 이를 아래 관계로 normalize한다.
+`relationships[]`는 canonical graph다. `affiliation`, `capital`, `headquarters`, `located_in`, `participants`, `locations`는 convenience field이며, validator는 relationship metadata의 domain/range를 authority로 사용해 이를 아래 관계로 normalize한다. range-side convenience field는 inverse label을 거친 뒤 canonical graph와 비교한다.
 
 - `affiliation` -> `member_of`
-- `capital` -> `capital_of`
+- `capital` -> `has_capital`
+- `headquarters` -> `has_headquarters`
 - `located_in` -> `located_in`
-- `participants` -> `participates_in`
+- `participants` -> `has_participant`
 - `locations` -> `occurred_at`
 - `affiliation`은 strict membership shorthand다. 느슨한 관계는 `relationships[]`의 `affiliated_with`를 직접 사용한다.
 
-convenience field와 explicit `relationships[]`가 같은 사실을 표현하지 않으면 conflict다. 편의 필드가 배열이라면 각 값은 별도 edge로 normalize된다. 잘못된 shape, 비문자열 id, 중복이지만 의미가 다른 edge는 error다.
+convenience field와 explicit `relationships[]`는 정규화 후 같은 fact를 표현해야 한다. 편의 필드가 배열이라면 각 값은 별도 edge로 normalize된다. 잘못된 shape, 비문자열 id, 중복이지만 의미가 다른 edge는 error다.
 
 ### VR-303: relationship target 존재성
 draft validation에서는 relationships[].target이 content 또는 active draft에 없으면 warning이다. strict mode에서는 error로 올릴 수 있다.
@@ -151,9 +153,9 @@ accept validation에서는 relationships[].target이 content에 있어야 한다
 MVP 기본 모드에서 알 수 없는 type은 draft validation에서는 conflict, accept validation에서는 blocking conflict다. graph builder가 generic edge로 처리하는 것은 별도 `graph rebuild --allow-generic` 같은 후속 기능에서만 허용한다.
 
 ### VR-305: relationship domain/range 검사
-allowlist에 정의된 source type과 target type이 맞지 않으면 draft validation에서는 conflict, accept validation에서는 blocking conflict다.
+allowlist에 정의된 domain type과 range type이 맞지 않으면 draft validation에서는 conflict, accept validation에서는 blocking conflict다.
 
-예: `capital_of`의 source는 place여야 하고 target은 nation이어야 한다.
+예: `capital_of`의 domain은 place여야 하고 range는 nation이어야 한다. `nation.capital`, `event.participants`, `organization.headquarters`는 각각 `has_capital`, `has_participant`, `has_headquarters`로 먼저 정규화된 뒤 domain/range와 비교된다.
 
 ### VR-306: inverse/symmetric contradiction 검사
 `parent_of`/`child_of`, `predecessor_of`/`successor_of`는 inverse metadata로 normalize한다. `sibling_of`, `ally_of`, `rival_of`는 symmetric edge다.

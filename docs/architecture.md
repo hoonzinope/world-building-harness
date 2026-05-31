@@ -52,8 +52,8 @@ dynamic tool은 `opencrab_exec_shell` 같은 범용 명령이 아니라 의미 �
 
 - `world_list`
 - `world_status`
-- `world_stage_input`
-- `world_search_docs`
+- `world_stage_input` (returns input_path/input_hash)
+- `world_search_docs` (`doc search --scope active`)
 - `world_read_doc`
 - `world_create_draft`
 - `world_create_update_draft`
@@ -142,5 +142,8 @@ accepted/rejected/deprecated draft를 보관한다. archive는 active validation
 - `content/`는 `world_accept_draft`에서만 변경된다.
 - `draft accept`는 diff binding과 validation을 재실행한다.
 - `force accept`는 reason과 approval provenance가 필수이며, semantic/timeline/relationship conflict 후보에만 제한적으로 허용하고 runs log에 남긴다.
+- `content migrate`는 report-only maintenance path로 취급하고, content mutation path와 분리한다.
+- `authenticated_actor`와 staged input hash는 OpenCrabs 인증 세션과 staging tool output에서만 가져오고, prompt text나 Docker mount path에서 추측하지 않는다.
 - Docker 사용 시 job container에는 선택된 world root 하나만 마운트한다.
+- `--root`만 사용하는 Docker 실행은 `harness.yaml` 또는 registry metadata가 world_id provenance를 제공할 때만 허용한다.
 - OpenCrabs credential/config volume과 world root volume은 분리한다.

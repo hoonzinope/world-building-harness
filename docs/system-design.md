@@ -77,8 +77,8 @@ canonical root binding:
 
 | Concept | Meaning |
 | --- | --- |
-| `world_id` | logical registry key |
-| `registry_root` | registry에 저장된 canonical root |
+| `world_id` | logical registry key. Docker `--root` mode에서는 registry metadata나 `harness.yaml`에서 복원해야 하며 mount path 자체로 추론하지 않는다. |
+| `registry_root` | registry에 저장된 canonical root. root-only execution이면 registry-backed resolution으로 결정된 canonical path다. |
 | `root` | 실제 tool process가 접근하는 effective root |
 | audit fields | `world_id`, `registry_root`, `root`, `run_id` |
 
@@ -89,8 +89,8 @@ native execution에서는 `registry_root == root`가 되어야 한다. Docker에
 | --- | --- | --- |
 | `world_list` | `world-tool world list` | registry에 등록된 world 목록 |
 | `world_status` | `world-tool world status` | world 상태와 pending draft 요약 |
-| `world_stage_input` | `world-tool input stage` | 긴 query/title/body/reason/retcon_reason을 runs/inbox에 staging |
-| `world_search_docs` | `world-tool doc search` | 관련 canon/draft 검색 |
+| `world_stage_input` | `world-tool input stage` | 긴 query/title/body/reason/retcon_reason을 runs/inbox에 staging하고 input path/hash를 반환 |
+| `world_search_docs` | `world-tool doc search --scope active` | 관련 canon/draft 검색 |
 | `world_read_doc` | `world-tool doc read` | 문서 읽기 |
 | `world_create_draft` | `world-tool draft create` | canon 변경 없이 draft 생성 |
 | `world_create_update_draft` | `world-tool draft create --change-type update` | 기존 canon 갱신/retcon draft 생성 |
@@ -123,19 +123,19 @@ sequenceDiagram
     Tool-->>OpenCrabs: status
     OpenCrabs->>Tool: world_stage_input(kind=query)
     Tool->>WT: world-tool input stage --world ashen-continent --kind query --stdin --json
-    WT-->>OpenCrabs: query_file
-    OpenCrabs->>Tool: world_search_docs(query_file)
-    Tool->>WT: world-tool doc search --world ashen-continent --query-file runs/inbox/<query-file> --json
+    WT-->>OpenCrabs: query_file + query_hash
+    OpenCrabs->>Tool: world_search_docs(scope=active, query_file, query_hash)
+    Tool->>WT: world-tool doc search --world ashen-continent --scope active --query-file runs/inbox/<query-file> --query-hash sha256:... --json
     WT-->>OpenCrabs: related docs
     OpenCrabs->>OpenCrabs: Codex OAuth provider drafts markdown
     OpenCrabs->>Tool: world_stage_input(kind=title)
     Tool->>WT: world-tool input stage --world ashen-continent --kind title --stdin --json
-    WT-->>OpenCrabs: title_file
+    WT-->>OpenCrabs: title_file + title_hash
     OpenCrabs->>Tool: world_stage_input(kind=body)
     Tool->>WT: world-tool input stage --world ashen-continent --kind body --stdin --json
-    WT-->>OpenCrabs: body_file
-    OpenCrabs->>Tool: world_create_draft(title_file, body_file)
-    Tool->>WT: world-tool draft create --world ashen-continent --change-type create --type nation --title-file runs/inbox/<title-file> --body-file runs/inbox/<body-file> --json
+    WT-->>OpenCrabs: body_file + body_hash
+    OpenCrabs->>Tool: world_create_draft(title_file, title_hash, body_file, body_hash)
+    Tool->>WT: world-tool draft create --world ashen-continent --change-type create --type nation --title-file runs/inbox/<title-file> --title-hash sha256:... --body-file runs/inbox/<body-file> --body-hash sha256:... --json
     WT->>World: write drafts/ and runs/
     WT-->>OpenCrabs: draft_id, draft_path, run_id
     OpenCrabs->>Tool: world_validate_draft(draft_path)
@@ -164,9 +164,9 @@ sequenceDiagram
     User->>OpenCrabs: "승인"
     OpenCrabs->>Tool: world_stage_input(kind=reason)
     Tool->>WT: world-tool input stage --world ashen-continent --kind reason --stdin --json
-    WT-->>OpenCrabs: reason_file
-    OpenCrabs->>Tool: world_accept_draft(draft_path, diff_run_id, hashes, reason_file, approver_id, approval_channel, authenticated_actor)
-    Tool->>WT: world-tool draft accept --world ashen-continent --draft drafts/nations/<draft>.md --diff-run-id 20260530-010 --draft-hash sha256:... --target-base-hash sha256:... --patch-hash sha256:... --approver-id park.hana --approval-channel OpenCrabs-chat --authenticated-actor openid:codex-oauth:user-123 --reason-file runs/inbox/<reason-file> --json
+    WT-->>OpenCrabs: reason_file + reason_hash
+    OpenCrabs->>Tool: world_accept_draft(draft_path, diff_run_id, hashes, reason_file, reason_hash, approver_id, approval_channel, authenticated_actor)
+    Tool->>WT: world-tool draft accept --world ashen-continent --draft drafts/nations/<draft>.md --diff-run-id 20260530-010 --draft-hash sha256:... --target-base-hash sha256:... --patch-hash sha256:... --approver-id park.hana --approval-channel OpenCrabs-chat --authenticated-actor openid:codex-oauth:user-123 --reason-file runs/inbox/<reason-file> --reason-hash sha256:... --json
     WT->>World: verify diff binding and draft validate again
     alt validation pass or warning
         WT->>World: write content/
@@ -211,6 +211,7 @@ stateDiagram-v2
   "command_status": "completed",
   "command": "draft.create",
   "world_id": "ashen-continent",
+  "registry_root": "/host/worlds/ashen-continent",
   "root": "/workspace/world",
   "run_id": "20260530-001",
   "data": {
@@ -231,6 +232,7 @@ stateDiagram-v2
   "command_status": "completed",
   "command": "draft.validate",
   "world_id": "ashen-continent",
+  "registry_root": "/host/worlds/ashen-continent",
   "root": "/workspace/world",
   "run_id": "20260530-001",
   "data": {
@@ -258,11 +260,13 @@ stateDiagram-v2
   "command_status": "blocked",
   "command": "draft.accept",
   "world_id": "ashen-continent",
+  "registry_root": "/host/worlds/ashen-continent",
   "root": "/workspace/world",
   "run_id": "20260530-002",
   "data": {
-    "reason": "validation_conflict",
-    "draft_path": "drafts/nations/nation_northern_empire.md"
+    "draft_path": "drafts/nations/nation_northern_empire.md",
+    "validation_status": "conflict",
+    "block_reason": "VALIDATION_BLOCKED"
   },
   "issues": [
     {

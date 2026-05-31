@@ -30,7 +30,7 @@ schema version:
 - relationship item definition: `type`, `target`, optional `note`
 - status/type enum
 
-`document-types.yaml`은 type별 content directory, draft directory, id prefix, storylet 예외를 정의한다. `relationship-types.yaml`은 relationship allowlist, inverse, contradicts, source/range, symmetric 여부를 정의한다. validator는 `relationships[]`를 canonical graph로 쓰고, convenience field를 normalize할 때 이 metadata를 사용한다.
+`document-types.yaml`은 type별 content directory, draft directory, id prefix, storylet 예외를 정의한다. `relationship-types.yaml`은 relationship allowlist, inverse, contradicts, domain/range, symmetric 여부를 정의한다. validator는 `relationships[]`를 canonical graph로 쓰고, convenience field를 normalize할 때 이 metadata를 사용한다.
 
 ## 2. 공통 Frontmatter
 모든 content와 draft 문서는 아래 공통 필드를 가진다. 단, `change_type` 계열 필드는 draft에만 의미가 있다.
@@ -67,7 +67,7 @@ retcon_reason: null
 - relationships: typed relationship 목록. canonical graph representation이다.
 - source_run_id: 생성 또는 마지막 major update를 만든 run id. 기존 수동 문서나 import 문서는 null일 수 있다.
 - change_type: draft가 canon에 적용되는 방식. draft에서는 `create`, `update`, `deprecate` 중 하나가 필수다. content 문서는 생략하거나 null로 둔다.
-- target_id: `update` 또는 `deprecate` 대상 canon id. draft의 `update`와 `deprecate`에서는 필수다. `create`에서는 null 또는 생략이다.
+- target_id: `update` 또는 `deprecate` 대상 canon id. draft의 `update`와 `deprecate`에서는 필수이며 `id`와 같아야 한다. `create`에서는 null 또는 생략이다.
 - retcon_reason: 기존 canon을 수정하거나 폐기하는 이유. draft의 `update`와 `deprecate`에서는 필수다. `create`에서는 null 또는 생략이다.
 
 relationship 예시:
@@ -99,15 +99,16 @@ relationships:
 
 ### Relationship normalization contract
 - `relationships[]`가 canonical graph다.
-- `affiliation`, `capital`, `located_in`, `participants`, `locations`는 authoring convenience field다.
-- validator는 convenience field를 아래와 같이 관계로 normalize한다.
+- `affiliation`, `capital`, `headquarters`, `located_in`, `participants`, `locations`는 authoring convenience field다.
+- validator는 relationship metadata의 domain/range를 authority로 사용한다. convenience field가 relationship의 range-side에 붙어 있으면 inverse label을 통해 canonical graph와 비교한다.
 - `affiliation` -> `member_of`
-- `capital` -> `capital_of`
+- `capital` -> `has_capital`
+- `headquarters` -> `has_headquarters`
 - `located_in` -> `located_in`
-- `participants` -> `participates_in`
+- `participants` -> `has_participant`
 - `locations` -> `occurred_at`
 - `affiliation`은 strict membership shorthand다. 더 느슨한 관계는 `relationships[]`의 `affiliated_with`를 직접 쓴다.
-- convenience field와 explicit `relationships[]`가 같은 사실을 다른 방식으로 표현해야 한다. 같은 source/target/type로 normalize되지 않으면 conflict다.
+- convenience field와 explicit `relationships[]`는 정규화 후 같은 fact를 표현해야 한다. 같은 fact로 normalize되지 않으면 conflict다.
 - convenience field가 여러 값이면 각 값은 별도 edge로 normalize된다.
 
 ### Relationship Type Allowlist
@@ -118,7 +119,8 @@ MVP validator가 정적으로 이해하는 relationship type은 아래 allowlist
 | `member_of` | `has_member` | - | character, organization | organization, nation | canonical membership edge |
 | `affiliated_with` | `has_affiliation` | - | character, organization | organization, nation | loose affiliation edge |
 | `located_in` | `contains` | - | place, organization | place, nation | normalized from `located_in` convenience field |
-| `capital_of` | `has_capital` | - | place | nation | normalized from `capital` convenience field |
+| `capital_of` | `has_capital` | - | place | nation | canonical capital edge; range-side `capital` convenience field normalizes through `has_capital` |
+| `headquarters_of` | `has_headquarters` | - | place | organization | canonical headquarters edge; range-side `headquarters` convenience field normalizes through `has_headquarters` |
 | `rules` | `ruled_by` | - | character, organization | nation, place | governance edge |
 | `parent_of` | `child_of` | `child_of` on the same oriented pair | character | character | parent/child pair is inverse-normalized |
 | `child_of` | `parent_of` | `parent_of` on the same oriented pair | character | character | parent/child pair is inverse-normalized |
@@ -127,7 +129,7 @@ MVP validator가 정적으로 이해하는 relationship type은 아래 allowlist
 | `rival_of` | `rival_of` | `ally_of` | character, nation, organization | character, nation, organization | symmetric hostility edge |
 | `predecessor_of` | `successor_of` | `successor_of` on the same oriented pair | nation, organization, event | nation, organization, event | predecessor/successor pair is inverse-normalized |
 | `successor_of` | `predecessor_of` | `predecessor_of` on the same oriented pair | nation, organization, event | nation, organization, event | predecessor/successor pair is inverse-normalized |
-| `participates_in` | `has_participant` | - | character, organization, nation | event | normalized from `participants` convenience field |
+| `participates_in` | `has_participant` | - | character, organization, nation | event | canonical participation edge; range-side `participants` convenience field normalizes through `has_participant` |
 | `occurred_at` | `hosts_event` | - | event | place | normalized from `locations` convenience field |
 | `uses_magic` | `used_by` | - | character, organization, nation | magic | spell/source ownership edge |
 

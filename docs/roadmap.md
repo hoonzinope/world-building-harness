@@ -28,7 +28,7 @@ OpenCrabs 없이도 로컬 CLI로 파일 관리와 validation을 수행할 수 �
 - `world-tool world init`
 - `world-tool registry add/list/default`
 - `world-tool input stage`
-- `world-tool doc read/search`
+- `world-tool doc read/search --scope active`
 - `world-tool draft create/update/read/list`
 - `world-tool draft validate`
 - `world-tool draft diff`
@@ -39,6 +39,8 @@ OpenCrabs 없이도 로컬 CLI로 파일 관리와 validation을 수행할 수 �
 - path boundary와 symlink resolution을 가장 먼저 구현한다.
 - Markdown parser와 YAML frontmatter parser는 round-trip 안정성을 기준으로 선택한다.
 - 긴 draft body, 검색 query, title, reason, retcon_reason은 command-line argument가 아니라 stdin 또는 world root 내부 `runs/inbox/` staging file로 받는다.
+- `world_stage_input`이 돌려준 file path와 hash만 후속 tool에 넘기고, `authenticated_actor`는 OpenCrabs 인증 세션에서만 채운다.
+- `content migrate`는 report-only로 유지하고, migration artifact만 `runs/`에 남긴다. content mutation은 draft accept 경로에 남긴다.
 - 모든 command는 `commands.md`의 JSON envelope와 exit code 정책을 일관되게 지킨다.
 - write command는 world root lock을 사용한다.
 - diff와 accept는 hash binding으로 묶는다.
@@ -95,9 +97,9 @@ OpenCrabs가 `world-tool`을 의미 단위 tool로 호출하게 한다.
 
 ### 기능
 - `world_list`
-- `world_stage_input`
+- `world_stage_input` (returns input_path/input_hash)
 - `world_status`
-- `world_search_docs`
+- `world_search_docs` (`doc search --scope active`)
 - `world_read_doc`
 - `world_create_draft`
 - `world_create_update_draft`

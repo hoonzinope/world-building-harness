@@ -107,7 +107,7 @@ LLM 생성물을 canon에 바로 쓰지 않고 draft로 저장하는 경로를 �
 - draft frontmatter 보정
 - draft id/path 생성 규칙
 - `change_type: create/update/deprecate`
-- `target_id` 기반 retcon/update draft
+- `target_id` 기반 retcon/update/deprecate draft
 - `source_run_id` 기록
 
 ### 완료 기준
@@ -126,11 +126,17 @@ draft를 canon과 비교해 구조 오류와 명백한 충돌을 탐지한다.
 - validation report JSON
 - validation artifact 저장
 - required field rule
+- invalid change_type rule
 - draft path/type rule
 - change_type/target_id/retcon_reason rule
 - id uniqueness rule
+- create with target_id/retcon_reason rule
+- missing target_id rule
+- target id mismatch rule
 - relationship target existence rule
 - relationship normalization and consistency rule
+- convenience-vs-explicit relationship conflict rule
+- inverse/symmetric contradiction rule
 - timeline/event consistency rule
 - target path conflict rule
 - target content base hash 계산
@@ -140,12 +146,15 @@ draft를 canon과 비교해 구조 오류와 명백한 충돌을 탐지한다.
 - 새 draft의 schema_version 누락과 parse 실패는 `error`로 반환된다.
 - legacy/import content의 schema_version 누락은 migration warning으로 반환된다.
 - draft의 `change_type` 누락, invalid enum, `update/deprecate`의 `target_id` 또는 `retcon_reason` 누락은 `error`로 반환된다.
+- `change_type: create`에 `target_id` 또는 `retcon_reason`이 들어가면 `error`로 반환된다.
+- `change_type: update` 또는 `change_type: deprecate`에서 target_id가 없거나 id가 target_id와 다르면 `error`로 반환된다.
 - active draft path/type 규칙 위반은 `error`로 반환된다.
 - `change_type: create`에서 기존 canon id와 중복되는 draft는 `conflict`로 반환된다.
-- `change_type: update` 또는 `change_type: deprecate`에서 target_id가 없거나 id가 target_id와 다르면 `error`로 반환된다.
-- relationship convenience field와 relationships[]가 충돌하면 `conflict`로 반환된다.
+- convenience field와 explicit relationships[]가 같은 fact로 normalize되지 않으면 `conflict`로 반환된다.
+- inverse/symmetric contradiction은 `conflict`로 반환된다.
 - accept validation에서 active draft에만 존재하는 relationship target은 `conflict`로 반환된다.
 - 알 수 없는 relationship type과 domain/range mismatch는 `conflict`로 반환된다.
+- related id와 relationship target이 active draft에만 존재하는 경우는 draft validate에서 warning, accept에서 blocked로 처리한다.
 - validation 결과는 `runs/<run-id>/validation.json`에 저장된다.
 
 ## 8. Milestone 5: Diff, Accept, Audit
@@ -253,18 +262,29 @@ OpenCrabs, `world-tool`, skill/tools bundle을 컨테이너에서 운영할 수 
 - `examples/worlds/ashen-continent/content/...`
 - character/place/event 최소 3개 canon 문서
 - pass draft fixture
+- invalid change_type fixture
+- create with target_id/retcon_reason fixture
+- missing target_id fixture
+- target id mismatch fixture
+- create id conflict fixture
 - missing change_type fixture
 - conflict draft fixture
 - update/retcon draft fixture
 - missing retcon_reason fixture
+- convenience-vs-explicit relationship conflict fixture
+- inverse/symmetric contradiction fixture
+- related-only-active-draft target fixture
+- staged input hash mismatch fixture
 - target path collision fixture
 - relationship domain/range mismatch fixture
 - active draft only target at accept fixture
+- recovery resolution fixture
 - storylet accept block fixture
 - storylet content validation fixture
 - force denied fixture
 - lock/base-hash mismatch fixture
 - relationship allowlist fixture
+- migration boundary fixture
 - reject fixture
 - stdout JSON fixture
 - manual OpenCrabs test script 또는 checklist
@@ -272,14 +292,24 @@ OpenCrabs, `world-tool`, skill/tools bundle을 컨테이너에서 운영할 수 
 ### 완료 기준
 - `world init -> registry add -> input stage -> draft create -> draft validate -> draft diff -> draft accept`가 샘플 world에서 통과한다.
 - conflict draft는 기본 accept에서 차단된다.
+- invalid change_type draft는 validation `error`로 보고되고 accept에서 blocked된다.
+- create에 target_id 또는 retcon_reason이 들어간 draft는 validation `error`로 보고되고 accept에서 blocked된다.
 - missing change_type draft는 validation `error`로 보고되고 accept에서 blocked된다.
+- missing target_id draft는 validation `error`로 보고되고 accept에서 blocked된다.
+- target id mismatch draft는 validation `error`로 보고되고 accept에서 blocked된다.
+- create id conflict draft는 validation `conflict`로 보고되고 accept에서 blocked된다.
 - missing retcon_reason draft는 validation `error`로 보고되고 accept에서 blocked된다.
+- convenience-vs-explicit relationship conflict는 conflict로 탐지된다.
+- inverse/symmetric contradiction은 conflict로 탐지된다.
 - diff binding mismatch는 accept에서 차단된다.
 - relationship domain/range mismatch는 conflict로 탐지된다.
-- target이 active draft에만 존재하면 accept에서 blocked된다.
+- related id 또는 relationship target이 active draft에만 존재하면 draft validate에서는 warning, accept에서는 blocked된다.
+- staged input hash mismatch는 해당 hash binding을 command contract가 정의한 경우 accept에서 차단된다.
+- recovery resolution fixture는 recovery artifact가 해결된 뒤 동일 draft가 다시 accept될 수 있어야 한다는 점을 검증한다.
 - storylet draft는 content canon accept에서 차단된다.
 - storylet content path/status 위반은 validation `error`로 보고되고 accept에서 blocked된다.
 - 알 수 없는 relationship type은 conflict로 탐지된다.
+- migration boundary fixture는 `content migrate --dry-run`이 report-only이고 `--apply`가 허용되지 않음을 검증한다.
 - rejected draft는 `archive/rejected/`로 이동한다.
 - accepted draft는 `content/`에 반영되고 `archive/accepted/`로 이동한다.
 - `runs/` artifact만 보고 어떤 변경이 있었는지 추적할 수 있다.
@@ -294,19 +324,21 @@ MVP 이후 장기 운영에 필요한 안정성 기능을 추가한다.
 - archive pruning/compression/export
 - retcon/versioning report
 - schema migration and migration report
+- `content migrate` report-only workflow
 - OpenCrabs tool calling retry/timeout 정책
 - semantic search integration
 - storylet/exporter
-- migration dry-run/apply workflow
 
 ### 완료 기준
 - 장편 세계관에서 archive와 runs가 늘어나도 운영 정책이 있다.
 - graph는 content에서 재생성 가능한 인덱스로 유지된다.
 - validator가 확정 판정기가 아니라 conflict 후보 탐지기라는 경계가 유지된다.
+- migration dry-run은 report만 만들고 content를 변경하지 않는다.
+- migration command는 report-only이며 content를 직접 변경하는 mutating mode를 제공하지 않는다.
 
 ### Migration workflow
-- migration dry-run은 report와 artifact만 남기고 content를 변경하지 않는다.
-- migration apply는 warning-only legacy/import 이슈를 actionable report로 묶고, blocked 항목과 분리한다.
+- `content migrate --dry-run`은 report와 artifact만 남기고 content를 변경하지 않는다.
+- `content migrate`는 warning-only legacy/import 이슈를 actionable report로 묶고 blocked 항목과 분리하되 content를 직접 변경하지 않는다.
 - migration report는 source 문서, path move 여부, field normalization 결과, before/after hash, blocker 목록을 포함한다.
 - migration 완료 기준은 warning이 사라졌는지가 아니라, warning이 의사결정 가능한 action item으로 정리되고 blocked 항목이 남지 않았는지다.
 

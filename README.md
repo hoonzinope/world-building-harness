@@ -45,15 +45,15 @@ world-tool draft accept
 아래는 CLI가 구현된 뒤 통과해야 하는 첫 성공 경로다.
 
 ```bash
-world-tool world init --root ./examples/worlds/ashen-continent --json
+world-tool world init --root ./examples/worlds/ashen-continent --world-id ashen-continent --json
 world-tool registry add --world ashen-continent --root ./examples/worlds/ashen-continent --title "잿빛 대륙" --json
 world-tool input stage --world ashen-continent --kind title --stdin --json
 world-tool input stage --world ashen-continent --kind body --stdin --json
-world-tool draft create --world ashen-continent --change-type create --type nation --title-file runs/inbox/<title-file> --body-file runs/inbox/<body-file> --json
+world-tool draft create --world ashen-continent --change-type create --type nation --title-file runs/inbox/<title-file> --title-hash <hash> --body-file runs/inbox/<body-file> --body-hash <hash> --json
 world-tool draft validate --world ashen-continent --draft drafts/nations/<id>.md --json
 world-tool draft diff --world ashen-continent --draft drafts/nations/<id>.md --json
 world-tool input stage --world ashen-continent --kind reason --stdin --json
-world-tool draft accept --world ashen-continent --draft drafts/nations/<id>.md --diff-run-id <run> --draft-hash <hash> --target-base-hash <hash> --patch-hash <hash> --approver-id <user> --approval-channel OpenCrabs-chat --authenticated-actor <actor> --reason-file runs/inbox/<reason-file> --json
+world-tool draft accept --world ashen-continent --draft drafts/nations/<id>.md --diff-run-id <run> --draft-hash <hash> --target-base-hash <hash> --patch-hash <hash> --approver-id <user> --approval-channel OpenCrabs-chat --authenticated-actor <actor> --reason-file runs/inbox/<reason-file> --reason-hash <hash> --json
 ```
 
 ## 현재 주의점

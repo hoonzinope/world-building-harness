@@ -67,7 +67,7 @@ command = "{{command}}"
 [[tools]]
 name = "world_accept_draft"
 executor = "shell"
-command = "world-tool draft accept --world {{world_id}} --draft {{draft_path}} --diff-run-id {{diff_run_id}} --draft-hash {{draft_hash}} --target-base-hash {{target_base_hash}} --patch-hash {{patch_hash}} --approver-id {{approver_id}} --approval-channel {{approval_channel}} --authenticated-actor {{authenticated_actor}} --reason-file {{reason_file}} --json"
+command = "world-tool draft accept --world {{world_id}} --draft {{draft_path}} --diff-run-id {{diff_run_id}} --draft-hash {{draft_hash}} --target-base-hash {{target_base_hash}} --patch-hash {{patch_hash}} --approver-id {{approver_id}} --approval-channel {{approval_channel}} --authenticated-actor {{authenticated_actor}} --reason-file {{reason_file}} --reason-hash {{reason_hash}} --json"
 ```
 
 tool은 의미 단위 작업이어야 하며 shell 권한을 넓게 열지 않는다.
@@ -84,11 +84,12 @@ OpenCrabs shell executor는 template 값을 argv-safe하게 escape해야 한다.
 - 파일 크기 상한을 둔다. MVP 기본값은 문서당 1 MiB를 권장한다.
 
 Command별 path allowlist:
-- `doc read/search/list`: `content/**/*.md`, `drafts/**/*.md`
+- `doc list/read/search --scope active`: `content/**/*.md`, `drafts/**/*.md`
 - `draft *`: `drafts/**/*.md`
 - `content validate`: `content/**/*.md`
 - `input stage`: `runs/inbox/**` write only
-- `run get/list`: `runs/**` read only, but `runs/inbox/**` is excluded from normal browsing and remains staging-only
+- `run get`: `runs/<run-id>/**` read only
+- `run list`: immutable run index/summary files only
 - `archive/`, `raw/`, `schema/`는 MVP dynamic tool의 doc 조회 대상이 아니다.
 
 ## 6. Network Boundary
@@ -148,7 +149,7 @@ draft가 content로 승격되려면 `world_accept_draft`를 통과해야 한다.
 - required field 누락
 - draft가 active drafts/ 밖에 있음
 
-force accept는 가능하지만 reason만으로는 부족하다. `approver_id`, `approval_channel`, `authenticated_actor`를 함께 기록해야 하며, 이는 runs log와 accept result에 남아야 한다.
+force accept는 가능하지만 reason만으로는 부족하다. `approver_id`, `approval_channel`, `authenticated_actor`를 함께 기록해야 하며, 이는 runs log와 accept result에 남아야 한다. `authenticated_actor`는 OpenCrabs의 인증된 세션 또는 provider identity에서 와야 하고, 모델 출력이나 staging file에서 오면 안 된다.
 
 force accept 제한:
 - semantic/timeline/relationship conflict 후보만 우회 대상으로 삼는다.
@@ -170,6 +171,7 @@ write command는 world root 단위 lock을 사용한다.
 - lock 획득 실패는 `LOCK_BUSY` JSON error로 반환한다.
 - accept는 lock을 잡은 뒤 validation을 재실행한다.
 - accept는 diff_run_id, draft_hash, target_base_hash, patch_hash binding을 검증한다.
+- diff_run_id와 hash binding 값은 `world_diff_draft`와 `world_stage_input`의 출력에서 가져와야 하며, accept 시점에 world-tool이 다시 계산한 값과 일치해야 한다.
 - diff 시점의 draft/content/patch hash와 accept 시점의 값이 다르면 accept를 중단한다.
 - accept는 `approver_id`, `approval_channel`, `authenticated_actor`를 audit field로 기록한다. free-form reason만으로는 승인 provenance가 충분하지 않다.
 
@@ -195,6 +197,8 @@ docker run --rm \
   world-tool:latest \
   world-tool draft validate --root /workspace/world --draft drafts/nations/nation_northern_empire.md --json
 ```
+
+Docker root-only 실행에서는 world_id provenance를 bind mount path에서 추측하지 않는다. `harness.yaml` 또는 registry metadata가 world_id를 제공할 수 있어야 하고, 제공하지 못하면 root-only 모드를 쓰지 않는다.
 
 ## 12. Audit Log
 모든 write tool은 다음을 기록한다.
@@ -230,6 +234,7 @@ docker run --rm \
 - content write 후 archive/result 기록 실패는 `TRANSACTION_INCOMPLETE`로 반환한다.
 - `runs/<run-id>/recovery.json`에 현재 hash, 완료된 step, 재시도 방법을 남긴다.
 - `TRANSACTION_INCOMPLETE`가 unresolved인 동안 같은 world root의 후속 write는 차단해야 한다. read-only inspection은 허용하되, recovery instruction을 확인하고 해결한 뒤에만 write를 재개한다.
+- resolve path는 `runs/<run-id>/recovery.json`을 읽고 현재 content/archive 상태를 확인한 뒤, 같은 world root에서 동일한 binding으로 원래 write command를 재실행하는 것이다. 이미 최종 상태가 반영되어 있으면 recovery artifact를 resolved로 마킹하고 후속 write를 풀어준다.
 
 ## 14. 위험 시나리오
 ### LLM이 canon을 오염시키는 경우

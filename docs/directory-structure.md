@@ -156,10 +156,13 @@ opencrabs/
 ## 8. harness.yaml
 world root 내부 설정 파일이다.
 
+`--root`로만 world root를 여는 실행에서는 이 파일이 `world_id` provenance를 복원하는 기준이 된다. mount path 자체를 world_id로 쓰지 않는다.
+
 예시:
 
 ```yaml
 schema_version: world-harness.v1
+world_id: ashen-continent
 world_root: .
 content_dir: content
 draft_dir: drafts

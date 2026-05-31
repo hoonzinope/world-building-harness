@@ -15,7 +15,7 @@ OpenCrabs는 Codex OAuth provider를 기본 provider로 사용해 판단과 생�
 - 세계관 작업은 OpenCrabs dynamic tools가 호출하는 `world-tool` Go 바이너리로 수행한다.
 - 긴 query/title/body/reason/retcon_reason은 `world_stage_input`으로 staging한 뒤 후속 tool에 file path와 hash를 넘긴다.
 - 사용자가 승인한 diff와 accept 실행은 diff_run_id와 hash binding으로 묶는다.
-- 승인 provenance는 `approver_id`, `approval_channel`, `authenticated_actor`를 포함해야 한다.
+- 승인 provenance는 `approver_id`, `approval_channel`, `authenticated_actor`를 포함해야 하며, `authenticated_actor`는 OpenCrabs 인증 세션 또는 provider identity에서만 가져온다.
 - tool 출력은 JSON으로 안정화해 OpenCrabs/Codex가 다음 행동을 판단할 수 있게 한다.
 - 여러 world root를 OpenCrabs 설정이나 registry로 관리한다.
 

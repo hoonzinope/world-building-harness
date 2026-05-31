@@ -48,7 +48,7 @@ receive user request in OpenCrabs
 ### 단계
 1. `world_status`로 world root 상태 확인
 2. 긴 검색 query는 `world_stage_input`으로 staging
-3. `world_search_docs` 또는 `world_read_doc`으로 관련 canon 로딩
+3. `world_search_docs(scope=active)` 또는 `world_read_doc`으로 관련 canon 로딩
 4. OpenCrabs/Codex가 draft markdown 후보 생성
 5. title와 body를 각각 `world_stage_input`으로 staging
 6. `world_create_draft` 호출
@@ -84,7 +84,7 @@ receive user request in OpenCrabs
 2. `world_diff_draft`로 변경 내용 표시
 3. 사용자에게 diff summary를 확인받는다
 4. reason을 `world_stage_input`으로 staging
-5. `world_accept_draft`에 `diff_run_id`, `draft_hash`, `target_base_hash`, `patch_hash`, `reason_file`, `approver_id`, `approval_channel`, `authenticated_actor`를 함께 넘긴다
+5. `world_accept_draft`에 `diff_run_id`, `draft_hash`, `target_base_hash`, `patch_hash`, `reason_file`, `reason_hash`, `approver_id`, `approval_channel`, `authenticated_actor`를 함께 넘긴다
 6. tool 내부에서 diff binding 검증과 validation 재실행
 7. policy/validation stop이면 blocked로 중단
 8. content 생성 또는 갱신
@@ -99,6 +99,7 @@ receive user request in OpenCrabs
 - `force`는 reason이 없으면 blocked이며, semantic/timeline/relationship conflict 후보만 제한적으로 우회한다.
 - structural error, id conflict, path/target 충돌, storylet canon 승격, diff binding mismatch는 force로도 우회할 수 없다.
 - `force`는 `approver_id`, `approval_channel`, `authenticated_actor`가 함께 기록될 때만 승인 provenance가 완성된다.
+- `authenticated_actor`는 OpenCrabs 인증 세션에서만 가져오고, `world_stage_input`이 반환한 파일 경로와 hash만 후속 tool에 전달한다.
 - accept는 world root lock을 잡고 validation을 재실행한다.
 - accept는 사용자가 확인한 diff binding과 현재 draft/content hash가 일치할 때만 진행된다.
 - accept 이후 OpenCrabs는 content/index/cache를 다시 읽거나 재색인할 수 있다.
@@ -135,7 +136,7 @@ accept/diff run은 target content의 before/after hash를 포함한다.
 ```json
 {"step":"create_draft","status":"completed","actor":"opencrabs","time":"2026-05-30T10:00:00+09:00"}
 {"step":"validate_draft","status":"completed","validation_status":"warning"}
-{"step":"accept_draft","status":"blocked","reason":"validation conflict","approver_id":"park.hana","approval_channel":"OpenCrabs chat","authenticated_actor":"openid:codex-oauth:user-123"}
+{"step":"accept_draft","status":"blocked","validation_status":"conflict","block_reason":"VALIDATION_BLOCKED","approver_id":"park.hana","approval_channel":"OpenCrabs chat","authenticated_actor":"openid:codex-oauth:user-123"}
 ```
 
 ## 9. Skill 지침 요약
