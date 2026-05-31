@@ -46,7 +46,7 @@ World Root: content / drafts / runs / archive / graph
 - tool 출력 기반으로 다음 행동 결정
 
 ### Tool Layer
-`opencrabs/tools/world-tools.toml`이 OpenCrabs dynamic tools를 정의한다. 각 tool은 shell executor로 `world-tool`을 호출한다.
+`opencrabs/tools/world-tools.toml`이 OpenCrabs dynamic tools를 정의한다. 각 tool은 argv-safe shell executor로 `world-tool`을 호출하고, 필요한 경우 `stdin = "{{input}}"`을 명시적으로 바인딩한다. raw interpolation만으로 shell 문자열을 구성하는 executor는 허용하지 않는다.
 
 dynamic tool은 `opencrab_exec_shell` 같은 범용 명령이 아니라 의미 단위 작업이어야 한다.
 
@@ -68,6 +68,7 @@ dynamic tool은 `opencrab_exec_shell` 같은 범용 명령이 아니라 의미 �
 - `world_reject_draft`
 - `world_recover_run`
 - `world_get_run` (redacted manifest/status only by default)
+- `world_get_run_artifact` (allowlisted safe artifact by basename only)
 
 `world_create_draft`는 `--id`를 쓰는 create 전용 경로다. `world_create_update_draft`와 `world_create_deprecate_draft`는 `--target-id`를 쓰는 대상 canon 경로다.
 
@@ -146,7 +147,7 @@ accepted/rejected draft를 보관한다. deprecated는 content/ 내부에서 sta
 - `content/`는 `world_accept_draft`에서만 변경된다.
 - `draft accept`는 diff binding과 validation을 재실행한다.
 - `force accept`는 reason과 trusted approval attestation provenance가 필수이며, semantic/timeline/relationship conflict 후보에만 제한적으로 허용하고 runs log에 남긴다. `approval_channel` 예시는 `OpenCrabs-chat`을 사용하고 attestation, accept, audit 전반에서 byte-identical 값이어야 한다.
-- `content migrate`는 report-only maintenance path로 취급하고, content mutation path와 분리한다.
+- `content migrate`는 post-MVP hardening command contract로 취급하고, content mutation path와 분리한다. 이 command는 post-MVP에서도 반드시 `--dry-run`으로만 호출하며, `--dry-run` 없이 호출하면 `INVALID_ARGUMENT`로 실패한다.
 - `authenticated_actor`, approval attestation, staged input hash는 OpenCrabs 인증 세션과 staging tool output에서만 가져오고, `auth_context_file`/`auth_context_hash`는 world root 밖 trusted wrapper input에서만 가져온다. prompt text나 Docker mount path에서 추측하지 않는다.
 - Docker 사용 시 job container에는 선택된 world root 하나만 마운트한다.
 - `--root`만 사용하는 Docker 실행은 command site에서 `--world-id`를 명시하거나 `harness.yaml` provenance를 먼저 검증할 때만 허용한다.

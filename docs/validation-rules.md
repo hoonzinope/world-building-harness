@@ -56,7 +56,9 @@ draft 문서의 추가 contract:
 - `change_type`은 필수이며 `create`, `update`, `deprecate` 중 하나여야 한다.
 - `change_type`이 `update` 또는 `deprecate`이면 `target_id`와 `retcon_reason`이 필수다.
 - `update`와 `deprecate` draft는 target canon을 덮어쓰는 계약이므로 draft id와 `target_id`가 같아야 한다.
-- `change_type`이 `update` 또는 `deprecate`이고 `target_id`가 canon content에 없으면 accept validation에서 conflict이며 `command_status: "blocked"`, `data.block_reason: "MISSING_TARGET"`, `data.validation_status: "conflict"`로 반환한다.
+- `change_type`이 `update` 또는 `deprecate`이고 `target_id`가 canon content에 없으면 `draft create --change-type update|deprecate` 단계에서는 draft를 쓰지 않고 blocked `MISSING_TARGET`로 실패한다.
+- 이미 존재하는 invalid draft를 validate하면 command는 validation 결과를 반환하고 conflict issue로 `MISSING_TARGET`를 보고한다.
+- diff/accept 단계에서 `change_type`이 `update` 또는 `deprecate`이고 `target_id`가 canon content에 없으면 `command_status: "blocked"`, `data.block_reason: "MISSING_TARGET"`, `data.validation_status: "conflict"`로 반환한다.
 - `change_type`이 `create`이면 `target_id`와 `retcon_reason`은 null이거나 생략되어야 한다.
 - missing, 빈 문자열, 잘못된 enum 값은 error다.
 
@@ -128,8 +130,9 @@ event의 start_year는 end_year보다 늦을 수 없다.
 ### VR-301: related id 존재성
 draft validation에서는 related에 적힌 id가 content 또는 active draft에 없으면 warning이다. strict mode에서는 error로 올릴 수 있다.
 
-accept validation에서는 related id가 content에 있어야 한다. active draft에만 있는 id를 canon 문서가 참조하려고 하면 conflict다. 단, 향후 batch accept 기능에서는 같은 batch 안에서 함께 accept되는 draft target만 예외로 둘 수 있다.
-`--force`라도 missing related target, missing relationship target, missing update/deprecate target, 또는 active draft에만 존재하는 target은 bypass하지 못한다.
+accept validation에서는 related id가 content에 있어야 한다. active draft에만 있는 related target을 canon 문서가 참조하려고 하면 conflict다. 단, 향후 batch accept 기능에서는 같은 batch 안에서 함께 accept되는 draft target만 예외로 둘 수 있다.
+accept/diff validation에서는 related id가 content에 있어야 하며, missing related target 또는 active-draft-only related target은 `command_status: "blocked"`, `data.block_reason: "MISSING_TARGET"`, `data.validation_status: "conflict"`로 처리한다.
+`--force`라도 missing target, missing related target, missing relationship target, missing update/deprecate target, active-draft-only target은 bypass하지 못한다.
 
 ### VR-302: canonical relationship graph
 `relationships[]`는 canonical graph다. `relationships[].type`으로 authored 할 수 있는 값은 [schema.md](schema.md)의 allowlist `type` 열뿐이다. `affiliation`, `capital`, `headquarters`, `located_in`, `participants`, `locations`는 convenience field이며, validator는 relationship metadata의 domain/range를 authority로 사용해 이를 아래 authored type으로 normalize하고 graph fact로 추가한다. range-side convenience field는 내부 inverse label을 거친 normalized fact와 비교하되, inverse label 자체는 authored relationship type이 아니다.
@@ -147,8 +150,9 @@ convenience field는 matching explicit `relationships[]` edge가 없어도 graph
 ### VR-303: relationship target 존재성
 draft validation에서는 relationships[].target이 content 또는 active draft에 없으면 warning이다. strict mode에서는 error로 올릴 수 있다.
 
-accept validation에서는 relationships[].target이 content에 있어야 한다. active draft에만 있는 target은 conflict이며 accept는 blocked다. batch accept가 생기면 같은 batch 안에서 함께 accept되는 target만 예외로 둘 수 있다.
-`--force`라도 relationship target이 content가 아니라 active draft에만 있거나 아직 존재하지 않으면 bypass하지 못한다.
+accept validation에서는 relationships[].target이 content에 있어야 한다. active draft에만 있는 relationship target은 conflict이며 accept는 blocked다. batch accept가 생기면 같은 batch 안에서 함께 accept되는 target만 예외로 둘 수 있다.
+accept/diff validation에서는 relationships[].target이 content에 있어야 하며, missing relationship target 또는 active-draft-only relationship target은 `command_status: "blocked"`, `data.block_reason: "MISSING_TARGET"`, `data.validation_status: "conflict"`로 처리한다.
+`--force`라도 missing target, missing related target, missing relationship target, missing update/deprecate target, active-draft-only target은 bypass하지 못한다.
 
 ### VR-304: relationship type 허용값
 정적 검증 가능한 relationship type은 [schema.md](schema.md)의 allowlist로 관리한다.
@@ -236,9 +240,9 @@ MVP에서 `type: storylet` active draft는 `drafts/storylets/` 아래에만 존�
 ### VR-508: force accept 비우회 경계
 `--force`는 semantic, timeline, relationship conflict 후보만 우회할 수 있다. 이때도 referenced target이 모두 content에 이미 존재해야 한다.
 
-- missing target, missing related target, missing relationship target, missing update/deprecate target은 `--force`로 우회할 수 없다.
-- related target 또는 relationship target이 active draft에만 존재하면 `--force`로 우회할 수 없다.
-- path/type/id/schema 불일치, id conflict, target path conflict, diff binding mismatch, storylet canon 승격 금지는 `--force`로 우회할 수 없다.
+- missing target, missing related target, missing relationship target, missing update/deprecate target, active-draft-only target은 `--force`로 우회할 수 없다.
+- draft diff와 draft accept에서 missing target, missing related target, missing relationship target, missing update/deprecate target, active-draft-only target은 blocked `MISSING_TARGET`로 처리한다.
+- path/type/id/schema 불일치, structural error, id conflict, target path conflict, diff binding mismatch, storylet canon 승격, atomic write 실패, lock 실패는 `--force`로 우회할 수 없다.
 - `--force`는 오직 all-referenced-targets-in-canon 상태의 semantic/timeline/relationship conflict 후보에만 적용한다.
 
 ## 9. Migration Workflow

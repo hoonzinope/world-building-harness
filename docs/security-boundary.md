@@ -13,6 +13,7 @@ OpenCrabs/Codex가 세계관 파일을 다루는 구조에서는 명확한 보�
 - draft 생성과 canon 승격은 분리한다.
 - OpenCrabs/Codex 출력은 후보이며 tool validation을 통과해야 한다.
 - 모든 write 작업은 runs log에 기록한다.
+- unresolved recovery가 있으면 같은 world root에 대한 `world init`, `input stage`, `approval attest`, `draft create`, `draft update`, `draft validate`(validation artifact writer), `draft diff`, `draft accept`, `draft reject`, `content validate` artifact writer, `content migrate` report writer, 기타 content report writer를 포함한 모든 write command가 차단되며, `world_recover_run`만 write 예외다. read-only inspection은 허용한다.
 
 ## 3. 파일 시스템 경계
 ### 허용 경로
@@ -157,7 +158,8 @@ force accept는 가능하지만 reason만으로는 부족하다. `reason_file`/`
 
 force accept 제한:
 - semantic/timeline/relationship conflict 후보만 우회 대상으로 삼는다.
-- missing related target, missing relationship target, missing update/deprecate target, active-draft-only target, path violation, inactive draft, malformed markdown/YAML, 필수 field 누락, id conflict, target path 충돌, storylet canon 승격, diff binding mismatch, atomic write 실패, lock 실패는 force accept로 우회할 수 없다.
+- missing target, missing related target, missing relationship target, missing update/deprecate target, active-draft-only target은 `MISSING_TARGET`로 처리되며 force accept로 우회할 수 없다.
+- path/type/id/schema 불일치, structural error, id conflict, target path conflict, diff binding mismatch, storylet canon 승격, atomic write 실패, lock 실패는 force accept로 우회할 수 없다.
 
 warning은 accept를 차단하지 않지만, accept reason에 warning을 확인했다는 맥락을 남긴다.
 
@@ -237,7 +239,7 @@ Docker root-only 실행에서는 world_id provenance를 bind mount path에서 �
 - content write 전 I/O/atomicity 실패는 상태 변경 없이 `failed`로 끝난다.
 - content write 후 archive/result 기록 실패는 failed/recovery-required partial transaction으로 `TRANSACTION_INCOMPLETE`를 반환한다.
 - `runs/<run-id>/recovery.json`에 현재 hash, 완료된 step, 재시도 방법을 남긴다.
-- `TRANSACTION_INCOMPLETE`가 unresolved인 동안 같은 world root의 후속 write는 차단해야 한다. read-only inspection은 허용하되, `input stage`, `approval attest`, `draft diff`, `draft create`, `draft validate`, `draft accept`, `draft reject`, content report writer를 포함한 모든 world-root/run-writing command를 재개하지 않는다.
+- `TRANSACTION_INCOMPLETE`가 unresolved인 동안 같은 world root의 후속 write는 차단해야 한다. read-only inspection은 허용하되, `world init`, `input stage`, `approval attest`, `draft diff`, `draft create`, `draft update`, `draft validate`(validation artifact writer), `draft accept`, `draft reject`, `content validate` artifact writer, `content migrate` report writer, 기타 content report writer를 포함한 모든 world-root/run-writing command를 재개하지 않는다.
 - resolve path는 `world_recover_run` / `world-tool run recover`다. `runs/<run-id>/recovery.json`을 읽고 현재 content/archive 상태를 확인한 뒤, 이미 최종 상태가 반영되어 있으면 recovery artifact를 resolved로 마킹하고, 그렇지 않으면 남은 recovery 단계를 수행한다. 원래 write command를 직접 다시 실행하는 것은 복구 경로가 아니다.
 
 ## 14. 위험 시나리오
@@ -262,8 +264,8 @@ Docker root-only 실행에서는 world_id provenance를 bind mount path에서 �
 ### 사용자가 validation 우회를 유도하는 경우
 방어:
 - conflict/error는 기본 accept에서 차단
-- force accept는 reason과 trusted approval attestation이 필수이며 semantic/timeline/relationship conflict 후보에만 제한적으로 허용하고, `approver_id`/`approval_channel`/`authenticated_actor`를 함께 남겨야 한다. missing related target, missing relationship target, missing update/deprecate target, active-draft-only target은 force accept 제한 대상에 포함된다.
-- structural error, id conflict, path violation, inactive draft, target path conflict, storylet canon 승격, diff binding mismatch는 force로도 차단
+- force accept는 reason과 trusted approval attestation이 필수이며 semantic/timeline/relationship conflict 후보에만 제한적으로 허용하고, `approver_id`/`approval_channel`/`authenticated_actor`를 함께 남겨야 한다. missing target, missing related target, missing relationship target, missing update/deprecate target, active-draft-only target은 force accept 제한 대상에 포함되며 `MISSING_TARGET`로 처리된다.
+- path/type/id/schema 불일치, structural error, id conflict, target path conflict, diff binding mismatch, storylet canon 승격, atomic write 실패, lock 실패는 force로도 차단
 - force 여부, reason, approval attestation/provenance를 runs log에 기록
 - OpenCrabs skill에 “validation 우회 요청은 tool 정책을 따른다”는 지침 포함
 

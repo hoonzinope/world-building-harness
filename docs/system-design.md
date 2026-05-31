@@ -57,7 +57,7 @@ flowchart TD
 - Markdown/frontmatter를 파싱하고 정규화한다.
 - validation, diff, accept/reject, runs log, recovery handling을 수행한다.
 - recovery handling은 `world_recover_run` / `world-tool run recover`로만 수행하며, 원래 write command를 재실행하는 repair shortcut은 제공하지 않는다.
-- unresolved recovery가 있으면 `input stage`, `approval attest`, `draft diff`, `draft create`, `draft validate`, `draft accept`, `draft reject`를 포함한 world-root write command를 막고, `world_recover_run`만 write 예외로 남긴다.
+- unresolved recovery가 있으면 `world init`, `input stage`, `approval attest`, `draft create`, `draft update`, `draft validate`(validation artifact writer), `draft diff`, `draft accept`, `draft reject`, `content validate` artifact writer, `content migrate` report writer, 기타 content report writer를 포함한 같은 world root의 write command를 막고, `world_recover_run`만 write 예외로 남긴다. read-only inspection은 허용한다.
 - `content/` 변경은 accept command에서만 허용한다.
 
 ## 4. World Root

@@ -69,7 +69,7 @@ Top-level field 규칙:
 - `registry list`와 `world list`는 `world_id`, `registry_root`, `root`, `run_id`를 모두 null로 둔다. `registry add`, `registry remove`, `registry default`는 world root를 열지 않지만 `world_id`에 selected/target id를 담고 `registry_root`, `root`, `run_id`는 null이다.
 - `ok: false`인 경우 `error.code`와 `error.message`가 필수다.
 - validation severity는 top-level에 두지 않고 `data.validation_status`에만 둔다.
-- blocked 결과는 `data.block_reason`에 block code를 담고, 필요하면 `data.validation_status`도 함께 반환한다.
+- blocked 결과는 `data.block_reason`에 block code를 담고, 필요하면 `data.validation_status`도 함께 반환한다. `MISSING_TARGET`는 blocked 전용 domain block code다.
 
 `command_status` 허용값:
 - `completed`: command가 정상 완료됨
@@ -188,6 +188,7 @@ OpenCrabs는 `ok`, `command_status`, `data.validation_status`, `data.block_reaso
 - `DIFF_BINDING_REQUIRED`
 - `DIFF_BINDING_MISMATCH`
 - `ID_CONFLICT`
+- `MISSING_TARGET`
 - `TARGET_PATH_CONFLICT`
 - `STORYLET_NOT_CANON_TARGET`
 - `VALIDATION_BLOCKED`
@@ -198,7 +199,7 @@ OpenCrabs는 `ok`, `command_status`, `data.validation_status`, `data.block_reaso
 - `IO_ERROR`
 - `INTERNAL_ERROR`
 
-`PATH_*`, `LOCK_BUSY`, `IO_ERROR`, `TRANSACTION_INCOMPLETE`는 `failed`로 반환하고, `VALIDATION_BLOCKED`, `MIGRATION_BLOCKED`, `DIFF_BINDING_REQUIRED`, `DIFF_BINDING_MISMATCH`, `DRAFT_NOT_ACTIVE`, `STORYLET_NOT_CANON_TARGET`, `FORCE_NOT_ALLOWED`처럼 정책/도메인 중단인 경우에만 `blocked`를 사용한다. `TRANSACTION_INCOMPLETE`는 partial mutation 가능성을 뜻하므로 `blocked`가 아니라 `failed`와 함께 recovery metadata를 반환한다.
+`PATH_*`, `LOCK_BUSY`, `IO_ERROR`, `TRANSACTION_INCOMPLETE`는 `failed`로 반환하고, `MISSING_TARGET`, `VALIDATION_BLOCKED`, `MIGRATION_BLOCKED`, `DIFF_BINDING_REQUIRED`, `DIFF_BINDING_MISMATCH`, `DRAFT_NOT_ACTIVE`, `STORYLET_NOT_CANON_TARGET`, `FORCE_NOT_ALLOWED`처럼 정책/도메인 중단인 경우에만 `blocked`를 사용한다. `TRANSACTION_INCOMPLETE`는 partial mutation 가능성을 뜻하므로 `blocked`가 아니라 `failed`와 함께 recovery metadata를 반환한다.
 
 ## 4. Path Scope
 문서 path 인자는 world root 기준 상대 경로만 허용한다. command별 추가 allowlist는 다음을 따른다.
@@ -214,7 +215,7 @@ OpenCrabs는 `ok`, `command_status`, `data.validation_status`, `data.block_reaso
 | `input stage` | `runs/inbox/**` write only |
 | `approval attest` | `runs/inbox/**` write only for approval attestation artifacts; trusted auth context is read from a wrapper-owned file outside the world root |
 | `run list` | immutable run index/summary files only; `runs/inbox/**` excluded |
-| `run get` | default redacted manifest only; explicit repeated `--artifact <basename>` allowlist only; sensitive artifacts require privileged access or a separate command; `runs/inbox/**` excluded |
+| `run get` | default redacted manifest only; explicit single `--artifact <basename>` allowlist only; multiple artifacts require repeated `run get` calls; sensitive artifacts require privileged access or a separate command; `runs/inbox/**` excluded |
 | `content validate` | `content/**/*.md` |
 
 `doc` command는 `runs/`, `archive/`, `raw/`, `schema/`를 읽지 않는다. archive 조회가 필요하면 향후 별도 `archive` resource를 둔다.
@@ -235,7 +236,7 @@ world-tool registry default --world ashen-continent --json
 - default world 선택
 
 `registry list`는 `world_id`, `registry_root`, `root`, `run_id`를 null로 두고, `registry add`는 selected world id를 `world_id`에 담은 채 `registry_root`, `root`, `run_id`를 null로 둔다. `registry remove`와 `registry default`는 target id를 `world_id`에 담은 채 `registry_root`, `root`, `run_id`를 null로 둔다.
-`registry list`와 `world list`는 `--world`/`--root`를 받지 않는다. `registry remove`와 `registry default`는 `--world <id>`를 필수로 받는다.
+`registry add`는 null-root envelope이며 `--world`, `--root`, `--title`을 모두 필수로 받는다. `registry remove`와 `registry default`는 target id를 지정하는 `--world <id>`를 필수로 받는다. `registry list`와 `world list`는 `--world`/`--root`를 받지 않는다.
 
 `--registry` 해석 우선순위:
 1. command flag `--registry <path>`
@@ -366,10 +367,10 @@ world-tool draft read --world ashen-continent --draft drafts/nations/nation_ashe
 정책:
 - `draft create`는 `--change-type`이 필수다. `--change-type`이 없거나 `--change-type`과 나머지 인자 조합이 맞지 않으면 CLI argument 오류로 `command_status: "failed"`와 `error.code: "INVALID_ARGUMENT"`를 반환한다.
 - `create`는 `--type`과 `--id`가 필수이고 `--target-id`를 받지 않는다.
-- `update`와 `deprecate`는 `--target-id`가 explicit draft/content id다. 이 change type에서는 `--id`를 받지 않으며, `--id`를 넘기면 `INVALID_ARGUMENT`로 실패한다.
+- `update`와 `deprecate`는 `--target-id`가 explicit draft/content id다. 이 change type에서는 `--id`를 받지 않으며, `--id`를 넘기면 `INVALID_ARGUMENT`로 실패한다. `draft create --change-type update|deprecate --target-id ...`에서 target id가 canon content에 없으면 draft를 쓰지 않고 `command_status: "blocked"`, `data.block_reason: "MISSING_TARGET"`, `data.validation_status: "conflict"`를 반환한다.
 - `world-tool`은 document-types metadata를 조회해 `type`에 대한 `id` format/prefix를 검증하고, draft/content path를 `type+id`에서 직접 파생한다. title에서 implicit ID를 생성하지 않는다.
 - `create`는 같은 id가 content에 있으면 `ID_CONFLICT`로 blocked다.
-- `update`와 `deprecate`는 `--target-id`와 `--retcon-reason-file`이 필수이고, `--target-id`가 content에 존재해야 한다. `--target-id`가 content에 없으면 `command_status: "blocked"`, `data.block_reason: "MISSING_TARGET"`, `data.validation_status: "conflict"`를 반환한다.
+- `update`와 `deprecate`는 `--target-id`와 `--retcon-reason-file`이 필수이고, `--target-id`가 content에 존재해야 한다.
 - `update`와 `deprecate` draft의 id는 `target_id`와 같아야 한다.
 - `update`는 기존 content path를 유지한다. rename은 `draft update`의 책임이 아니며 별도 migration command family로 처리한다.
 - `create` 계열에서 `--title-file`, `--body-file`, `--retcon-reason-file`은 각각 `--title-hash`, `--body-hash`, `--retcon-reason-hash`와 짝을 이뤄야 하며, `world-tool`은 파일 내용을 다시 해시해서 검증한다.
@@ -386,8 +387,8 @@ world-tool content migrate --world ashen-continent --dry-run --json
 - content 전체 구조와 참조 검증
 - storylet canon 존재 여부 차단
 - schema migration 필요 문서 보고
-- `content migrate`는 이 계약에서 report-only다. partial apply나 `--apply`는 허용하지 않는다.
-- `content migrate --dry-run`만 `--dry-run`을 허용한다. `draft diff`는 이미 read/report command라 `--dry-run`을 받지 않으며, 지원하지 않는 command에서 `--dry-run`을 주면 `INVALID_ARGUMENT`로 실패한다.
+- `content migrate`는 post-MVP hardening command contract다. partial apply나 `--apply`는 허용하지 않으며, post-MVP에서도 반드시 `--dry-run`으로만 호출한다.
+- `content migrate --dry-run`만 `--dry-run`을 허용한다. `draft diff`는 이미 read/report command라 `--dry-run`을 받지 않으며, `content migrate`를 `--dry-run` 없이 호출하면 `INVALID_ARGUMENT`로 실패한다.
 - `content migrate --dry-run`은 content를 변경하지 않지만 `runs/<run-id>/migration.json`, `migration.md`, `migration-actions.jsonl` 같은 run/report artifacts는 생성할 수 있다. 반환 `data`에는 최소한 `migration_run_id`, `migration_report_path`, `migration_actions_path`, `candidates`, `blockers`, `partial_apply: false`가 있어야 하고, `available_actions`는 비어 있어야 한다.
 - migration blocker가 남아 있으면 `command_status: "blocked"`와 `data.block_reason: "MIGRATION_BLOCKED"`를 반환
 
@@ -402,7 +403,7 @@ validation status:
 - `conflict`
 - `error`
 
-validation command는 검증을 정상 완료했다면 `data.validation_status`가 `conflict`나 `error`여도 exit code 0을 반환할 수 있다. CLI/config/path 오류와 구분한다.
+validation command는 검증을 정상 완료했다면 `data.validation_status`가 `conflict`나 `error`여도 exit code 0을 반환할 수 있다. CLI/config/path 오류와 구분한다. 이미 존재하는 invalid draft를 `draft validate`로 검사해도 command 자체는 검증 결과를 반환하므로 `command_status: "completed"`, `data.validation_status: "conflict"`, issues[]의 issue/block detail에 `MISSING_TARGET`를 포함해 보고한다.
 
 ## 12. draft diff
 ```bash
@@ -431,6 +432,7 @@ diff result 필수 payload (update/deprecate 기준):
 
 - `create` diff에서는 `target_exists: false`, `target_base_hash: null`을 반환한다.
 - `update`와 `deprecate` diff에서는 `target_exists: true`, `target_base_hash`가 sha256이어야 한다.
+- `update`와 `deprecate` diff는 target canon이 없으면 `MISSING_TARGET`로 blocked다. related target, relationship target, active-draft-only related/relationship target도 canon target이 아니면 `MISSING_TARGET`로 blocked다.
 - `draft diff`는 이미 dry-run성 read/report command라 `--dry-run`을 받지 않는다.
 
 ## 13. approval attest
@@ -521,9 +523,9 @@ Accept 정책:
 - `warning`은 기본 accept 가능하지만, warning과 approval provenance를 runs log에 남긴다.
 - `conflict`와 `error`는 기본 accept에서 `command_status: "blocked"`로 반환한다.
 - create accept는 target이 여전히 없어야 하며, accept 시점에 target이 존재하면 blocked다.
-- `related target` 또는 `relationship target`이 누락되면 `MISSING_TARGET`로 blocked다.
+- `related target` 또는 `relationship target`이 누락되면 `MISSING_TARGET`로 blocked다. active-draft-only related/relationship target도 accept 시점에는 canon target이 없는 것으로 간주하므로 `MISSING_TARGET`를 사용한다. 즉 `MISSING_TARGET`는 related/relationship target 누락과 active-draft-only target에도 쓰인다.
 - `--force`는 semantic/timeline/relationship conflict 후보만 우회할 수 있고 trusted approval attestation과 reason이 필수다. 모든 참조 대상이 이미 canon content일 때만 허용한다.
-- `--force`는 active-draft-only 조건, missing related target, missing relationship target, missing update/deprecate target, structural error, id conflict, path violation, target path conflict, inactive draft, storylet canon 승격, diff binding mismatch는 우회할 수 없다.
+- `--force`는 `MISSING_TARGET` 계열(blocked cases 포함 missing target, missing related target, missing relationship target, missing update/deprecate target, active-draft-only target), path/type/id/schema 불일치, structural error, id conflict, target path conflict, inactive draft, storylet canon 승격, diff binding mismatch, atomic write 실패, lock 실패는 우회할 수 없다.
 - `change_type: deprecate`가 accept되면 target content를 `content/` 아래에서 in-place로 deprecated 상태와 deprecation audit metadata로 갱신하고, canon 파일은 제거하지 않는다. 해당 deprecate draft는 accepted draft와 동일하게 archive된다.
 - `type: storylet`은 MVP에서 content canon accept 대상이 아니며 `STORYLET_NOT_CANON_TARGET`으로 blocked다.
 - accept 성공 시 `data.approval`은 `approver_id`, `approval_channel`, `authenticated_actor`, `approval_attestation_path`, `reason_path`를 포함해야 한다.
@@ -542,8 +544,8 @@ Transaction/recovery 정책:
 - content write 성공 후 archive/result 기록이 실패하면 `ok: false`, `command_status: "failed"`, `error.code: "TRANSACTION_INCOMPLETE"`를 반환하고 recovery instruction을 `runs/<run-id>/recovery.json`에 남긴다. 이 경우 partial mutation이 이미 발생했을 수 있다.
 - 실패 응답에는 `data.recovery` metadata를 포함하고 `available_actions`는 `["world_recover_run"]`를 가리켜야 한다.
 - recovery는 content hash와 archive 상태를 기준으로 idempotent하게 재시도할 수 있어야 한다.
-- `runs/<run-id>/recovery.json`가 unresolved인 동안에는 같은 world root를 쓰는 모든 write command가 blocked다. 여기에는 `world init` against that root, `input stage`, `approval attest`, `draft create`, `draft update`, `draft diff`, `draft accept`, `draft reject`, `content validate`가 report/artifact를 쓰는 경우가 포함된다. read-only command는 계속 허용된다.
-- `run recover`는 이 차단의 예외이며, `TRANSACTION_INCOMPLETE` 또는 unresolved `recovery.json`를 복구하는 유일한 운영자용 repair command다. 이 command는 원래 write command를 다시 실행하지 않고, 기록된 transaction state만 안전하게 수습한다.
+- `runs/<run-id>/recovery.json`가 unresolved인 동안에는 같은 world root를 쓰는 모든 write command와 write artifact/report command가 blocked다. 여기에는 같은 root의 `world init`, `input stage`, `approval attest`, `draft create`, `draft update`, `draft validate`의 validation artifact writer, `draft diff`, `draft accept`, `draft reject`, `content validate`의 artifact writer, `content migrate`의 report writer, 기타 content report writer가 포함된다. read-only command는 계속 허용된다.
+- `run recover`만 이 차단의 예외이며, `TRANSACTION_INCOMPLETE` 또는 unresolved `recovery.json`를 복구하는 유일한 운영자용 repair command다. 이 command는 원래 write command를 다시 실행하지 않고, 기록된 transaction state만 안전하게 수습한다.
 
 ## 15. draft reject
 ```bash
@@ -565,16 +567,16 @@ world-tool draft reject \
 ```bash
 world-tool run list --world ashen-continent --json
 world-tool run get --world ashen-continent --run-id 20260530-001 --json
-world-tool run get --world ashen-continent --run-id 20260530-001 --artifact manifest.json --artifact summary.json --json
+world-tool run get --world ashen-continent --run-id 20260530-001 --artifact manifest.json --json
 world-tool run recover --world ashen-continent --run-id 20260530-001 --json
 ```
 
 동작:
 - 최근 실행 목록과 immutable summary만 조회
 - `run get`은 기본적으로 redacted manifest와 상태 요약만 반환한다. 이때 `data`에는 최소 `manifest`와 `status_summary`가 들어가며 둘 다 redacted다.
-- `run get`은 명시적인 safe artifact allowlist만 허용한다. `--artifact <artifact_name>`는 반복 가능하며, basename allowlist에서만 선택할 수 있다. 예: `manifest.json`, `summary.json`, `result-summary.json`, `validation.json`, redacted `recovery.json`
+- `run get`은 명시적인 safe artifact allowlist만 허용한다. `--artifact <artifact_name>`는 단일 값만 허용하며, 여러 artifact가 필요하면 `run get`을 반복 호출한다. basename allowlist에서만 선택할 수 있다. 예: `manifest.json`, `summary.json`, `result-summary.json`, `validation.json`, redacted `recovery.json`
 - sensitive artifact, raw staged input, inbox payload, unredacted result/body/reason는 `run get`로 노출하지 않는다. 이런 자료는 별도의 privileged command나 explicit privileged flag가 있어야 한다.
-- `world_get_run_artifact`는 `run get`의 explicit safe artifact retrieval 전용 mapping이다. arbitrary path는 허용하지 않는다. 이 command의 `data`는 최소 `run_id`, `artifact_name`, `artifact_hash`, `media_type`, `size_bytes`, `redacted`, `content`를 포함하고 `content_path`는 반환하지 않는다.
+- `world_get_run_artifact`는 `run get`의 explicit safe artifact retrieval 전용 mapping이다. arbitrary path는 허용하지 않는다. 이 command의 `data`는 단일 artifact object shape로 `run_id`, `artifact_name`, `artifact_hash`, `media_type`, `size_bytes`, `redacted`, `content`를 포함하고 `content_path`는 반환하지 않으며, 여러 artifact가 필요하면 반복 호출한다.
 - `run recover`는 `TRANSACTION_INCOMPLETE` 또는 unresolved `recovery.json`를 해결하는 운영자용 command다. 대상 run의 `recovery.json`, 현재 content hash, archive state, result state를 다시 읽고, 이미 복구가 끝났다면 no-op으로 끝낸다.
 - `run recover`는 멱등적이어야 하며, 반복 호출해도 duplicate write를 만들지 않는다. 복구가 필요한 경우에만 남은 단계를 수행하고 `recovery.json`를 resolved로 표시한다.
 - `run recover`가 성공하면 이후 write command는 다시 허용된다.
@@ -583,7 +585,7 @@ world-tool run recover --world ashen-continent --run-id 20260530-001 --json
 ## 17. OpenCrabs Dynamic Tool 매핑
 `~/.opencrabs/tools.toml`에는 의미 단위 tool을 등록한다.
 
-아래 예시는 shell executor가 template 값을 argv-safe한 인자로 전달하고 stdin/request-file payload를 지원한다고 가정한다. shell 텍스트 안에 raw string interpolation을 그대로 붙이는 방식은 허용하지 않는다. 그런 executor만 있다면 이 command 문자열을 그대로 쓰지 말고, request JSON file 하나를 받는 wrapper command를 둔다. `stdin = "{{input}}"`은 OpenCrabs request payload를 stdin으로 넘긴다는 뜻이며, `input`은 CLI argv가 아니라 request payload다.
+아래 예시는 canonical dynamic tool executor가 argv-safe shell executor이고, request payload를 `stdin = "{{input}}"`으로 명시적으로 바인딩한다고 가정한다. shell 텍스트 안에 raw interpolation만 붙이는 executor는 금지한다. 이런 조건을 만족시키지 못하는 executor에는 wrapper를 두어야 하며, wrapper는 fallback이 아니라 해당 조건을 만족시키기 위한 adapter다. `stdin = "{{input}}"`은 OpenCrabs request payload를 stdin으로 넘긴다는 뜻이며, `input`은 CLI argv가 아니라 request payload다.
 
 ```toml
 [[tools]]

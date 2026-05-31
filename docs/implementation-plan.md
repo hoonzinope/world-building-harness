@@ -23,6 +23,7 @@
 - skill은 지침이고, 안전 경계는 `world-tool`에서 강제한다.
 - write command는 world root lock을 사용하고, accept는 lock 안에서 validation을 재실행한다.
 - diff와 accept는 `diff_run_id`, `draft_hash`, `target_base_hash`, `patch_hash`로 묶는다.
+- unresolved recovery가 있으면 같은 world root의 `world init`, `input stage`, `approval attest`, `draft create`, `draft update`, `draft validate`(validation artifact writer), `draft diff`, `draft accept`, `draft reject`, `content validate` artifact writer, `content migrate` report writer, 기타 content report writer는 차단되고 `world_recover_run`만 write 예외다. read-only inspection은 허용한다.
 
 ## 3. Milestone 0: Repository Scaffold
 ### 목표
@@ -65,7 +66,7 @@ Go CLI와 OpenCrabs bundle을 구현할 기본 디렉토리를 만든다.
 - atomic write helper
 - `world-tool world init`
 - `world-tool world status`
-- `world-tool registry add/list/default`
+- `world-tool registry add/list/remove/default`
 - `world-tool input stage`
 
 ### 완료 기준
@@ -152,14 +153,15 @@ draft를 canon과 비교해 구조 오류와 명백한 충돌을 탐지한다.
 - active draft path/type 규칙 위반은 `error`로 반환된다.
 - `change_type: create`에서 기존 canon id와 중복되는 draft는 `conflict`로 반환된다.
 - `change_type: update` 또는 `change_type: deprecate`의 target_id가 canon content에 없으면 `conflict`로 반환되며 `block_reason`은 `MISSING_TARGET`다.
+- 이미 존재하는 invalid draft를 `draft validate`하면 validation 결과를 반환하고 conflict issue로 `MISSING_TARGET`를 보고한다.
 - convenience field는 explicit relationships[]가 없어도 graph fact로 normalize된다.
 - convenience field와 explicit relationships[]가 같은 fact로 normalize되면 dedupe된다.
 - convenience field와 explicit relationships[]가 서로 다른 fact를 만들면 `conflict`로 반환된다.
 - 잘못된 shape나 비문자열 id는 `error`로 반환된다.
 - inverse/symmetric contradiction은 `conflict`로 반환된다.
-- accept validation에서 active draft에만 존재하는 relationship target은 `conflict`로 반환된다.
+- accept validation에서 active draft에만 존재하는 relationship target은 `conflict`로 반환되고, accept/diff validation에서 active draft에만 존재하는 relationship target은 `command_status: "blocked"`, `data.block_reason: "MISSING_TARGET"`, `data.validation_status: "conflict"`로 처리된다.
 - 알 수 없는 relationship type과 domain/range mismatch는 `conflict`로 반환된다.
-- related id와 relationship target이 active draft에만 존재하는 경우는 draft validate에서 warning, accept에서 blocked로 처리한다.
+- related id와 relationship target이 active draft에만 존재하는 경우는 draft validate에서 warning, accept/diff에서는 `command_status: "blocked"`, `data.block_reason: "MISSING_TARGET"`, `data.validation_status: "conflict"`로 처리한다.
 - unresolved recovery가 있으면 `draft validate`처럼 `runs/<run-id>/validation.json`을 쓰는 run-writing command는 blocked된다.
 - validation 결과는 `runs/<run-id>/validation.json`에 저장된다.
 
@@ -187,7 +189,7 @@ draft를 canon과 비교해 구조 오류와 명백한 충돌을 탐지한다.
 - accept는 validation을 다시 실행한다.
 - accept는 diff binding이 없거나 불일치하면 blocked다.
 - conflict/error가 있으면 기본 accept가 blocked다.
-- force accept는 reason과 trusted approval attestation provenance 중 하나라도 없으면 blocked이며 missing target, missing related target, missing relationship target, missing update/deprecate target, active draft-only target, structural error, id conflict, path violation, target path conflict, storylet canon 승격, diff binding mismatch는 우회할 수 없다.
+- force accept는 reason과 trusted approval attestation provenance 중 하나라도 없으면 blocked이며 missing target, missing related target, missing relationship target, missing update/deprecate target, active draft-only target, path/type/id/schema 불일치, structural error, id conflict, target path conflict, diff binding mismatch, storylet canon 승격, atomic write 실패, lock 실패는 우회할 수 없다.
 - force accept는 semantic/timeline/relationship conflict 후보 중 referenced target이 모두 canon content에 있는 경우에만 우회할 수 있다.
 - accept 성공 시 content 문서가 생성 또는 갱신된다.
 - accept 성공 시 draft 원본은 `archive/accepted/`로 이동한다.
@@ -317,7 +319,7 @@ OpenCrabs, `world-tool`, skill/tools bundle을 컨테이너에서 운영할 수 
 - inverse/symmetric contradiction은 conflict로 탐지된다.
 - diff binding mismatch는 accept에서 차단된다.
 - relationship domain/range mismatch는 conflict로 탐지된다.
-- related id 또는 relationship target이 active draft에만 존재하면 draft validate에서는 warning, accept에서는 blocked된다.
+- related id 또는 relationship target이 active draft에만 존재하면 draft validate에서는 warning, accept/diff에서는 `command_status: "blocked"`, `data.block_reason: "MISSING_TARGET"`, `data.validation_status: "conflict"`로 처리된다.
 - staged input hash mismatch는 hash binding을 소비하는 모든 command에서 command-level `INPUT_HASH_MISMATCH`로 반환된다.
 - recovery resolution fixture는 recovery artifact가 해결된 뒤 동일 draft가 다시 accept될 수 있어야 한다는 점을 검증한다.
 - storylet draft는 content canon accept에서 차단된다.

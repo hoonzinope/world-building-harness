@@ -26,7 +26,7 @@ OpenCrabs 없이도 로컬 CLI로 파일 관리와 validation을 수행할 수 �
 
 ### 기능
 - `world-tool world init`
-- `world-tool registry add/list/default`
+- `world-tool registry add/list/remove/default`
 - `world-tool input stage`
 - `world-tool doc read/search --scope active`
 - `world-tool draft create/update/read/list`

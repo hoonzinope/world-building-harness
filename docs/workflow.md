@@ -98,10 +98,10 @@ receive user request in OpenCrabs
 - blocked는 validation/policy/precondition/domain stop을 의미하며, failed와 구분한다.
 - `TRANSACTION_INCOMPLETE`는 failed/recovery-required partial transaction이며, normal blocked no-mutation 결과가 아니다.
 - `PATH_*`, `LOCK_BUSY`, I/O/path/lock 오류는 failed JSON error다.
-- conflict/error와 `DRAFT_NOT_ACTIVE`, `DIFF_BINDING_REQUIRED`, `MISSING_TARGET` 같은 domain blocked 결과는 기본 accept에서 blocked로 반환된다.
-- unresolved recovery가 있으면 `input stage`, `approval attest`, `draft diff`, `draft create`, `draft validate`(`runs/<run-id>/validation.json` writer), `draft accept`, `draft reject`, content report writer를 포함한 모든 world-root/run-writing command가 차단되며, `world_recover_run`만 write 예외다.
+- conflict/error와 `DRAFT_NOT_ACTIVE`, `DIFF_BINDING_REQUIRED`, `MISSING_TARGET` 같은 domain blocked 결과는 기본 accept에서 blocked로 반환된다. `MISSING_TARGET`는 related/relationship target이 content에 없거나 active draft에만 존재할 때도 사용한다.
+- unresolved recovery가 있으면 `world init`, `input stage`, `approval attest`, `draft create`, `draft update`, `draft validate`(`runs/<run-id>/validation.json` writer), `draft diff`, `draft accept`, `draft reject`, `content validate` artifact writer, `content migrate` report writer, 기타 content report writer를 포함한 모든 world-root/run-writing command가 차단되며, `world_recover_run`만 write 예외다. read-only inspection은 허용한다.
 - `force`는 reason과 trusted approval attestation 중 하나라도 없으면 blocked이며, semantic/timeline/relationship conflict 후보만 제한적으로 우회한다.
-- structural error, id conflict, path/target 충돌, storylet canon 승격, diff binding mismatch는 force로도 우회할 수 없다.
+- missing target, missing related target, missing relationship target, missing update/deprecate target, active-draft-only target, path/type/id/schema 불일치, structural error, id conflict, target path conflict, diff binding mismatch, storylet canon 승격, atomic write 실패, lock 실패는 force로도 우회할 수 없다.
 - `force`는 `approval_attestation_file`, `approval_attestation_hash`, `approver_id`, `approval_channel`, `authenticated_actor`가 함께 기록될 때만 승인 provenance가 완성된다.
 - `approval_channel` 예시는 `OpenCrabs-chat`을 사용하고, attestation, accept, audit 전반에서 byte-identical 값이어야 한다.
 - `authenticated_actor`는 OpenCrabs 인증 세션에서만 가져오고, `world_stage_input`과 `world_create_approval_attestation`이 반환한 파일 경로와 hash만 후속 tool에 전달한다.

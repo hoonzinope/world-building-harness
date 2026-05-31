@@ -14,7 +14,7 @@ OpenCrabs는 Codex OAuth provider를 기본 provider로 사용해 판단과 생�
 - 생성 결과는 먼저 `drafts/`에 저장하고, 명시적 승인 후에만 `content/`로 승격한다. `force accept`는 오퍼레이터가 명시적으로 승인한 예외 경로일 뿐, 일반 guardrail 우회가 아니다.
 - 세계관 작업은 OpenCrabs dynamic tools가 호출하는 `world-tool` Go 바이너리로 수행한다.
 - 긴 query/title/body/reason/retcon_reason은 `world_stage_input`으로 staging한 뒤 후속 tool에 file path와 hash를 넘긴다.
-- draft create는 명시적 `--id`를 입력으로 받고, draft update/deprecate는 명시적 `--target-id`를 사용한다. 사용자는 create에서 나온 id나 update/deprecate의 target_id에서 파생된 `draft_path`를 기준으로 validate/diff/accept 흐름을 따라간다.
+- draft create는 명시적 `--id`를 입력으로 받고, update/deprecate draft 생성은 `world-tool draft create --change-type update|deprecate --target-id ...`를 사용한다. `world-tool draft update`는 이미 생성된 active draft의 본문 수정용이다. 별도의 `world-tool draft deprecate` 명령은 없다. 사용자는 create에서 나온 id나 update/deprecate의 target_id에서 파생된 `draft_path`를 기준으로 validate/diff/accept 흐름을 따라간다.
 - 사용자가 승인한 diff와 accept 실행은 diff_run_id와 hash binding으로 묶는다.
 - 승인 provenance는 `approver_id`, `approval_channel`, `authenticated_actor`, approval attestation file/hash를 포함해야 하며, `authenticated_actor`와 attestation은 OpenCrabs 인증 세션 또는 provider identity에서만 가져오고, `auth_context_file`/`auth_context_hash`는 world root 밖에서 생성된 trusted wrapper input이어야 한다.
 - tool 출력은 JSON으로 안정화해 OpenCrabs/Codex가 다음 행동을 판단할 수 있게 한다.
@@ -41,7 +41,7 @@ OpenCrabs는 `world_validate_draft` tool을 호출해 draft가 schema와 canon �
 1. OpenCrabs skill: 세계관 작업 원칙과 workflow 지침 제공
 2. Dynamic tools: OpenCrabs에서 호출 가능한 `world_*` tool 세트
 3. Go `world-tool` CLI: 파일/설정/검증/승격 작업을 deterministic하게 수행
-4. `input stage`, `draft create/validate/diff/accept/reject`, `registry add/list` 명령 계약
+4. `input stage`, `draft create/validate/diff/accept/reject`, `registry add/list/remove/default` 명령 계약
 5. `content/`, `drafts/`, `runs/`, `archive/` 기반 world root 구조
 6. JSON 출력과 audit/run log
 
