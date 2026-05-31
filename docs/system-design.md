@@ -258,6 +258,7 @@ stateDiagram-v2
   },
   "issues": [
     {
+      "code": "TIMELINE_CONFLICT",
       "rule": "VR-203",
       "severity": "warning",
       "message": "기존 북부 왕국의 멸망 시점과 현재 통치 표현이 충돌할 수 있음",
@@ -287,6 +288,7 @@ stateDiagram-v2
   },
   "issues": [
     {
+      "code": "VALIDATION_BLOCKED",
       "rule": "VR-101",
       "severity": "conflict",
       "message": "id nation_northern_empire already exists in content"
@@ -295,6 +297,8 @@ stateDiagram-v2
   "available_actions": ["world_update_draft", "world_reject_draft"]
 }
 ```
+
+이 예시에서는 `data.block_reason`이 accept 차단 사유를 나타내고, `issues[].code`가 그 차단과 연결된 validation issue code를 드러낸다.
 
 ## 10. 내부 Go 모듈
 ```text

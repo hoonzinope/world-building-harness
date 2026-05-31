@@ -202,13 +202,14 @@ MVP 이후 안정화와 maintenance path를 추가한다.
 ### 기능
 - world별 validation strictness
 - schema migration and migration report
-- `content migrate` report-only maintenance path
+- `content migrate --dry-run` report-only maintenance path
 - archive pruning/compression/export
 - OpenCrabs tool calling retry/timeout 정책
 - migration boundary fixture
 
 ### 완료 기준
-- `content migrate`는 report와 artifact만 남기고 content를 직접 변경하지 않음
+- `content migrate`는 `--dry-run`만 허용하고 no-option과 `--apply`는 `INVALID_ARGUMENT`인 report-only maintenance path다.
+- `content migrate --dry-run`은 report와 artifact만 남기고 content를 직접 변경하지 않는다. no-option과 `--apply`는 `INVALID_ARGUMENT`다.
 - migration 결과가 blocked/warning/action item으로 분리됨
 - post-MVP maintenance path가 MVP core와 분리됨
 

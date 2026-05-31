@@ -69,7 +69,22 @@ Top-level field 규칙:
 - `registry list`와 `world list`는 `world_id`, `registry_root`, `root`, `run_id`를 모두 null로 둔다. `registry add`, `registry remove`, `registry default`는 world root를 열지 않지만 `world_id`에 selected/target id를 담고 `registry_root`, `root`, `run_id`는 null이다.
 - `ok: false`인 경우 `error.code`와 `error.message`가 필수다.
 - validation severity는 top-level에 두지 않고 `data.validation_status`에만 둔다.
-- blocked 결과는 `data.block_reason`에 block code를 담고, 필요하면 `data.validation_status`도 함께 반환한다. `MISSING_TARGET`는 blocked 전용 domain block code다.
+- `data.block_reason`은 `command_status: "blocked"`일 때만 사용한다. validation issue code는 `issues[].code` 또는 equivalent issue field에 넣고, `draft validate`의 missing target은 completed 결과에서 issue로만 보고한다. `MISSING_TARGET`는 blocked code와 validation issue code를 분리해서 사용한다.
+
+Minimum `data` shape:
+
+| Command | 최소 `data` 필드 | Redaction 원칙 |
+| --- | --- | --- |
+| `world status` | `world_id`, `root`, `registry_root`, `summary` | summary는 run/draft 상세 본문을 노출하지 않는다 |
+| `world list` | `worlds` | 비식별 목록만 제공한다 |
+| `registry add/list/remove/default` | `world_id` 또는 `worlds`, `registry_root` when applicable | path와 registry internals는 필요한 최소만 노출한다 |
+| `input stage` | `kind`, `input_path`, `input_hash` | input 본문은 반환하지 않는다 |
+| `doc read/search` | `path` 또는 `results` | raw body는 explicit read에서만, search는 snippet만 허용한다 |
+| `draft create/update/read/list/validate/diff/accept/reject` | `draft_path`, `draft_hash` or `drafts`, `validation_status` when applicable, `diff_*`/`approval` only where relevant | reason/body/attestation payload는 hash와 path 중심으로 redact한다 |
+| `approval attest` | `approval_attestation_file`, `approval_attestation_hash`, `authenticated_actor`, `approver_id`, `approval_channel`, `diff_run_id`, `draft_hash`, `target_base_hash`, `patch_hash` | auth context 원문과 session secret은 반환하지 않는다 |
+| `content validate` | `validation_status`, `blockers`, `findings` or equivalent summary | content 본문 전체는 반환하지 않는다 |
+| `content migrate --dry-run` | `migration_run_id`, `migration_report_path`, `migration_actions_path`, `candidates`, `blockers`, `partial_apply` | report artifact 본문은 raw dump 대신 요약과 경로 중심으로 노출한다 |
+| `run list/get/get artifact/recover` | `runs` or `manifest`/`status_summary` or single artifact fields or `recovery_*` | staged inbox payload와 unredacted sensitive artifact는 노출하지 않는다 |
 
 `command_status` 허용값:
 - `completed`: command가 정상 완료됨
@@ -116,6 +131,7 @@ blocked envelope:
   },
   "issues": [
     {
+      "code": "VALIDATION_BLOCKED",
       "rule": "VR-220",
       "severity": "conflict",
       "message": "conflict blocks accept until the draft is updated",
@@ -155,6 +171,7 @@ blocked envelope:
 
 ```json
 {
+  "code": "MISSING_TARGET",
   "rule": "VR-101",
   "severity": "conflict",
   "message": "id nation_northern_empire already exists in content",
@@ -163,6 +180,8 @@ blocked envelope:
   "recommendation": "use --change-type update with --target-id for retcon/update workflow"
 }
 ```
+
+`issues[]`의 canonical issue code는 `code` 필드다. `rule`, `severity`, `message`, `path`, `field`, `recommendation`은 설명용 메타데이터다. `rule`에는 `VR-*` 같은 validation rule id를 두고, `code`에는 symbolic issue code를 둔다.
 
 Exit code 정책:
 
@@ -175,31 +194,70 @@ Exit code 정책:
 
 OpenCrabs는 `ok`, `command_status`, `data.validation_status`, `data.block_reason`, `issues`, `available_actions`, `error.code` 순서로 해석한다.
 
-대표 error/block code:
-- `INVALID_ARGUMENT`
-- `REGISTRY_NOT_FOUND`
-- `WORLD_NOT_FOUND`
-- `PATH_OUTSIDE_ROOT`
-- `PATH_NOT_MARKDOWN`
-- `PATH_SCOPE_DENIED`
-- `INPUT_HASH_MISMATCH`
-- `AUTH_CONTEXT_MISSING`
-- `DRAFT_NOT_ACTIVE`
-- `DIFF_BINDING_REQUIRED`
-- `DIFF_BINDING_MISMATCH`
-- `ID_CONFLICT`
-- `MISSING_TARGET`
-- `TARGET_PATH_CONFLICT`
-- `STORYLET_NOT_CANON_TARGET`
-- `VALIDATION_BLOCKED`
-- `MIGRATION_BLOCKED`
-- `FORCE_NOT_ALLOWED`
-- `LOCK_BUSY`
-- `TRANSACTION_INCOMPLETE`
-- `IO_ERROR`
-- `INTERNAL_ERROR`
+### 3.1 MVP code registry
 
-`PATH_*`, `LOCK_BUSY`, `IO_ERROR`, `TRANSACTION_INCOMPLETE`는 `failed`로 반환하고, `MISSING_TARGET`, `VALIDATION_BLOCKED`, `MIGRATION_BLOCKED`, `DIFF_BINDING_REQUIRED`, `DIFF_BINDING_MISMATCH`, `DRAFT_NOT_ACTIVE`, `STORYLET_NOT_CANON_TARGET`, `FORCE_NOT_ALLOWED`처럼 정책/도메인 중단인 경우에만 `blocked`를 사용한다. `TRANSACTION_INCOMPLETE`는 partial mutation 가능성을 뜻하므로 `blocked`가 아니라 `failed`와 함께 recovery metadata를 반환한다.
+| Code | 분류 | validation issue로도 사용 | 비고 |
+| --- | --- | --- | --- |
+| `INVALID_ARGUMENT` | failed | 아니오 | CLI argument, flag combination, unsupported mode |
+| `REGISTRY_NOT_FOUND` | failed | 아니오 | registry/config lookup failure |
+| `WORLD_NOT_FOUND` | failed | 아니오 | world root/registry lookup failure |
+| `PATH_OUTSIDE_ROOT` | failed | 아니오 | path boundary failure |
+| `PATH_NOT_MARKDOWN` | failed | 아니오 | non-markdown path rejection |
+| `PATH_SCOPE_DENIED` | failed | 아니오 | scope boundary rejection |
+| `INPUT_HASH_MISMATCH` | failed | 아니오 | staged input hash mismatch |
+| `AUTH_CONTEXT_MISSING` | failed | 아니오 | trusted auth context missing |
+| `AUTH_CONTEXT_HASH_MISMATCH` | failed | 아니오 | auth context hash mismatch |
+| `AUTH_CONTEXT_EXPIRED` | failed | 아니오 | auth context expiry exceeded |
+| `AUTH_CONTEXT_SCOPE_DENIED` | failed | 아니오 | auth context scope mismatch |
+| `AUTH_CONTEXT_TEST_MODE_REQUIRED` | failed | 아니오 | fixture opt-in missing |
+| `ID_CONFLICT` | blocked | 아니오 | canonical id already exists |
+| `TARGET_PATH_CONFLICT` | blocked | 아니오 | target path would collide before mutation |
+| `MISSING_TARGET` | blocked | 예 | missing canon target or equivalent validation issue |
+| `DRAFT_NOT_ACTIVE` | blocked | 예 | draft not active at accept/diff time |
+| `DIFF_BINDING_REQUIRED` | blocked | 예 | accept missing diff binding inputs |
+| `DIFF_BINDING_MISMATCH` | blocked | 예 | accept diff binding mismatch |
+| `STORYLET_NOT_CANON_TARGET` | blocked | 예 | storylet cannot be canonical accept target |
+| `VALIDATION_BLOCKED` | blocked | 예 | accept blocked by validation/conflict |
+| `MIGRATION_BLOCKED` | blocked | 예 | content migration blocker |
+| `FORCE_NOT_ALLOWED` | blocked | 예 | force cannot override this failure mode |
+| `LOCK_BUSY` | failed | 아니오 | lock contention |
+| `TRANSACTION_INCOMPLETE` | failed | 아니오 | partial mutation and recovery metadata required |
+| `IO_ERROR` | failed | 아니오 | filesystem or persistence failure |
+| `INTERNAL_ERROR` | failed | 아니오 | panic or unexpected internal failure |
+
+Validation issue codes may reuse the same symbolic code as a blocked command result, but `data.block_reason` and `issues[].code` are independent channels. `draft validate` always completes normally when validation itself completes, even when it reports `MISSING_TARGET` or other issues.
+
+### 3.2 available_actions enum and recommended mapping
+
+허용값은 최소한 다음을 포함한다: `world_update_draft`, `world_accept_draft`, `world_force_accept_draft`, `world_reject_draft`, `world_create_approval_attestation`, `world_recover_run`, `world_get_run_artifact`, `world_stage_input`, `world_diff_draft`, `world_validate_draft`.
+
+| 상태/결과 | recommended `available_actions` |
+| --- | --- |
+| validation `pass` | `world_accept_draft`, `world_update_draft`, `world_reject_draft`, 필요 시 `world_diff_draft` |
+| validation `warning` | `world_accept_draft`, `world_update_draft`, `world_reject_draft`, `world_diff_draft` |
+| validation `conflict` | `world_update_draft`, `world_reject_draft`, `world_diff_draft`, `world_validate_draft` |
+| validation `error` | `world_update_draft`, `world_reject_draft`, `world_validate_draft` |
+| `MISSING_TARGET` blocked on create/update/diff/accept | `world_update_draft`, `world_reject_draft`, `world_diff_draft`, `world_validate_draft` |
+| `DIFF_BINDING_REQUIRED` or `DIFF_BINDING_MISMATCH` | `world_create_approval_attestation`, `world_diff_draft`, `world_validate_draft`, `world_update_draft` |
+| `TRANSACTION_INCOMPLETE` or recovery-needed state | `world_recover_run`, `world_get_run_artifact` |
+| staged input / run artifact inspection | `world_stage_input`, `world_get_run_artifact` |
+
+`world_force_accept_draft`는 `FORCE_NOT_ALLOWED`가 아니고 trusted attestation이 존재할 때만 권장된다.
+
+### 3.3 command별 block_reason / issue code 매핑
+
+| Command / case | `command_status` | `data.block_reason` | issue code / note |
+| --- | --- | --- | --- |
+| `draft create` id 중복 | `blocked` | `ID_CONFLICT` | issue code는 필요 시 동일 코드 또는 equivalent |
+| `draft create --change-type update|deprecate` missing canon target | `blocked` | `MISSING_TARGET` | no-write; `issues[].code`는 동일 코드 또는 equivalent |
+| `draft validate` missing target | `completed` | 없음 | `issues[].code: MISSING_TARGET` |
+| `draft diff` target 계열 누락 | `blocked` | `MISSING_TARGET` | related/relationship/active-draft-only 포함 |
+| `draft accept` target 계열 누락 | `blocked` | `MISSING_TARGET` | related/relationship/active-draft-only 포함 |
+| `draft accept` validation internal conflict/error | `blocked` | `VALIDATION_BLOCKED` | issue code detail는 conflict/error 원인 코드 |
+| `draft accept` diff binding mismatch | `blocked` | `DIFF_BINDING_MISMATCH` | issue code detail에 mismatch 원인 기록 |
+| `draft accept` inactive draft | `blocked` | `DRAFT_NOT_ACTIVE` | issue code detail |
+| `draft accept` storylet canon | `blocked` | `STORYLET_NOT_CANON_TARGET` | issue code detail |
+| `draft accept` target path conflict before mutation | `blocked` | `TARGET_PATH_CONFLICT` | issue code detail |
 
 ## 4. Path Scope
 문서 path 인자는 world root 기준 상대 경로만 허용한다. command별 추가 allowlist는 다음을 따른다.
@@ -403,7 +461,9 @@ validation status:
 - `conflict`
 - `error`
 
-validation command는 검증을 정상 완료했다면 `data.validation_status`가 `conflict`나 `error`여도 exit code 0을 반환할 수 있다. CLI/config/path 오류와 구분한다. 이미 존재하는 invalid draft를 `draft validate`로 검사해도 command 자체는 검증 결과를 반환하므로 `command_status: "completed"`, `data.validation_status: "conflict"`, issues[]의 issue/block detail에 `MISSING_TARGET`를 포함해 보고한다.
+validation command는 검증을 정상 완료했다면 `data.validation_status`가 `conflict`나 `error`여도 exit code 0을 반환할 수 있다. CLI/config/path 오류와 구분한다. 이미 존재하는 invalid draft를 `draft validate`로 검사해도 command 자체는 검증 결과를 반환하므로 `command_status: "completed"`, `data.validation_status: "conflict"`, `issues[].code: "MISSING_TARGET"` 또는 equivalent issue code로 보고한다. 이 경우 `data.block_reason`은 사용하지 않는다.
+
+`draft validate`는 missing target을 validation issue로만 보고한다. blocked 결과가 아니라 completed 결과에서 `issues[].code`로 반환해야 하며, missing target을 이유로 `data.block_reason`을 채우지 않는다.
 
 ## 12. draft diff
 ```bash
@@ -465,7 +525,8 @@ world-tool approval attest \
 - `--authenticated-actor`는 wrapper가 채운 값이어야 하며, prompt text, model output, staged input, Docker mount path에서 파생하면 안 된다. `world-tool`은 이 flag가 wrapper/request metadata의 authenticated actor와 일치하는지 확인하고, 해당 metadata가 없으면 flag 값과 무관하게 `AUTH_CONTEXT_MISSING`으로 실패한다.
 - `--auth-context-file`은 OpenCrabs trusted wrapper가 생성한 auth context 파일을 가리켜야 하며, selected world root 내부나 runtime-owned run directory에 있으면 안 된다. `--auth-context-hash`는 파일의 sha256 해시와 일치해야 하고, 파일의 `expires_at`이 만료되었으면 실패한다.
 - auth context 파일에는 `session_id`, `authenticated_actor`, `approval_channel`, `issued_at`, `expires_at`이 들어 있어야 하며, `world-tool`은 파일 내용과 `--approval-channel`, `--authenticated-actor`가 일치하는지 검증한다. `--approver-id`는 non-empty audit field로 검증하고 attestation payload에 기록한다.
-- test auth context는 wrapper가 explicit test fixture/mode를 선언한 경우에만 허용한다. fixture-backed context를 기본 운영 경로처럼 취급하면 안 된다.
+- test auth context는 `fixture_mode: true`를 명시한 local fixture와 `WORLD_TOOL_TEST_AUTH_CONTEXT=1` 환경변수가 둘 다 있을 때만 허용한다. 둘 중 하나라도 없으면 `AUTH_CONTEXT_TEST_MODE_REQUIRED` failed다.
+- 운영 기본 경로에서는 fixture mode를 provenance로 인정하지 않는다. fixture-backed context는 test-only 경로이며 production attestation provenance로 승격할 수 없다.
 - `approval attest`가 만든 attestation은 `draft accept`가 소비하기 전까지 `runs/inbox/`에만 머문다. `run get/list`는 이 inbox artifact를 노출하지 않는다.
 - local CLI 테스트에서는 wrapper가 제공하는 동일한 auth context mock을 명시적으로 주입해야 하며, 기본 interactive shell 문자열을 신뢰하지 않는다.
 
@@ -585,7 +646,7 @@ world-tool run recover --world ashen-continent --run-id 20260530-001 --json
 ## 17. OpenCrabs Dynamic Tool 매핑
 `~/.opencrabs/tools.toml`에는 의미 단위 tool을 등록한다.
 
-아래 예시는 canonical dynamic tool executor가 argv-safe shell executor이고, request payload를 `stdin = "{{input}}"`으로 명시적으로 바인딩한다고 가정한다. shell 텍스트 안에 raw interpolation만 붙이는 executor는 금지한다. 이런 조건을 만족시키지 못하는 executor에는 wrapper를 두어야 하며, wrapper는 fallback이 아니라 해당 조건을 만족시키기 위한 adapter다. `stdin = "{{input}}"`은 OpenCrabs request payload를 stdin으로 넘긴다는 뜻이며, `input`은 CLI argv가 아니라 request payload다.
+아래 예시는 canonical dynamic tool executor가 argv-safe shell executor이고, request payload를 `stdin = "{{input}}"`으로 명시적으로 바인딩한다고 가정한다. `stdin = "{{input}}"`은 supported field인 canonical pre-implementation contract로 취급한다. shell 텍스트 안에 raw interpolation만 붙이는 executor는 금지한다. 이런 조건을 만족시키지 못하는 executor에는 wrapper를 두어야 하며, wrapper는 fallback이 아니라 해당 조건을 만족시키기 위한 adapter다. `stdin = "{{input}}"`은 OpenCrabs request payload를 stdin으로 넘긴다는 뜻이며, `input`은 CLI argv가 아니라 request payload다.
 
 ```toml
 [[tools]]

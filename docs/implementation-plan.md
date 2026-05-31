@@ -152,8 +152,8 @@ draft를 canon과 비교해 구조 오류와 명백한 충돌을 탐지한다.
 - `change_type: update` 또는 `change_type: deprecate`에서 target_id가 없거나 id가 target_id와 다르면 `error`로 반환된다.
 - active draft path/type 규칙 위반은 `error`로 반환된다.
 - `change_type: create`에서 기존 canon id와 중복되는 draft는 `conflict`로 반환된다.
-- `change_type: update` 또는 `change_type: deprecate`의 target_id가 canon content에 없으면 `conflict`로 반환되며 `block_reason`은 `MISSING_TARGET`다.
-- 이미 존재하는 invalid draft를 `draft validate`하면 validation 결과를 반환하고 conflict issue로 `MISSING_TARGET`를 보고한다.
+- `draft create --change-type update|deprecate`에서 target_id가 canon content에 없으면 no-write blocked `MISSING_TARGET`로 종료한다.
+- 이미 존재하는 invalid draft를 `draft validate`하면 `command_status: "completed"`, `data.validation_status: "conflict"`, `issues[].code: "MISSING_TARGET"`로 보고하고 `data.block_reason`은 쓰지 않는다.
 - convenience field는 explicit relationships[]가 없어도 graph fact로 normalize된다.
 - convenience field와 explicit relationships[]가 같은 fact로 normalize되면 dedupe된다.
 - convenience field와 explicit relationships[]가 서로 다른 fact를 만들면 `conflict`로 반환된다.
@@ -340,7 +340,7 @@ MVP 이후 장기 운영과 maintenance path를 추가한다.
 - archive pruning/compression/export
 - retcon/versioning report
 - schema migration and migration report
-- `content migrate` report-only maintenance workflow
+- `content migrate --dry-run` report-only maintenance workflow
 - migration boundary fixture
 - OpenCrabs tool calling retry/timeout 정책
 - semantic search integration
@@ -354,8 +354,8 @@ MVP 이후 장기 운영과 maintenance path를 추가한다.
 - migration command는 report-only이며 content를 직접 변경하는 mutating mode를 제공하지 않는다.
 
 ### Migration workflow
-- `content migrate`는 report와 artifact만 남기는 post-MVP hardening maintenance path이며 content를 변경하지 않는다.
-- `content migrate`는 warning-only legacy/import 이슈를 actionable report로 묶고 blocked 항목과 분리하되 content를 직접 변경하지 않는다.
+- `content migrate`는 `--dry-run`만 허용하는 post-MVP hardening maintenance path이며 content를 변경하지 않는다. no-option과 `--apply`는 `INVALID_ARGUMENT`다.
+- `content migrate --dry-run`은 warning-only legacy/import 이슈를 actionable report로 묶고 blocked 항목과 분리하되 content를 직접 변경하지 않는다. no-option과 `--apply`는 `INVALID_ARGUMENT`다.
 - migration report는 source 문서, path move 여부, field normalization 결과, before/after hash, blocker 목록을 포함한다.
 - migration 완료 기준은 warning이 사라졌는지가 아니라, warning이 의사결정 가능한 action item으로 정리되고 blocked 항목이 남지 않았는지다.
 

@@ -66,7 +66,7 @@ opencrabs/tools/world-tools.toml
 
 canonical dynamic tool:
 
-아래 예시는 표준 command shape를 보여주는 pre-implementation contract다. OpenCrabs shell executor는 template 값을 argv-safe하게 escape해야 하며, 그렇지 못하면 raw text를 직접 보간하지 말고 request JSON file 또는 stdin payload를 받는 wrapper command로 바꿔야 한다.
+아래 예시는 표준 command shape를 보여주는 pre-implementation contract다. 현재 OpenCrabs TOML과 shell executor는 `executor = "shell"`, argv-safe template escaping, `stdin = "{{input}}"` payload binding을 지원한다고 가정한다. 이 필드를 지원하지 않는 runtime은 표준 adapter wrapper를 사용해야 하며, wrapper는 JSON request를 받아 argv/stdin/auth-context를 안전하게 주입해야 한다. auth metadata는 wrapper/session metadata에서만 와야 하고 prompt나 staged input에서 오면 안 된다.
 
 ```toml
 [[tools]]
@@ -78,7 +78,7 @@ stdin = "{{input}}"
 
 [[tools]]
 name = "world_list"
-description = "List configured worlds"
+description = "List canonical worlds"
 executor = "shell"
 command = "world-tool world list --json"
 
@@ -192,7 +192,7 @@ command = "world-tool run get --world {{world_id}} --run-id {{run_id}} --artifac
 template 변수는 OpenCrabs가 넣더라도 신뢰하지 않는다. `world-tool`은 `world_id`, `kind`, `type`, `id`, `scope`, `target_id`, `path`, `draft_path`, `query_file`, `query_hash`, `title_file`, `title_hash`, `body_file`, `body_hash`, `reason_file`, `reason_hash`, `retcon_reason_file`, `retcon_reason_hash`, `approver_id`, `approval_channel`, `approval_attestation_file`, `approval_attestation_hash`, `authenticated_actor`, `auth_context_file`, `auth_context_hash`, `run_id`, `diff_run_id`, `draft_hash`, `target_base_hash`, `patch_hash`, `artifact_name`를 다시 검증한다.
 
 ## 6. World Registry
-OpenCrabs나 `world-tool`은 world id를 world root로 해석해야 한다.
+world id는 registry 또는 harness provenance를 통해 root로 resolve한다. id 문자열 자체를 path로 취급하지 않는다.
 
 예시:
 
@@ -228,16 +228,16 @@ registry는 OpenCrabs 설정, 별도 world registry 파일, 또는 `world-tool` 
 
 registry path 자체는 world root 안에 둘 필요가 없다. 단, registry가 가리키는 root는 symlink 해석 후 absolute path로 고정하고, 이후 모든 파일 접근은 그 root 내부로 제한한다.
 
-`registry add`는 `--world`와 `--root`를 함께 받는 예외다. 그 외 command에서 `--world`와 `--root`가 동시에 지정되면 실패한다. canonical world 목록 조회는 `world list`이고, `registry list`는 registry 파일 자체를 점검하는 운영/관리 alias다.
+`registry add`는 `--world`, `--root`, `--title`을 모두 요구하는 registry-only mutation이다. 여기서 `null-root`는 world root를 열지 않는다는 뜻이며, `registry_root`, `root`, `run_id`가 null이라는 의미다. `registry add`의 `world_id`는 selected/target id를 담는다. `registry remove`와 `registry default`도 `--world`가 필수인 null-root command이며, 이들 역시 `registry_root`, `root`, `run_id`는 null이고 `world_id`에는 target id를 담는다. `registry list`와 `world list`는 `--world`/`--root`를 금지하는 조회 명령이고, 이 둘만 `world_id`, `registry_root`, `root`, `run_id`가 모두 null이다. `world list`는 canonical world 목록 조회이고, `registry list`는 registry 파일 자체를 점검하는 운영/관리 alias다.
 
 canonical root binding:
 
 | Concept | Meaning |
 | --- | --- |
-| `world_id` | registry가 식별하는 logical world key. Docker `--root` mode에서는 registry metadata나 `harness.yaml`에서 복원해야 하며 mount path로 추론하지 않는다. |
+| `world_id` | registry가 식별하는 logical world key. `registry add/remove/default`에서는 selected/target id를 담고, `registry list`와 `world list`에서는 null이다. Docker `--root` mode에서는 registry metadata나 `harness.yaml` provenance로 resolve해야 하며 id 문자열 자체를 path로 취급하지 않는다. |
 | `registry_root` | registry에 저장된 world root의 canonical path |
 | `root` | 실제 tool process가 접근하는 effective root |
-| audit fields | `world_id`, `registry_root`, `root`, `run_id` |
+| audit fields | command별로 `world_id`, `registry_root`, `root`, `run_id`의 null 여부를 구분해 기록한다. |
 
 native execution에서는 `registry_root == root`여야 한다. Docker에서는 registry_root와 effective root인 `root`가 달라질 수 있으므로, registry resolution과 audit logging이 둘을 구분해 기록해야 한다.
 
