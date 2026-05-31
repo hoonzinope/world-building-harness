@@ -34,6 +34,7 @@ examples/worlds/                   sample world roots and fixtures
 ```text
 world-tool world init
 world-tool registry add
+world-tool world list
 world-tool input stage  # title
 world-tool input stage  # body
 world-tool draft create
@@ -47,11 +48,12 @@ world-tool draft accept
 ## 구현 후 Quickstart 목표
 아래는 CLI가 구현된 뒤 통과해야 하는 첫 성공 경로다.
 `approval attest` 단계는 OpenCrabs trusted wrapper/session metadata로부터 생성된 `auth_context_file`/`auth_context_hash`를 사용하며, 이 파일은 world root 밖에서 만들어지고 prompt, model output, staged files는 신뢰하지 않는다.
-`draft create`는 명시적 `--id`를 입력으로 받고, 그 id에서 파생된 `draft_path`를 기준으로 validate, diff, approval attestation, accept가 이어진다.
+`draft create`는 명시적 `--id`를 입력으로 받고, `draft update/deprecate`는 명시적 `--target-id`를 사용한다. create에서 나온 id로 파생된 `draft_path`를 기준으로 validate, diff, approval attestation, accept가 이어진다.
 
 ```bash
 world-tool world init --root ./examples/worlds/ashen-continent --world-id ashen-continent --json
 world-tool registry add --world ashen-continent --root ./examples/worlds/ashen-continent --title "잿빛 대륙" --json
+world-tool world list --json
 world-tool input stage --world ashen-continent --kind title --stdin --json
 world-tool input stage --world ashen-continent --kind body --stdin --json
 world-tool draft create --world ashen-continent --change-type create --type nation --id nation_ashen_empire --title-file runs/inbox/<title-file> --title-hash <hash> --body-file runs/inbox/<body-file> --body-hash <hash> --json

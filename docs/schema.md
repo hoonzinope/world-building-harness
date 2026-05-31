@@ -102,7 +102,7 @@ relationships:
 ### Relationship normalization contract
 - `relationships[]`가 canonical graph다.
 - `affiliation`, `capital`, `headquarters`, `located_in`, `participants`, `locations`는 authoring convenience field다.
-- validator는 relationship metadata의 domain/range를 authority로 사용한다. convenience field는 allowlist type으로 정규화해 비교하며, range-side convenience field는 내부 inverse label을 거친 normalized fact와 비교한다. inverse label 자체는 authored relationship type이 아니다.
+- validator는 relationship metadata의 domain/range를 authority로 사용한다. convenience field는 allowlist type으로 정규화해 graph fact로 추가하며, range-side convenience field는 내부 inverse label을 거친 normalized fact와 비교한다. inverse label 자체는 authored relationship type이 아니다.
 - `character.affiliation: org_id` -> `(character_id, member_of, org_id)`
 - `nation.capital: place_id` -> `(place_id, capital_of, nation_id)`
 - `organization.headquarters: place_id` -> `(place_id, headquarters_of, organization_id)`
@@ -110,7 +110,10 @@ relationships:
 - `event.participants: [participant_id]` -> `(participant_id, participates_in, event_id)`
 - `event.locations: [place_id]` -> `(event_id, occurred_at, place_id)`
 - `affiliation`은 strict membership shorthand다. 더 느슨한 관계는 `relationships[]`의 `affiliated_with`를 직접 쓴다.
-- convenience field와 explicit `relationships[]`는 정규화 후 같은 fact를 표현해야 한다. 같은 fact로 normalize되지 않으면 conflict다.
+- convenience field는 matching explicit `relationships[]` edge가 없어도 graph fact로 normalize된다. explicit `relationships[]`는 extra note/edge metadata가 필요할 때만 작성하면 되고, 같은 fact로 normalize되면 dedupe된다.
+- 잘못된 shape나 비문자열 id는 validator error다.
+- convenience field와 explicit `relationships[]`가 정규화 후 서로 다른 fact를 만들면 conflict다.
+- duplicate exact fact는 하나로 dedupe된다.
 - convenience field가 여러 값이면 각 값은 별도 edge로 normalize된다.
 
 ### Relationship Type Allowlist

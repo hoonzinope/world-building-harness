@@ -66,7 +66,7 @@ OpenCrabs/Codex 생성물을 안정적으로 검사할 rule 기반 validator를 
 - relationship 검사
 - orphan related id 검사
 - validation report 생성
-- world별 validation strictness 설정
+- world별 validation strictness 설정은 post-MVP hardening에서 다룬다
 - frontmatter `retcon_reason`/source_run_id 기반 retcon 추적
 
 ### 완료 기준
@@ -122,7 +122,7 @@ OpenCrabs가 `world-tool`을 의미 단위 tool로 호출하게 한다.
 - 각 tool은 stdout JSON을 반환함
 - 범용 shell tool 없이 세계관 workflow를 수행할 수 있음
 - 긴 markdown body를 file/stdin 기반으로 전달하는 tool이 동작함
-- approval attestation은 auth-context provenance가 있으면 path/hash로 검증하고, raw actor 문자열만으로 승인 provenance를 만들지 않음
+- approval attestation은 auth-context provenance를 auth_context_file/auth_context_hash와 expiry까지 필수로 검증하고, raw actor 문자열만으로 승인 provenance를 만들지 않음
 - safe artifact retrieval은 명시적 basename allowlist와 path boundary 검증만 허용함
 - diff 확인과 accept 실행이 같은 diff_run_id/hash binding으로 묶임
 

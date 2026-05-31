@@ -69,6 +69,8 @@ dynamic tool은 `opencrab_exec_shell` 같은 범용 명령이 아니라 의미 �
 - `world_recover_run`
 - `world_get_run` (redacted manifest/status only by default)
 
+`world_create_draft`는 `--id`를 쓰는 create 전용 경로다. `world_create_update_draft`와 `world_create_deprecate_draft`는 `--target-id`를 쓰는 대상 canon 경로다.
+
 ### world-tool Layer
 Go 단일 바이너리다. OpenCrabs와 독립적으로 실행 가능해야 하며, 모든 출력은 `--json`을 지원한다.
 

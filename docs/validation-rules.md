@@ -131,7 +131,7 @@ accept validation에서는 related id가 content에 있어야 한다. active dra
 `--force`라도 missing related target, missing relationship target, 또는 active draft에만 존재하는 target은 bypass하지 못한다.
 
 ### VR-302: canonical relationship graph
-`relationships[]`는 canonical graph다. `relationships[].type`으로 authored 할 수 있는 값은 [schema.md](schema.md)의 allowlist `type` 열뿐이다. `affiliation`, `capital`, `headquarters`, `located_in`, `participants`, `locations`는 convenience field이며, validator는 relationship metadata의 domain/range를 authority로 사용해 이를 아래 authored type으로 normalize한다. range-side convenience field는 내부 inverse label을 거친 normalized fact와 비교하되, inverse label 자체는 authored relationship type이 아니다.
+`relationships[]`는 canonical graph다. `relationships[].type`으로 authored 할 수 있는 값은 [schema.md](schema.md)의 allowlist `type` 열뿐이다. `affiliation`, `capital`, `headquarters`, `located_in`, `participants`, `locations`는 convenience field이며, validator는 relationship metadata의 domain/range를 authority로 사용해 이를 아래 authored type으로 normalize하고 graph fact로 추가한다. range-side convenience field는 내부 inverse label을 거친 normalized fact와 비교하되, inverse label 자체는 authored relationship type이 아니다.
 
 - `character.affiliation: org_id` -> `(character_id, member_of, org_id)`
 - `nation.capital: place_id` -> `(place_id, capital_of, nation_id)`
@@ -141,7 +141,7 @@ accept validation에서는 related id가 content에 있어야 한다. active dra
 - `event.locations: [place_id]` -> `(event_id, occurred_at, place_id)`
 - `affiliation`은 strict membership shorthand다. 느슨한 관계는 `relationships[]`의 `affiliated_with`를 직접 사용한다.
 
-convenience field와 explicit `relationships[]`는 정규화 후 같은 fact를 표현해야 한다. 편의 필드가 배열이라면 각 값은 별도 edge로 normalize된다. 잘못된 shape, 비문자열 id, 중복이지만 의미가 다른 edge는 error다.
+convenience field는 matching explicit `relationships[]` edge가 없어도 graph fact로 normalize된다. explicit `relationships[]`는 extra note/edge metadata가 필요할 때만 작성하면 되고, convenience-normalized fact와 같은 fact로 normalize되면 dedupe된다. 편의 필드가 배열이라면 각 값은 별도 edge로 normalize된다. 잘못된 shape와 비문자열 id는 error다. convenience-normalized fact와 explicit relationship fact가 서로 다른 의미를 가지면 conflict다. duplicate exact fact는 dedupe한다.
 
 ### VR-303: relationship target 존재성
 draft validation에서는 relationships[].target이 content 또는 active draft에 없으면 warning이다. strict mode에서는 error로 올릴 수 있다.

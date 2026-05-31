@@ -90,7 +90,7 @@ Command별 path allowlist:
 - `draft read/validate/diff/accept/reject`: draft paths under `drafts/**/*.md`, staged reason/approval attestation inputs under `runs/inbox/**` read/consume only where the command defines them
 - `content validate`: `content/**/*.md`
 - `input stage`: `runs/inbox/**` write only
-- `approval attest`: `runs/inbox/**` write only for approval attestation artifacts
+- `approval attest`: `runs/inbox/**` write only for approval attestation artifacts; `--auth-context-file`/`--auth-context-hash` may read a trusted wrapper path outside the world root in read-only mode after hash/expiry validation
 - `run get`: 기본 redacted manifest/status summary만 반환하고, explicit safe artifact allowlist 또는 dedicated safe-artifact command가 있을 때만 추가 artifact를 읽는다. `runs/inbox/**`는 제외한다.
 - `run list`: immutable run index/summary files only, `runs/inbox/**` 제외
 - `run recover`: unresolved `recovery.json`을 정리하는 repair path
@@ -157,7 +157,7 @@ force accept는 가능하지만 reason만으로는 부족하다. `reason_file`/`
 
 force accept 제한:
 - semantic/timeline/relationship conflict 후보만 우회 대상으로 삼는다.
-- path violation, inactive draft, malformed markdown/YAML, 필수 field 누락, id conflict, target path 충돌, storylet canon 승격, diff binding mismatch, atomic write 실패, lock 실패는 force로 우회할 수 없다.
+- missing related target, missing relationship target, active-draft-only target, path violation, inactive draft, malformed markdown/YAML, 필수 field 누락, id conflict, target path 충돌, storylet canon 승격, diff binding mismatch, atomic write 실패, lock 실패는 force로 우회할 수 없다.
 
 warning은 accept를 차단하지 않지만, accept reason에 warning을 확인했다는 맥락을 남긴다.
 

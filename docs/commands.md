@@ -23,11 +23,11 @@ world-tool [global flags] <resource> <action> [command flags]
 --registry <path>       world registry 파일 경로
 --json                  machine-readable JSON output
 --run-id <id>           기존 run에 후속 event/artifact 추가
---dry-run               파일 변경 없이 diff와 계획만 출력
+--dry-run               domain/canon/registry/draft/archive state mutation 없이 diff와 계획만 출력; command policy에 따라 run/audit/report artifact는 여전히 쓸 수 있음
 --verbose               상세 로그 출력(stderr only)
 ```
 
-`registry list`와 `world list`는 `--world`/`--root`를 받지 않는다. `registry add`는 `--world`와 `--root`를 함께 받는다. `world init`은 `--root`를 받으며 새 world 생성 시 `--world-id`를 함께 받는다. 그 외 command는 `--world`와 `--root` 중 정확히 하나가 필수이며, 둘 다 지정하면 실패한다.
+`registry list`, `registry remove`, `registry default`, `world list`는 `--world`/`--root`를 받지 않는 registry-only/null-root command다. 이들은 `run_id`, `root`, `world_id`를 null로 둔다. `registry add`는 registry-only mutation이지만 `--world`와 `--root`를 함께 받으며, selected registry entry를 나타내기 위해 `world_id`를 포함할 수 있으나 `run_id`와 `root`는 null이다. `world init`은 `--root`를 받으며 새 world 생성 시 `--world-id`를 함께 받는다. 그 외 command는 `--world`와 `--root` 중 정확히 하나가 필수이며, 둘 다 지정하면 실패한다.
 
 `--root` 모드에서는 logical world id를 반드시 고정해야 한다. 새 world를 만드는 `world init`은 `--world-id`를 필수로 받으며, 이미 `harness.yaml`이 있는 root를 여는 command는 `harness.yaml`의 world id를 우선 사용한다. `harness.yaml`이 없는데 `--root`만 주어졌다면 `--world-id`가 없으면 실패한다.
 
@@ -66,7 +66,7 @@ Canonical command order:
 Top-level field 규칙:
 - 모든 JSON은 `schema_version`, `ok`, `command_status`, `command`, `data`, `issues`, `available_actions`를 가진다.
 - world root를 여는 command는 `world_id`, `registry_root`, `root`, `run_id`를 가진다. `world_id`는 `--world`나 `--root`+`--world-id`, 또는 `harness.yaml`에서 resolved된 값이다. `registry_root`는 registry 또는 명시적 `--root`로 선택된 canonical root이고, `root`는 현재 process가 실제로 접근하는 effective root다. container/bind-mount 환경에서는 둘이 다를 수 있다.
-- `registry list`, `world list`, `registry add`처럼 world root를 열지 않는 command는 `world_id`, `registry_root`, `root`, `run_id`를 null로 둘 수 있다.
+- `registry list`, `registry remove`, `registry default`, `world list`처럼 world root를 열지 않는 registry-only/null-root command는 `world_id`, `registry_root`, `root`, `run_id`를 null로 둔다. `registry add`는 registry-only mutation이지만 selected world를 식별하기 위해 `world_id`를 포함할 수 있고, `registry_root`, `root`, `run_id`는 null이다.
 - `ok: false`인 경우 `error.code`와 `error.message`가 필수다.
 - validation severity는 top-level에 두지 않고 `data.validation_status`에만 둔다.
 - blocked 결과는 `data.block_reason`에 block code를 담고, 필요하면 `data.validation_status`도 함께 반환한다.
@@ -234,6 +234,8 @@ world-tool registry default --world ashen-continent --json
 - root path normalize와 존재 여부 검사
 - default world 선택
 
+`registry list`, `registry remove`, `registry default`는 registry-only/null-root command라서 `world_id`, `root`, `run_id`를 반환하지 않는다. `registry add`는 registry-only mutation이지만 selected world를 식별하기 위해 `world_id`를 포함할 수 있고, `root`와 `run_id`는 반환하지 않는다.
+
 `--registry` 해석 우선순위:
 1. command flag `--registry <path>`
 2. 환경변수 `WORLD_TOOL_REGISTRY`
@@ -251,6 +253,8 @@ world-tool world init --root ./worlds/ashen-continent --world-id ashen-continent
 - world root 기본 구조 생성
 - `harness.yaml` 생성
 - content/drafts/runs/archive 상태 요약
+
+`world list`는 registry-only/null-root command라서 `world_id`, `root`, `run_id`를 반환하지 않는다.
 
 `world init`은 registry를 자동 수정하지 않는다. registry 등록은 `registry add`로 명시적으로 수행한다.
 
@@ -294,6 +298,7 @@ world-tool input stage --world ashen-continent --kind retcon_reason --stdin --js
 - 기본 크기 상한은 입력 하나당 1 MiB다.
 - 후속 command가 staging file을 읽으면 해당 run artifact로 복사하고 inbox 원본은 삭제하거나 consumed marker를 남긴다.
 - staged input을 후속 command가 소비할 때는 반드시 해당 파일 경로와 대응하는 hash를 함께 넘겨야 한다. `world-tool`은 파일을 다시 해시해서 `input_hash`와 비교하고, 불일치하면 `command_status: "failed"`와 `error.code: "INPUT_HASH_MISMATCH"`를 반환한다.
+- `input.stage`의 JSON 출력은 항상 `input_path`와 `input_hash`를 유지한다. OpenCrabs dynamic tools는 이 값을 `{{kind}}_file`과 `{{kind}}_hash`로 재매핑해서 후속 tool call에 넘긴다. 예를 들어 `kind: query`는 `query_file`/`query_hash`, `kind: title`은 `title_file`/`title_hash`가 된다.
 
 ## 8. doc
 ```bash
@@ -359,6 +364,7 @@ world-tool draft read --world ashen-continent --draft drafts/nations/nation_ashe
 정책:
 - `draft create`는 `--change-type`이 필수다. `--change-type`이 없거나 `--change-type`과 나머지 인자 조합이 맞지 않으면 CLI argument 오류로 `command_status: "failed"`와 `error.code: "INVALID_ARGUMENT"`를 반환한다.
 - `create`는 `--type`과 `--id`가 필수이고 `--target-id`를 받지 않는다.
+- `update`와 `deprecate`는 `--target-id`가 explicit draft/content id다. 이 change type에서는 `--id`를 받지 않으며, `--id`를 넘기면 `INVALID_ARGUMENT`로 실패한다.
 - `world-tool`은 document-types metadata를 조회해 `type`에 대한 `id` format/prefix를 검증하고, draft/content path를 `type+id`에서 직접 파생한다. title에서 implicit ID를 생성하지 않는다.
 - `create`는 같은 id가 content에 있으면 `ID_CONFLICT`로 blocked다.
 - `update`와 `deprecate`는 `--target-id`와 `--retcon-reason-file`이 필수이고, `--target-id`가 content에 존재해야 한다.
@@ -379,7 +385,7 @@ world-tool content migrate --world ashen-continent --dry-run --json
 - storylet canon 존재 여부 차단
 - schema migration 필요 문서 보고
 - `content migrate`는 이 계약에서 report-only다. partial apply나 `--apply`는 허용하지 않는다.
-- `content migrate --dry-run`은 content를 변경하지 않고 `runs/<run-id>/migration.json`, `migration.md`, `migration-actions.jsonl`을 생성한다. 반환 `data`에는 최소한 `migration_run_id`, `migration_report_path`, `migration_actions_path`, `candidates`, `blockers`, `partial_apply: false`가 있어야 하고, `available_actions`는 비어 있어야 한다.
+- `content migrate --dry-run`은 content를 변경하지 않지만 `runs/<run-id>/migration.json`, `migration.md`, `migration-actions.jsonl` 같은 run/report artifacts는 생성할 수 있다. 반환 `data`에는 최소한 `migration_run_id`, `migration_report_path`, `migration_actions_path`, `candidates`, `blockers`, `partial_apply: false`가 있어야 하고, `available_actions`는 비어 있어야 한다.
 - migration blocker가 남아 있으면 `command_status: "blocked"`와 `data.block_reason: "MIGRATION_BLOCKED"`를 반환
 
 ## 11. draft validate
@@ -512,7 +518,7 @@ Accept 정책:
 - accept 성공 시 `data.approval`은 `approver_id`, `approval_channel`, `authenticated_actor`, `approval_attestation_path`, `reason_path`를 포함해야 한다.
 
 Diff binding 정책:
-- accept는 `--diff-run-id`, `--draft-hash`, `--target-base-hash`, `--patch-hash`가 모두 없으면 `DIFF_BINDING_REQUIRED`로 blocked다.
+- accept는 `--diff-run-id`, `--draft-hash`, `--target-base-hash`, `--patch-hash` 중 하나라도 없으면 `DIFF_BINDING_REQUIRED`로 blocked다.
 - 현재 draft hash가 `--draft-hash`와 다르면 `DIFF_BINDING_MISMATCH`다.
 - 현재 target content hash가 `--target-base-hash`와 다르면 `DIFF_BINDING_MISMATCH`다.
 - diff artifact의 patch hash가 `--patch-hash`와 다르면 `DIFF_BINDING_MISMATCH`다.
@@ -606,13 +612,13 @@ command = "world-tool draft create --world {{world_id}} --change-type create --t
 
 [[tools]]
 name = "world_create_update_draft"
-description = "Create an update/retcon draft for an existing canon document"
+description = "Create an update/retcon draft for an existing canon document using explicit target-id"
 executor = "shell"
 command = "world-tool draft create --world {{world_id}} --change-type update --target-id {{target_id}} --title-file {{title_file}} --title-hash {{title_hash}} --body-file {{body_file}} --body-hash {{body_hash}} --retcon-reason-file {{retcon_reason_file}} --retcon-reason-hash {{retcon_reason_hash}} --json"
 
 [[tools]]
 name = "world_create_deprecate_draft"
-description = "Create a deprecation draft for an existing canon document"
+description = "Create a deprecation draft for an existing canon document using explicit target-id"
 executor = "shell"
 command = "world-tool draft create --world {{world_id}} --change-type deprecate --target-id {{target_id}} --title-file {{title_file}} --title-hash {{title_hash}} --body-file {{body_file}} --body-hash {{body_hash}} --retcon-reason-file {{retcon_reason_file}} --retcon-reason-hash {{retcon_reason_hash}} --json"
 
@@ -683,6 +689,8 @@ executor = "shell"
 command = "world-tool run get --world {{world_id}} --run-id {{run_id}} --artifact {{artifact_name}} --json"
 ```
 
-OpenCrabs는 query/title/body/reason/retcon_reason을 command template에 직접 넣지 않는다. 먼저 `world_stage_input`으로 `runs/inbox/` path를 만들고, approval attestation은 `world_create_approval_attestation`으로 attestation path/hash를 만든 뒤 후속 tool에는 path와 hash만 넘긴다. `world_search_docs`는 `--scope active`를 명시하고, 각 후속 command는 대응하는 `--*-hash`를 함께 전달해야 한다. `world_get_run_artifact`는 basename allowlist에 있는 `artifact_name`만 읽는다.
+OpenCrabs는 query/title/body/reason/retcon_reason을 command template에 직접 넣지 않는다. 먼저 `world_stage_input`으로 `runs/inbox/` path를 만들고, 그 JSON 결과의 `input_path`/`input_hash`를 kind별로 `{{kind}}_file`/`{{kind}}_hash` 변수에 재매핑한 뒤 후속 tool에는 path와 hash만 넘긴다. approval attestation은 `world_create_approval_attestation`으로 attestation path/hash를 만든 뒤 후속 tool에는 path와 hash만 넘긴다. `world_search_docs`는 `--scope active`를 명시하고, 각 후속 command는 대응하는 `--*-hash`를 함께 전달해야 한다. `world_get_run_artifact`는 basename allowlist에 있는 `artifact_name`만 읽는다.
+
+`world_create_draft`는 `--id`를 사용하고, `world_create_update_draft`와 `world_create_deprecate_draft`는 `--target-id`를 사용한다. update/deprecate change type에는 별도의 `--id` mapping을 두지 않는다.
 
 모든 template 변수는 OpenCrabs가 넣더라도 신뢰하지 않는다. `world-tool`이 `world_id`, `kind`, `type`, `id`, `scope`, `target_id`, `path`, `draft_path`, `query_file`, `query_hash`, `title_file`, `title_hash`, `body_file`, `body_hash`, `reason_file`, `reason_hash`, `retcon_reason_file`, `retcon_reason_hash`, `approver_id`, `approval_channel`, `auth_context_file`, `auth_context_hash`, `approval_attestation_file`, `approval_attestation_hash`, `authenticated_actor`, `run_id`, `diff_run_id`, `draft_hash`, `target_base_hash`, `patch_hash`, `artifact_name`를 다시 검증한다.

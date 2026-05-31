@@ -121,6 +121,9 @@ sequenceDiagram
 
     User->>OpenCrabs: "북부 제국 설정 만들어줘"
     OpenCrabs->>Skill: world-building rules apply
+    OpenCrabs->>Tool: world_list()
+    Tool->>WT: world-tool world list --json
+    WT-->>OpenCrabs: registry listing
     OpenCrabs->>Tool: world_status(world_id)
     Tool->>WT: world-tool world status --world ashen-continent --json
     WT->>World: read content/drafts/runs
@@ -150,8 +153,8 @@ sequenceDiagram
     OpenCrabs-->>User: id + draft summary + validation + next actions
 ```
 
-위 시퀀스는 schematic이지만 command contract를 깨지 않도록 필수 인자 `--world`, 파일 경로 입력, hash binding, approval attestation/provenance를 명시한다.
-`diff_run_id`/`draft_hash`/`target_base_hash`/`patch_hash`는 `world_diff_draft`의 출력이고, `reason_file`/`reason_hash`와 `title_file`/`title_hash`/`body_file`/`body_hash` 같은 staged file hash는 `world_stage_input`의 출력이다. `world_create_approval_attestation`은 이 값들을 trusted auth context wrapper의 `auth_context_file`/`auth_context_hash`와 묶는다.
+위 시퀀스는 schematic이지만 command contract를 깨지 않도록 필수 인자 `--world`, 파일 경로 입력, hash binding, approval attestation/provenance를 명시한다. `registry add`와 `world list`는 `--world`가 필요한 status/search/draft command보다 먼저 world_id→root 해석을 확정한다.
+`diff_run_id`/`draft_hash`/`target_base_hash`/`patch_hash`는 `world_diff_draft`의 출력이고, `reason_file`/`reason_hash`와 `title_file`/`title_hash`/`body_file`/`body_hash` 같은 staged file hash는 `world_stage_input`의 출력이다. `world_create_approval_attestation`은 `reason_hash`만 diff binding에 묶고, `reason_file`/`reason_hash`는 `world_accept_draft`/`world_force_accept_draft`가 소비한다. `world_create_approval_attestation`은 이 값들을 trusted auth context wrapper의 `auth_context_file`/`auth_context_hash`와 함께 확인한다.
 
 ## 7. Accept 흐름
 ```mermaid
@@ -171,7 +174,7 @@ sequenceDiagram
     OpenCrabs->>Tool: world_stage_input(kind=reason)
     Tool->>WT: world-tool input stage --world ashen-continent --kind reason --stdin --json
     WT-->>OpenCrabs: reason_file + reason_hash
-    OpenCrabs->>Tool: world_create_approval_attestation(diff_run_id, draft_hash, target_base_hash, patch_hash, reason_hash, approver_id, approval_channel, authenticated_actor, auth_context_file, auth_context_hash)
+    OpenCrabs->>Tool: world_create_approval_attestation(diff_run_id, draft_hash, target_base_hash, patch_hash, approver_id, approval_channel, authenticated_actor, auth_context_file, auth_context_hash, reason_hash)
     Tool->>WT: world-tool approval attest --world ashen-continent --diff-run-id 20260530-010 --draft-hash sha256:... --target-base-hash sha256:... --patch-hash sha256:... --approver-id park.hana --approval-channel OpenCrabs-chat --authenticated-actor openid:codex-oauth:user-123 --auth-context-file /tmp/opencrabs-auth-context.json --auth-context-hash sha256:... --reason-hash sha256:... --json
     WT-->>OpenCrabs: approval_attestation_file + approval_attestation_hash
     OpenCrabs->>Tool: world_accept_draft(draft_path, diff_run_id, draft_hash, target_base_hash, patch_hash, reason_file, reason_hash, approval_attestation_file, approval_attestation_hash, approver_id, approval_channel, authenticated_actor)
@@ -318,16 +321,18 @@ internal/audit
 ## 11. 구현 순서
 1. Go module과 `world-tool --version`
 2. world root resolver와 path boundary
-3. `world-tool world init/status`
-4. Markdown/frontmatter parser
-5. `input stage`
-6. `draft create/read/list/update`
-7. `draft validate`
-8. `draft diff`
-9. `draft accept/reject`
-10. `opencrabs/skills/world-building/SKILL.md`
-11. `opencrabs/tools/world-tools.toml`
-12. sample world root와 end-to-end smoke test
+3. `world-tool registry add`
+4. `world-tool world list`
+5. `world-tool world init/status`
+6. Markdown/frontmatter parser
+7. `input stage`
+8. `draft create/read/list/update`
+9. `draft validate`
+10. `draft diff`
+11. `draft accept/reject`
+12. `opencrabs/skills/world-building/SKILL.md`
+13. `opencrabs/tools/world-tools.toml`
+14. sample world root와 end-to-end smoke test
 
 ## 12. 설계 판단
 - OpenCrabs가 이미 provider, skill, dynamic tools, channel UX를 제공하므로 별도 agent runtime을 만들지 않는다.
@@ -353,6 +358,8 @@ internal/audit
 
 ```text
 world-tool world init
+→ world-tool registry add
+→ world-tool world list
 → world-tool input stage --kind title
 → world-tool input stage --kind body
 → world-tool draft create

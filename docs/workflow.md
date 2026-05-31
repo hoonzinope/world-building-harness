@@ -51,7 +51,7 @@ receive user request in OpenCrabs
 3. `world_search_docs(scope=active)` 또는 `world_read_doc`으로 관련 canon 로딩
 4. OpenCrabs/Codex가 draft markdown 후보 생성
 5. title와 body를 각각 `world_stage_input`으로 staging
-6. 명시적 id를 정한 뒤 `world_create_draft`를 호출해 `draft_path`를 받는다
+6. create용 명시적 `--id`를 정한 뒤 `world_create_draft`를 호출해 `draft_path`를 받는다. update/deprecate는 명시적 `--target-id`를 사용한다.
 7. `world_validate_draft` 호출
 8. validation summary와 id/`draft_path` 반환
 

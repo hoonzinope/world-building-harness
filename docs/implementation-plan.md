@@ -59,7 +59,7 @@ Go CLI와 OpenCrabs bundle을 구현할 기본 디렉토리를 만든다.
 - `harness.yaml` 기본 설정 로딩
 - path normalization
 - symlink escape 차단
-- world root 밖 read/write 차단. 단, `approval attest`의 trusted wrapper auth context file은 hash/expiry 검증 후 read-only 예외로 허용
+- world root 밖 read/write 차단. 단, `approval attest`의 trusted wrapper auth_context_file/auth_context_hash는 expiry 검증을 포함한 hash 검증 후 read-only 예외로 허용
 - `runs/inbox/` staging path 검증
 - world root lock helper
 - atomic write helper
@@ -70,7 +70,7 @@ Go CLI와 OpenCrabs bundle을 구현할 기본 디렉토리를 만든다.
 
 ### 완료 기준
 - `world init`이 `content/`, `drafts/`, `runs/`, `archive/`, `graph/`, `harness.yaml`을 생성한다.
-- `../`, absolute path, symlink를 통한 root 밖 접근이 차단된다. 단, `--auth-context-file`은 `approval attest`에서만 명시 hash/expiry 검증을 거친 read-only 예외다.
+- `../`, absolute path, symlink를 통한 root 밖 접근이 차단된다. 단, `--auth-context-file`은 `approval attest`에서만 auth_context_file/auth_context_hash와 expiry를 명시적으로 검증한 read-only 예외다.
 - `--query-file`, `--title-file`, `--body-file`, `--reason-file`, `--retcon-reason-file`도 `runs/inbox/` 아래 상대 경로만 허용된다.
 - path violation은 JSON error와 non-zero exit code를 반환한다.
 - `input stage`와 `approval attest`만 `runs/inbox/`에 staging file을 생성할 수 있다.
@@ -135,8 +135,7 @@ draft를 canon과 비교해 구조 오류와 명백한 충돌을 탐지한다.
 - missing target_id rule
 - target id mismatch rule
 - relationship target existence rule
-- relationship normalization and consistency rule
-- convenience-vs-explicit relationship conflict rule
+- relationship normalization, dedupe, and consistency rule
 - inverse/symmetric contradiction rule
 - timeline/event consistency rule
 - target path conflict rule
@@ -151,7 +150,10 @@ draft를 canon과 비교해 구조 오류와 명백한 충돌을 탐지한다.
 - `change_type: update` 또는 `change_type: deprecate`에서 target_id가 없거나 id가 target_id와 다르면 `error`로 반환된다.
 - active draft path/type 규칙 위반은 `error`로 반환된다.
 - `change_type: create`에서 기존 canon id와 중복되는 draft는 `conflict`로 반환된다.
-- convenience field와 explicit relationships[]가 같은 fact로 normalize되지 않으면 `conflict`로 반환된다.
+- convenience field는 explicit relationships[]가 없어도 graph fact로 normalize된다.
+- convenience field와 explicit relationships[]가 같은 fact로 normalize되면 dedupe된다.
+- convenience field와 explicit relationships[]가 서로 다른 fact를 만들면 `conflict`로 반환된다.
+- 잘못된 shape나 비문자열 id는 `error`로 반환된다.
 - inverse/symmetric contradiction은 `conflict`로 반환된다.
 - accept validation에서 active draft에만 존재하는 relationship target은 `conflict`로 반환된다.
 - 알 수 없는 relationship type과 domain/range mismatch는 `conflict`로 반환된다.
@@ -235,7 +237,7 @@ OpenCrabs가 `world-tool`을 범용 shell이 아니라 의미 단위 tool로 호
 - 각 tool은 stdout JSON만 반환한다.
 - 긴 query/title/body/reason/retcon_reason은 `runs/inbox/` staging file 또는 stdin 방식으로 전달된다.
 - `world_stage_input`이 staging file을 만들고 후속 tool은 path/hash만 받는다.
-- `world_create_approval_attestation`은 trusted auth context provenance를 path/hash로도 검증할 수 있으면 그렇게 하고, raw actor 문자열만으로 승인 provenance를 만들지 않는다.
+- `world_create_approval_attestation`은 auth_context_file/auth_context_hash와 expiry를 항상 검증하고, raw actor 문자열만으로 승인 provenance를 만들지 않는다.
 - `world_accept_draft`는 diff binding 값을 필수로 받는다.
 - `world_get_run_artifact`는 safe artifact basename allowlist와 path boundary 검증을 강제하고, inbox payload나 unredacted sensitive artifact는 노출하지 않는다.
 - staged-input-consuming commands는 hash mismatch를 command-level `INPUT_HASH_MISMATCH`로 반환한다.
