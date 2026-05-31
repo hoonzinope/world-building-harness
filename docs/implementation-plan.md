@@ -60,7 +60,7 @@ Go CLI와 OpenCrabs bundle을 구현할 기본 디렉토리를 만든다.
 - `harness.yaml` 기본 설정 로딩
 - path normalization
 - symlink escape 차단
-- world root document/artifact 밖 read/write 차단. 단, registry/config 파일은 world root 밖에 둘 수 있으므로 registry path는 별도 path validation을 거치고 `registry add/list/remove/default`는 null-root registry file 설정에서도 동작해야 하며, `approval attest`의 trusted wrapper auth_context_file/auth_context_hash는 production에서는 configured wrapper-owned auth-context boundary 위치 검증을 먼저 통과한 뒤 signature/MAC 또는 configured wrapper trust-material 검증과 expected issuer/audience/scope policy를 통과한 경우에만 read-only 예외로 허용하고, `auth_context_hash`는 integrity binding만 담당한다
+- world root document/artifact 밖 read/write 차단. 단, registry/config 파일은 world root 밖에 둘 수 있으므로 registry path는 별도 path validation을 거치고 `registry add/list/remove/default`는 null-root registry file 설정에서도 동작해야 하며, `approval attest`의 trusted wrapper auth_context_file/auth_context_hash는 production auth context input이 configured wrapper-owned auth-context boundary의 normalized regular file 또는 trusted request-file/FD mechanism을 먼저 만족하고 traversal/symlink/selected world root/runtime-owned run dir/staged inbox를 hash/parse/signature/MAC/trust-material 검증 전에 거부한 뒤 signature/MAC 또는 configured wrapper trust-material 검증과 expected issuer/audience/scope/expiry policy를 통과한 경우에만 read-only 예외로 허용하며, `auth_context_hash`는 integrity binding만 담당한다
 - `runs/inbox/` staging path 검증
 - world root lock helper
 - atomic write helper
@@ -71,7 +71,7 @@ Go CLI와 OpenCrabs bundle을 구현할 기본 디렉토리를 만든다.
 
 ### 완료 기준
 - `world init`이 `content/`, `drafts/`, `runs/`, `archive/`, `graph/`, `harness.yaml`을 생성한다.
-- `../`, absolute path, symlink를 통한 root 밖 접근이 차단된다. 단, registry/config 파일은 path validation을 거친 null-root registry 설정에서 예외적으로 허용되며, `--auth-context-file`은 `approval attest`에서만 configured wrapper-owned auth-context boundary 위치 검증을 먼저 통과한 production trusted auth context input으로서 signature/MAC 또는 configured wrapper trust-material 검증과 expected issuer/audience/scope policy, 그리고 `--auth-context-hash` integrity binding을 함께 검증한 read-only 예외다. local fixture mode는 `WORLD_TOOL_TEST_AUTH_CONTEXT=1` explicit opt-in 테스트 전용 경로다.
+- `../`, absolute path, symlink를 통한 root 밖 접근이 차단된다. 단, registry/config 파일은 path validation을 거친 null-root registry 설정에서 예외적으로 허용되며, `--auth-context-file`은 `approval attest`에서만 production auth context input이 configured wrapper-owned auth-context boundary의 normalized regular file 또는 trusted request-file/FD mechanism을 먼저 만족하고 traversal/symlink/selected world root/runtime-owned run dir/staged inbox를 hash/parse/signature/MAC/trust-material 검증 전에 거부한 뒤 signature/MAC 또는 configured wrapper trust-material 검증과 expected issuer/audience/scope/expiry policy를 통과하며 `--auth-context-hash`는 integrity binding으로만 사용되는 read-only 예외다. local fixture mode는 `WORLD_TOOL_TEST_AUTH_CONTEXT=1` explicit opt-in test-only 경로다.
 - `--query-file`, `--title-file`, `--body-file`, `--reason-file`, `--retcon-reason-file`도 `runs/inbox/` 아래 상대 경로만 허용된다.
 - path violation은 JSON error와 non-zero exit code를 반환한다.
 - `input stage`와 `approval attest`만 `runs/inbox/`에 staging file을 생성할 수 있다.
@@ -201,12 +201,12 @@ draft를 canon과 비교해 구조 오류와 명백한 충돌을 탐지한다.
 - `run list`는 immutable run summary만 반환하고 `runs/inbox/**`를 노출하지 않는다.
 - `run get`은 recovery inspection에 필요한 최소 run metadata와 artifact 참조를 조회할 수 있다.
 - `run get --artifact <basename>`은 basename allowlist를 통과한 safe artifact만 제공하고, `runs/inbox/**`는 제외하며, redacted/safe artifact만 노출한다.
-- `run get`은 redacted manifest/status를 반환하고, `run get --artifact`는 redacted recovery metadata 같은 allowlisted safe artifact만 제공하며 inbox/sensitive artifact는 거부하고, `run recover` 전에 unresolved recovery를 inspection할 수 있어야 한다.
+- `run get`은 redacted manifest/status를 반환하고, `run get --artifact`는 redacted recovery metadata 같은 allowlisted safe artifact만 제공하며 inbox/sensitive artifact는 거부하고, `world_list_runs -> world_get_run -> world_get_run_artifact -> world_recover_run` 순서로 `run recover` 전에 unresolved recovery를 inspection할 수 있어야 한다.
 - accept는 diff binding이 없거나 불일치하면 blocked다.
 - conflict/error가 있으면 기본 accept가 blocked다.
 - force accept는 missing target, missing related target, missing relationship target, missing update/deprecate target, active draft-only target, path/type/id/schema 불일치, structural error, id conflict, target path conflict, diff binding mismatch, storylet canon 승격, atomic write 실패, lock 실패는 우회할 수 없다. reason 누락은 `INVALID_ARGUMENT` failed로, auth context/attestation provenance 문제는 대응하는 `AUTH_CONTEXT_*` 또는 attestation/hash mismatch failed로 처리한다.
 - force accept는 semantic/timeline/relationship conflict 후보 중 referenced target이 모두 canon content에 있는 경우에만 제한적으로 우회할 수 있다.
-- `approval attest`는 `WORLD_TOOL_TEST_AUTH_CONTEXT=1` explicit opt-in test fixture 경로와 trusted wrapper boundary를 연결하며, production auth context input은 먼저 configured wrapper-owned auth-context boundary의 normalized regular file 또는 trusted request-file/FD mechanism을 만족해야 하고, traversal/symlink/selected world root/runtime-owned run dir/staged inbox는 hash/parse/signature/MAC/trust-material 검증 전에 거부되며, 그 뒤에 signature/MAC 또는 configured wrapper trust-material 검증과 expected issuer/audience/scope policy를 통과해야 하고, `auth_context_hash`는 integrity binding으로만 사용된다.
+- `approval attest`는 `WORLD_TOOL_TEST_AUTH_CONTEXT=1` explicit opt-in test fixture 경로와 trusted wrapper boundary를 연결하며, production auth context input은 먼저 configured wrapper-owned auth-context boundary의 normalized regular file 또는 trusted request-file/FD mechanism을 만족해야 하고, traversal/symlink/selected world root/runtime-owned run dir/staged inbox는 hash/parse/signature/MAC/trust-material 검증 전에 거부되며, 그 뒤에 signature/MAC 또는 configured wrapper trust-material 검증과 expected issuer/audience/scope/expiry policy를 통과해야 하고, `auth_context_hash`는 integrity binding으로만 사용된다.
 - accept 성공 시 content 문서가 생성 또는 갱신된다.
 - accept 성공 시 draft 원본은 `archive/accepted/`로 이동한다.
 - 모든 변경은 runs artifact로 추적 가능하다.
@@ -264,10 +264,10 @@ OpenCrabs가 `world-tool`을 범용 shell이 아니라 의미 단위 tool로 호
 - 각 tool은 stdout JSON만 반환한다.
 - 긴 query/title/body/reason/retcon_reason은 `runs/inbox/` staging file 또는 stdin 방식으로 전달된다.
 - `world_stage_input`이 staging file을 만들고 후속 tool은 path/hash만 받는다.
-- trusted wrapper/adapter가 authenticated session metadata를 받아 `auth_context_file`을 생성하고, 해당 파일의 hash를 계산해 `auth_context_hash`와 함께 tool 변수로 채운다. production auth context input은 configured wrapper-owned auth-context boundary의 normalized regular file 또는 trusted request-file/FD alternative를 먼저 통과해야 하며, traversal/symlink/selected world root/runtime-owned run dir/staged inbox는 hash/parse/signature/MAC/trust-material 검증 전에 거부되어야 한다. 그 다음 signature/MAC 또는 configured wrapper trust-material 검증과 expected issuer/audience/scope policy를 통과해야 하고, `auth_context_hash`는 integrity binding이다.
+- trusted wrapper/adapter가 authenticated session metadata를 받아 `auth_context_file`을 생성하고, 해당 파일의 hash를 계산해 `auth_context_hash`와 함께 tool 변수로 채운다. production auth context input은 configured wrapper-owned auth-context boundary의 normalized regular file 또는 trusted request-file/FD alternative를 먼저 통과해야 하며, traversal/symlink/selected world root/runtime-owned run dir/staged inbox는 hash/parse/signature/MAC/trust-material 검증 전에 거부되어야 한다. 그 다음 signature/MAC 또는 configured wrapper trust-material 검증과 expected issuer/audience/scope/expiry policy를 통과해야 하고, `auth_context_hash`는 integrity binding이다.
 - `auth_context_file`의 trusted contents는 expiry, scope, session metadata, approval channel, authenticated actor, downstream_action provenance 등이다. wrapper는 세션 종료 또는 attestation 사용 후 이를 정리/무효화한다. local fixture mode는 `WORLD_TOOL_TEST_AUTH_CONTEXT=1` explicit opt-in 테스트 전용 경로이며, local fixture는 production auth context provenance로 승격될 수 없다.
 - `approver_id`는 CLI/template input으로 별도 전달되는 non-authoritative audit/display label로 attestation과 audit에 기록된다.
-- `world_create_approval_attestation`은 wrapper가 주입한 `auth_context_file/auth_context_hash`, expected issuer/audience/scope policy, actor/channel provenance를 항상 검증하고, raw actor 문자열만으로 승인 provenance를 만들지 않는다.
+- `world_create_approval_attestation`은 wrapper가 주입한 `auth_context_file/auth_context_hash`, expected issuer/audience/scope/expiry policy, actor/channel provenance를 항상 검증하고, raw actor 문자열만으로 승인 provenance를 만들지 않는다.
 - approval attestation 관련 dynamic tool 변수는 trusted wrapper/adapter 경계에서만 채워지고, 사용자 입력만으로는 생성되거나 덮어쓰여서는 안 된다.
 - `world_accept_draft`는 diff binding 값을 필수로 받는다.
 - `world_get_run_artifact`는 safe artifact basename allowlist와 path boundary 검증을 강제하고, inbox payload나 unredacted sensitive artifact는 노출하지 않는다.
@@ -341,7 +341,7 @@ OpenCrabs가 `world-tool`을 범용 shell이 아니라 의미 단위 tool로 호
 - manual OpenCrabs test script 또는 checklist
 
 ### 완료 기준
-- `world init -> registry add -> input stage(title/body) -> draft create -> draft validate -> draft diff -> input stage(reason) -> explicit approval over diff binding + staged reason file/hash checkpoint -> approval attest -> draft accept`가 샘플 world에서 통과한다.
+- `world init -> registry add -> world list -> world status -> input stage(title/body) -> draft create -> draft validate -> draft diff -> input stage(reason) -> explicit approval over diff binding + staged reason file/hash checkpoint -> approval attest -> draft accept`가 샘플 world에서 통과한다.
 - conflict draft는 기본 accept에서 차단된다.
 - invalid change_type draft는 validation `error`로 보고되고 accept에서 blocked된다.
 - create에 target_id 또는 retcon_reason이 들어간 draft는 validation `error`로 보고되고 accept에서 blocked된다.
@@ -362,7 +362,7 @@ OpenCrabs가 `world-tool`을 범용 shell이 아니라 의미 단위 tool로 호
 - recovery resolution fixture는 `run recover`가 recorded transaction state를 idempotently resolve하고 `recovery.json`을 resolved로 남긴 뒤, 이후 write command가 다시 허용되는지 검증하며, 원래 `draft accept` 재실행이 recovery path가 아님을 확인한다.
 - `run get` redacted manifest/status fixture는 run metadata의 민감 필드를 가리고 최소 상태만 노출하는지 검증한다.
 - `run get --artifact recovery.json` 또는 동등한 allowlisted safe artifact fixture는 recovery artifact만 안전하게 조회되고 `runs/inbox/**`나 sensitive artifact는 거부되는지 검증한다.
-- unresolved recovery inspection before `run recover` fixture는 `run get`으로 unresolved recovery 상태를 먼저 확인한 뒤 `run recover`로 해소하는 흐름을 검증한다.
+- unresolved recovery inspection fixture는 `world_list_runs -> world_get_run -> world_get_run_artifact -> world_recover_run` 순서로 canonical recovery action을 검증한다.
 - storylet draft는 content canon accept에서 차단된다.
 - storylet content path/status 위반은 validation `error`로 보고되고 accept에서 blocked된다.
 - approval attestation 안전 fixture는 누락된 auth context, hash mismatch, expiry, scope denial, fixture opt-in missing, actor/channel mismatch, accept-time hash/binding mismatch 사례를 모두 커버한다.

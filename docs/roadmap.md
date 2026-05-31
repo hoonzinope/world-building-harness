@@ -47,7 +47,7 @@ OpenCrabs 없이도 로컬 CLI로 파일 관리와 validation을 수행할 수 �
 - path boundary와 symlink resolution을 가장 먼저 구현한다.
 - Markdown parser와 YAML frontmatter parser는 round-trip 안정성을 기준으로 선택한다.
 - 긴 draft body, 검색 query, title, reason, retcon_reason은 command-line argument가 아니라 stdin 또는 world root 내부 `runs/inbox/` staging file로 받는다.
-- `world_stage_input`과 `world_create_approval_attestation`이 돌려준 file path와 hash만 후속 tool에 넘기고, `authenticated_actor`는 OpenCrabs 인증 세션에서만 채운다. `auth_context_hash`는 integrity binding이며 production trusted auth context input은 먼저 configured wrapper-owned auth-context boundary의 normalized regular file 또는 trusted request-file/FD mechanism을 만족해야 하고, traversal/symlink/selected world root/runtime-owned run dir/staged inbox는 hash/parse/signature/MAC/trust-material 검증 전에 거부되며, 그 뒤에 signature/MAC 또는 configured wrapper trust-material 검증과 expected issuer/audience/scope policy를 만족해야 한다.
+- `world_stage_input`과 `world_create_approval_attestation`이 돌려준 file path와 hash만 후속 tool에 넘기고, `authenticated_actor`는 OpenCrabs 인증 세션에서만 채운다. `auth_context_hash`는 integrity binding이며 production trusted auth context input은 먼저 configured wrapper-owned auth-context boundary의 normalized regular file 또는 trusted request-file/FD mechanism을 만족해야 하고, traversal/symlink/selected world root/runtime-owned run dir/staged inbox는 hash/parse/signature/MAC/trust-material 검증 전에 거부되며, 그 뒤에 signature/MAC 또는 configured wrapper trust-material 검증과 expected issuer/audience/scope/expiry policy를 만족해야 한다.
 - 모든 command는 `commands.md`의 JSON envelope와 exit code 정책을 일관되게 지킨다.
 - write command는 world root lock을 사용한다.
 - diff와 accept는 hash binding으로 묶는다.
@@ -137,11 +137,11 @@ OpenCrabs가 `world-tool`을 의미 단위 tool로 호출하게 한다.
 - trusted wrapper/adapter가 authenticated session metadata를 받아 `auth_context_file`을 생성하고 hash를 계산해 `auth_context_hash`와 함께 tool 변수로 채움. production trusted auth context input은 configured wrapper-owned auth-context boundary의 normalized regular file 또는 trusted request-file/FD mechanism에서만 받아야 하고, traversal/symlink/selected world root/runtime-owned run dir/staged inbox는 hash/parse/signature/MAC/trust-material 검증 전에 거부해야 하며, `auth_context_hash`는 integrity binding만 담당함
 - `auth_context_file`의 trusted contents는 expiry, scope, session metadata, approval channel, authenticated actor, downstream_action provenance 등이다. wrapper는 세션 종료 또는 attestation 사용 후 이를 정리/무효화한다. local fixture mode는 `WORLD_TOOL_TEST_AUTH_CONTEXT=1` explicit opt-in 테스트 전용 경로임
 - `approver_id`는 CLI/template input으로 별도 전달되는 non-authoritative audit/display label로 attestation과 audit에 기록됨.
-- approval attestation은 wrapper가 주입한 auth-context provenance를 `auth_context_file/auth_context_hash`, expected issuer/audience/scope policy, actor/channel 기준으로 검증하고, raw actor 문자열만으로 승인 provenance를 만들지 않음
+- approval attestation은 wrapper가 주입한 auth-context provenance를 `auth_context_file/auth_context_hash`, expected issuer/audience/scope/expiry policy, actor/channel 기준으로 검증하고, raw actor 문자열만으로 승인 provenance를 만들지 않음
 - `approval attest`는 invalid `auth_context_file` location과 path escape를 거부하며, configured wrapper-owned auth-context boundary 또는 trusted request-file/FD를 먼저 만족한 production trusted auth context input만 read-only 예외로 허용하고, boundary-before-hash/parse/signature/MAC/trust-material ordering을 유지함
 - registry/config file path validation은 null-root registry behavior에서 explicit absolute registry/config file path를 safe normalization/validation 후 허용하되, unsafe traversal, symlink escape, directory confusion, world-root document/artifact path escape는 거부함
 - safe artifact retrieval은 명시적 basename allowlist와 path boundary 검증만 허용함
-- recovery inspection은 `world_get_run`과 필요 시 `world_get_run_artifact`의 조회로 가능해야 하며, `world_recover_run`은 unresolved recovery 상태만 해소해야 함
+- recovery inspection은 `world_list_runs -> world_get_run -> world_get_run_artifact -> world_recover_run` 순서로 가능해야 하며, `world_recover_run`은 unresolved recovery 상태만 해소해야 함
 - diff 확인과 accept 실행이 같은 diff_run_id/hash binding으로 묶임
 
 ## 7. Phase 5: OpenCrabs Integration UX
@@ -176,7 +176,7 @@ OpenCrabs 대화에서 draft 생성, 검증, 승인 흐름이 자연스럽게 �
 - OpenCrabs skill + tools 수동 테스트 스크립트
 
 ### 완료 기준
-- init → registry add → input stage(title/body) → draft create → draft validate → draft diff → input stage(reason) → explicit approval over diff binding + staged reason file/hash checkpoint → approval attest → draft accept가 샘플 world에서 동작함
+- init → registry add → world list → world status → input stage(title/body) → draft create → draft validate → draft diff → input stage(reason) → explicit approval over diff binding + staged reason file/hash checkpoint → approval attest → draft accept가 샘플 world에서 동작함
 - conflict draft가 accept에서 차단됨
 - diff binding mismatch가 accept에서 차단됨
 - storylet draft가 content canon으로 승격되지 않음

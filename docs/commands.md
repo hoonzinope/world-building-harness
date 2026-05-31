@@ -299,7 +299,7 @@ OpenCrabs는 `ok`, `command_status`, `data.validation_status`, `data.block_reaso
 | `draft update` | `drafts/**/*.md` under `--draft`; staged update inputs under `runs/inbox/**` read/consume only |
 | `draft read/validate/diff/accept/reject` | draft paths under `drafts/**/*.md`; staged reason/approval attestation inputs under `runs/inbox/**` read/consume only where the command defines them |
 | `input stage` | `runs/inbox/**` write only |
-| `approval attest` | `runs/inbox/**` write only for approval attestation artifacts; trusted auth context is read from a wrapper-owned file outside the world root |
+| `approval attest` | `runs/inbox/**` write only for approval attestation artifacts; trusted auth-context input is accepted only from a normalized regular file within the configured wrapper-owned auth-context boundary outside the world root, or from a trusted request-file/FD mechanism; location validation runs before hash, parse, signature, MAC, and trust-material verification |
 | `run list` | immutable run index/summary files only; `runs/inbox/**` excluded |
 | `run get` | default redacted manifest/status only; explicit single safe-artifact basename allowlist only; multiple artifacts require repeated `run get` calls; MVP `run get`/dynamic tools do not expose sensitive artifacts or `runs/inbox/**`; any future privileged export must be a separate specified command with its own auth/redaction contract |
 | `content validate` | `content/**/*.md` |
