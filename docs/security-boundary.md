@@ -8,7 +8,7 @@ OpenCrabs/Codex가 세계관 파일을 다루는 구조에서는 명확한 보�
 ## 2. 기본 원칙
 - 세계관 파일 작업은 `world_*` dynamic tools로 수행한다.
 - dynamic tools는 `world-tool` Go CLI를 호출한다.
-- `world-tool`은 선택된 world root 밖 파일을 기본적으로 읽거나 쓰지 않는다. 유일한 read 예외는 `approval attest`가 `--auth-context-file`/`--auth-context-hash`로 hash/expiry 검증하는 OpenCrabs trusted wrapper auth context 파일이며, 이 파일도 쓰거나 run artifact로 복사하지 않는다. 이 wrapper는 `world_id`, `allowed_actions`/scope, `issuer`, `audience`, `authenticated_actor`, `approval_channel`을 함께 묶는 canonical approval attestation이고, 세부 계약과 `AUTH_CONTEXT_SCOPE_DENIED`는 `docs/commands.md`를 따른다.
+- `world-tool`은 선택된 world root 밖 파일을 기본적으로 읽거나 쓰지 않는다. 유일한 read 예외는 `approval attest`가 `--auth-context-file`/`--auth-context-hash`로 hash/expiry 검증하는 OpenCrabs trusted wrapper auth context 파일이며, 이 파일도 쓰거나 run artifact로 복사하지 않는다. 이 wrapper는 `world_id`, `allowed_actions`/scope, `issuer`, `audience`, `authenticated_actor`, `approval_channel`을 함께 묶는 canonical approval attestation이고, 그 scope는 `world_create_approval_attestation`과 그 attestation이 뒷받침할 downstream action(`world_accept_draft` 또는 `world_force_accept_draft`)까지 authorize해야 한다. attestation 생성만 허용하는 scope는 content mutation에 충분하지 않으며, 세부 계약과 `AUTH_CONTEXT_SCOPE_DENIED`는 `docs/commands.md`를 따른다.
 - `content/`는 accept tool에서만 변경된다.
 - draft 생성과 canon 승격은 분리한다.
 - OpenCrabs/Codex 출력은 후보이며 tool validation을 통과해야 한다.
@@ -91,7 +91,7 @@ Command별 path allowlist:
 - `draft read/validate/diff/accept/reject`: draft paths under `drafts/**/*.md`, staged reason/approval attestation inputs under `runs/inbox/**` read/consume only where the command defines them
 - `content validate`: `content/**/*.md`
 - `input stage`: `runs/inbox/**` write only
-- `approval attest`: `runs/inbox/**` write only for approval attestation artifacts; `--auth-context-file`/`--auth-context-hash` may read a trusted wrapper path outside the world root in read-only mode after hash/expiry validation. 이 wrapper는 canonical approval attestation이며 `world_id`, `allowed_actions`/scope, `issuer`, `audience`, `authenticated_actor`, `approval_channel`을 묶고, 상세 필드 계약은 `docs/commands.md`를 따른다.
+- `approval attest`: `runs/inbox/**` write only for approval attestation artifacts; `--auth-context-file`/`--auth-context-hash` may read a trusted wrapper path outside the world root in read-only mode after hash/expiry validation. 이 wrapper는 canonical approval attestation이며 `world_id`, `allowed_actions`/scope, `issuer`, `audience`, `authenticated_actor`, `approval_channel`을 묶고, 그 scope는 `world_create_approval_attestation`과 downstream action(`world_accept_draft` 또는 `world_force_accept_draft`)을 함께 authorize해야 한다. attestation 생성만 허용하는 scope는 content mutation에 충분하지 않으며, 상세 필드 계약은 `docs/commands.md`를 따른다.
 - `run get`: 기본 redacted manifest/status summary만 반환하고, explicit safe artifact allowlist 또는 dedicated safe-artifact command가 있을 때만 추가 artifact를 읽는다. `runs/inbox/**`는 제외한다.
 - `run list`: immutable run index/summary files only, `runs/inbox/**` 제외
 - `run recover`: unresolved `recovery.json`을 정리하는 repair path
@@ -154,7 +154,7 @@ draft가 content로 승격되려면 `world_accept_draft`를 통과해야 한다.
 - required field 누락
 - draft가 active drafts/ 밖에 있음
 
-force accept는 가능하지만 reason만으로는 부족하다. `reason_file`/`reason_hash`, `approval_attestation_file`/`approval_attestation_hash`, `approver_id`, `approval_channel`, `authenticated_actor`를 함께 기록해야 하며, 이는 runs log와 accept result에 남아야 한다. `approval_channel` 예시는 `OpenCrabs-chat`을 사용하고, attestation, accept, audit 전반에서 byte-identical 값이어야 한다. `approval_channel`과 `authenticated_actor`는 `world_create_approval_attestation`이 확인한 OpenCrabs trusted auth context wrapper로부터 와야 하며, 이 wrapper는 `world_id`, `allowed_actions`/scope, `issuer`, `audience`, `issued_at`, `expires_at`, hash/expiry 검증을 함께 만족해야 한다. 모델 출력이나 staging file에서 오면 안 되며, scope가 허용되지 않으면 `AUTH_CONTEXT_SCOPE_DENIED`로 실패해야 한다.
+force accept는 가능하지만 reason만으로는 부족하다. `reason_file`/`reason_hash`, `approval_attestation_file`/`approval_attestation_hash`, `approver_id`, `approval_channel`, `authenticated_actor`를 함께 기록해야 하며, 이는 runs log와 accept result에 남아야 한다. `approval_channel` 예시는 `OpenCrabs-chat`을 사용하고, attestation, accept, audit 전반에서 byte-identical 값이어야 한다. `approval_channel`과 `authenticated_actor`는 `world_create_approval_attestation`이 확인한 OpenCrabs trusted auth context wrapper로부터 와야 하며, 이 wrapper는 `world_id`, `allowed_actions`/scope, `issuer`, `audience`, `issued_at`, `expires_at`, hash/expiry 검증을 함께 만족해야 한다. 그 wrapper scope는 `world_create_approval_attestation`과 downstream action(`world_accept_draft` 또는 `world_force_accept_draft`)을 함께 authorize해야 하고, attestation 생성만 허용하는 scope는 content mutation에 충분하지 않다. 모델 출력이나 staging file에서 오면 안 되며, scope가 허용되지 않으면 `AUTH_CONTEXT_SCOPE_DENIED`로 실패해야 한다.
 
 force accept 제한:
 - semantic/timeline/relationship conflict 후보만 우회 대상으로 삼는다.
@@ -203,10 +203,10 @@ docker run --rm \
   --tmpfs /tmp \
   -v /host/worlds/ashen-continent:/workspace/world:ro \
   world-tool:latest \
-  world-tool draft validate --root /workspace/world --world-id ashen-continent --draft drafts/nations/nation_northern_empire.md --json
+  world-tool draft read --root /workspace/world --world-id ashen-continent --draft drafts/nations/nation_northern_empire.md --json
 ```
 
-Docker root-only 실행에서는 world_id provenance를 bind mount path에서 추측하지 않는다. command site에서 `--world-id`를 명시하거나, 실행 전에 `harness.yaml` provenance를 확인할 수 있어야 하고, 둘 다 불가능하면 root-only 모드를 쓰지 않는다. draft validate는 read-only validation이므로 world mount도 read-only로만 제공한다.
+Docker root-only 실행에서는 world_id provenance를 bind mount path에서 추측하지 않는다. command site에서 `--world-id`를 명시하거나, 실행 전에 `harness.yaml` provenance를 확인할 수 있어야 하고, 둘 다 불가능하면 root-only 모드를 쓰지 않는다. `draft read`는 read-only inspection이지만 `draft validate`는 계약상 artifact를 쓸 수 있으므로 `:ro` world mount로 실행하지 않는다.
 
 ## 12. Audit Log
 모든 write tool은 다음을 기록한다.

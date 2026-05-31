@@ -220,6 +220,10 @@ OpenCrabs가 `world-tool`을 범용 shell이 아니라 의미 단위 tool로 호
 
 ### 산출물
 - `opencrabs/tools/world-tools.toml`
+- approval attestation trusted wrapper/adapter contract
+- `auth_context_file` staging, hashing, and cleanup contract
+- `auth_context_hash` derivation and verification contract
+- auth context expiry/scope/session metadata propagation contract
 - `world_stage_input`
 - `world_list`
 - `world_status`
@@ -244,7 +248,10 @@ OpenCrabs가 `world-tool`을 범용 shell이 아니라 의미 단위 tool로 호
 - 각 tool은 stdout JSON만 반환한다.
 - 긴 query/title/body/reason/retcon_reason은 `runs/inbox/` staging file 또는 stdin 방식으로 전달된다.
 - `world_stage_input`이 staging file을 만들고 후속 tool은 path/hash만 받는다.
-- `world_create_approval_attestation`은 auth_context_file/auth_context_hash와 expiry를 항상 검증하고, raw actor 문자열만으로 승인 provenance를 만들지 않는다.
+- trusted wrapper/adapter가 authenticated session metadata를 받아 `auth_context_file`을 생성하고, 해당 파일의 hash를 계산해 `auth_context_hash`와 함께 tool 변수로 채운다.
+- `auth_context_file`에는 expiry, scope, approver/session identifiers, approval channel, authenticated actor를 포함한 provenance metadata가 들어가며, wrapper는 세션 종료 또는 attestation 사용 후 이를 정리/무효화한다.
+- `world_create_approval_attestation`은 wrapper가 주입한 `auth_context_file/auth_context_hash`, expiry, scope, actor/channel provenance를 항상 검증하고, raw actor 문자열만으로 승인 provenance를 만들지 않는다.
+- approval attestation 관련 dynamic tool 변수는 trusted wrapper/adapter 경계에서만 채워지고, 사용자 입력만으로는 생성되거나 덮어쓰여서는 안 된다.
 - `world_accept_draft`는 diff binding 값을 필수로 받는다.
 - `world_get_run_artifact`는 safe artifact basename allowlist와 path boundary 검증을 강제하고, inbox payload나 unredacted sensitive artifact는 노출하지 않는다.
 - staged-input-consuming commands는 hash mismatch를 command-level `INPUT_HASH_MISMATCH`로 반환한다.
@@ -279,6 +286,13 @@ OpenCrabs가 `world-tool`을 범용 shell이 아니라 의미 단위 tool로 호
 - recovery resolution fixture
 - storylet accept block fixture
 - storylet content validation fixture
+- missing auth context approval attestation fixture
+- auth context hash mismatch approval attestation fixture
+- auth context expiry approval attestation fixture
+- auth context scope denial approval attestation fixture
+- fixture opt-in missing approval attestation fixture
+- actor/channel mismatch approval attestation fixture
+- accept-time approval attestation hash/binding mismatch fixture
 - active draft path/type wrong-directory fixture
 - force denied fixture
 - lock/base-hash mismatch fixture
@@ -306,6 +320,7 @@ OpenCrabs가 `world-tool`을 범용 shell이 아니라 의미 단위 tool로 호
 - recovery resolution fixture는 recovery artifact가 해결된 뒤 동일 draft가 다시 accept될 수 있어야 한다는 점을 검증한다.
 - storylet draft는 content canon accept에서 차단된다.
 - storylet content path/status 위반은 validation `error`로 보고되고 accept에서 blocked된다.
+- approval attestation 안전 fixture는 누락된 auth context, hash mismatch, expiry, scope denial, fixture opt-in missing, actor/channel mismatch, accept-time hash/binding mismatch 사례를 모두 커버한다.
 - active draft path/type wrong-directory fixture는 non-storylet draft가 `drafts/storylets/`에 있는 경우와 `storylet` draft가 `drafts/storylets/` 밖에 있는 경우를 함께 검증한다.
 - 알 수 없는 relationship type은 conflict로 탐지된다.
 - rejected draft는 `archive/rejected/`로 이동한다.

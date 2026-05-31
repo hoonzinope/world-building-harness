@@ -53,14 +53,14 @@ validation 결과의 `error`와 `conflict`는 accept 단계에서 command-level 
 legacy/import 문서에 `schema_version`이 없으면 migration 전까지 warning으로 낮출 수 있다. `world-tool draft create`가 만든 새 문서에는 `schema_version` 누락을 error로 처리한다.
 
 draft 문서의 추가 contract:
-- `change_type`은 필수이며 `create`, `update`, `deprecate` 중 하나여야 한다.
-- `change_type`이 `update` 또는 `deprecate`이면 `target_id`와 `retcon_reason`이 필수다.
+- `change_type`은 필수이며 `create`, `update`, `deprecate` 중 하나여야 한다. `change_type` 자체의 missing/null/invalid enum 값은 error다.
+- `change_type`이 `update` 또는 `deprecate`이면 `target_id`와 `retcon_reason`이 필수이며, missing/null/빈 문자열은 error다.
+- `change_type`이 `create`이면 `target_id`와 `retcon_reason`은 null이거나 생략되어야 한다.
 - `update`와 `deprecate` draft는 target canon을 덮어쓰는 계약이므로 draft id와 `target_id`가 같아야 한다.
 - `change_type`이 `update` 또는 `deprecate`이고 `target_id`가 canon content에 없으면 `draft create --change-type update|deprecate` 단계에서는 draft를 쓰지 않고 blocked `MISSING_TARGET`로 실패한다.
 - 이미 존재하는 invalid draft를 validate하면 command는 validation 결과를 반환하고 conflict issue로 `MISSING_TARGET`를 보고한다.
 - diff/accept 단계에서 `change_type`이 `update` 또는 `deprecate`이고 `target_id`가 canon content에 없으면 `command_status: "blocked"`, `data.block_reason: "MISSING_TARGET"`, `data.validation_status: "conflict"`로 반환한다.
-- `change_type`이 `create`이면 `target_id`와 `retcon_reason`은 null이거나 생략되어야 한다.
-- missing, 빈 문자열, 잘못된 enum 값은 error다.
+- create 계약을 어기거나 required field를 비워 두면 error다.
 
 ### VR-003: type 허용값
 허용 type:

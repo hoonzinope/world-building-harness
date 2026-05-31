@@ -121,7 +121,9 @@ OpenCrabs가 `world-tool`을 의미 단위 tool로 호출하게 한다.
 - 각 tool은 stdout JSON을 반환함
 - 범용 shell tool 없이 세계관 workflow를 수행할 수 있음
 - 긴 markdown body를 file/stdin 기반으로 전달하는 tool이 동작함
-- approval attestation은 auth-context provenance를 auth_context_file/auth_context_hash와 expiry까지 필수로 검증하고, raw actor 문자열만으로 승인 provenance를 만들지 않음
+- trusted wrapper/adapter가 authenticated session metadata를 받아 `auth_context_file`을 생성하고 hash를 계산해 `auth_context_hash`와 함께 tool 변수로 채움
+- `auth_context_file`은 expiry, scope, approver/session identifiers, approval channel, authenticated actor를 포함하며, wrapper는 세션 종료 또는 attestation 사용 후 이를 정리/무효화함
+- approval attestation은 wrapper가 주입한 auth-context provenance를 `auth_context_file/auth_context_hash`, expiry, scope, actor/channel 기준으로 검증하고, raw actor 문자열만으로 승인 provenance를 만들지 않음
 - safe artifact retrieval은 명시적 basename allowlist와 path boundary 검증만 허용함
 - diff 확인과 accept 실행이 같은 diff_run_id/hash binding으로 묶임
 
@@ -157,6 +159,13 @@ OpenCrabs 대화에서 draft 생성, 검증, 승인 흐름이 자연스럽게 �
 - lock/base-hash mismatch fixture
 - relationship allowlist fixture
 - accept/reject fixture
+- missing auth context approval attestation fixture
+- auth context hash mismatch approval attestation fixture
+- auth context expiry approval attestation fixture
+- auth context scope denial approval attestation fixture
+- fixture opt-in missing approval attestation fixture
+- actor/channel mismatch approval attestation fixture
+- accept-time approval attestation hash/binding mismatch fixture
 - OpenCrabs skill + tools 수동 테스트 스크립트
 
 ### 완료 기준
@@ -164,10 +173,31 @@ OpenCrabs 대화에서 draft 생성, 검증, 승인 흐름이 자연스럽게 �
 - conflict draft가 accept에서 차단됨
 - diff binding mismatch가 accept에서 차단됨
 - storylet draft가 content canon으로 승격되지 않음
+- approval attestation 안전 fixture는 누락된 auth context, hash mismatch, expiry, scope denial, fixture opt-in missing, actor/channel mismatch, accept-time hash/binding mismatch 사례를 모두 커버한다.
 - accepted draft가 archive/accepted/로 이동함
 - runs artifact가 재현 가능한 형태로 남음
 
-## 9. Phase 7: Graph Store
+## 9. Phase 7: Container Runtime
+### 목표
+OpenCrabs, `world-tool`, skill/tools bundle을 컨테이너에서 운영할 수 있게 한다.
+
+### 기능
+- Dockerfile
+- docker-compose 예시
+- OpenCrabs config/auth volume
+- world root volume
+- per-world container 예시
+- Codex OAuth provider 기본 설정 안내
+- Codex CLI provider fallback 설정 안내
+
+### 완료 기준
+- OpenCrabs와 `world-tool`이 같은 컨테이너에서 실행될 수 있다.
+- OpenCrabs credential/config volume은 world root volume과 분리된다.
+- world root는 특정 폴더만 volume mount된다.
+- Codex OAuth provider 사용 시 컨테이너에 Codex CLI나 `~/.codex` 마운트가 필요하지 않다.
+- Codex CLI provider fallback을 사용할 때만 별도 auth volume을 사용한다.
+
+## 10. Phase 8: Graph Store
 ### 목표
 content 기반 graph 인덱스를 생성한다.
 
@@ -182,7 +212,7 @@ content 기반 graph 인덱스를 생성한다.
 - content 전체를 기준으로 graph를 재생성할 수 있음
 - graph가 원천 진실이 아니라 재생성 가능한 인덱스로 유지됨
 
-## 10. Phase 8: Storylet & Exporter
+## 11. Phase 9: Storylet & Exporter
 ### 목표
 세계관 설정 외에 사건 후보와 raw note 정리 기능을 추가한다.
 
@@ -195,7 +225,7 @@ content 기반 graph 인덱스를 생성한다.
 - raw 메모를 draft로 정리 가능
 - 기존 canon 기반 storylet 생성 가능
 
-## 11. Phase 9: Post-MVP Hardening
+## 12. Phase 10: Post-MVP Hardening
 ### 목표
 MVP 이후 안정화와 maintenance path를 추가한다.
 
@@ -213,7 +243,7 @@ MVP 이후 안정화와 maintenance path를 추가한다.
 - migration 결과가 blocked/warning/action item으로 분리됨
 - post-MVP maintenance path가 MVP core와 분리됨
 
-## 12. 우선순위
+## 13. 우선순위
 세부 체크리스트는 `docs/implementation-plan.md`의 milestone 순서를 기준으로 한다.
 
 최우선:
@@ -224,6 +254,7 @@ MVP 이후 안정화와 maintenance path를 추가한다.
 5. OpenCrabs skill
 6. OpenCrabs dynamic tools
 7. sample world end-to-end test
+8. container runtime
 
 나중:
 1. graph rebuild/check
@@ -232,7 +263,7 @@ MVP 이후 안정화와 maintenance path를 추가한다.
 4. dashboard
 5. OpenCrabs native extension 또는 deeper integration
 
-## 13. 리스크
+## 14. 리스크
 ### skill만으로 규칙을 강제하려는 위험
 Skill은 지침일 뿐이다. content 보호, validation, accept 차단은 tool에서 강제해야 한다.
 

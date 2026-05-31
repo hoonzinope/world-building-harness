@@ -95,7 +95,7 @@ reason_hash=$(jq -r '.data.input_hash' <<<"$reason_json")
 cat > "$AUTH_CONTEXT_FILE" <<JSON
 {
   "world_id": "$WORLD_ID",
-  "allowed_actions": ["world_create_approval_attestation"],
+  "allowed_actions": ["world_create_approval_attestation", "world_accept_draft"],
   "issuer": "$AUTH_ISSUER",
   "audience": "$AUTH_AUDIENCE",
   "session_id": "sess_123456",

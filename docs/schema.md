@@ -94,10 +94,9 @@ relationships:
 - 참조 필드는 entity id를 값으로 사용한다. 사람이 읽는 title을 넣지 않는다.
 
 ### Draft change contract
-- draft 문서는 `change_type`을 반드시 가진다.
-- `change_type`이 `update` 또는 `deprecate`이면 `target_id`와 `retcon_reason`이 모두 필수다.
+- draft 문서는 `change_type`을 반드시 가져야 한다. `change_type` 자체의 missing, null, 잘못된 enum 값은 validator error다.
+- `change_type`이 `update` 또는 `deprecate`이면 `target_id`와 `retcon_reason`이 모두 필수이며, missing/null/빈 문자열은 validator error다.
 - `change_type`이 `create`이면 `target_id`와 `retcon_reason`은 null이거나 생략되어야 한다.
-- missing, null, 잘못된 enum 값은 validator error다.
 
 ### Relationship normalization contract
 - `relationships[]`가 canonical graph다.

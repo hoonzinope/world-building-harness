@@ -84,7 +84,7 @@ receive user request in OpenCrabs
 2. `world_diff_draft`로 변경 내용 표시
 3. 사용자에게 diff summary를 확인받는다
 4. reason을 `world_stage_input`으로 staging
-5. `world_create_approval_attestation`으로 trusted auth context wrapper와 diff/reason hash binding을 staging한다. 이 wrapper는 `world_id`, `allowed_actions`/scope, `issuer`, `audience`, `authenticated_actor`, `approval_channel`, `issued_at`, `expires_at`와 hash/expiry 검증을 함께 만족하는 canonical approval attestation이며, 세부 계약은 `docs/commands.md`를 따른다. `auth_context_file`/`auth_context_hash`는 world root 밖에서 생성된 신뢰 가능한 입력이며, prompt/model/staged files는 신뢰하지 않는다.
+5. `world_create_approval_attestation`으로 trusted auth context wrapper와 diff/reason hash binding을 staging한다. 이 wrapper는 `world_id`, `allowed_actions`/scope, `issuer`, `audience`, `authenticated_actor`, `approval_channel`, `issued_at`, `expires_at`와 hash/expiry 검증을 함께 만족하는 canonical approval attestation이며, scope에는 `world_create_approval_attestation`과 downstream accept/force action이 함께 들어가야 한다. 세부 계약은 `docs/commands.md`를 따른다. `auth_context_file`/`auth_context_hash`는 world root 밖에서 생성된 신뢰 가능한 입력이며, prompt/model/staged files는 신뢰하지 않는다.
 6. `world_accept_draft`에 `diff_run_id`, `draft_hash`, `target_base_hash`, `patch_hash`, `reason_file`, `reason_hash`, `approval_attestation_file`, `approval_attestation_hash`, `approver_id`, `approval_channel`, `authenticated_actor`를 함께 넘긴다
 7. tool 내부에서 diff binding, approval attestation, validation 재실행을 검증
 8. validation/policy/precondition/domain blocked result이면 blocked로 중단
@@ -100,12 +100,12 @@ receive user request in OpenCrabs
 - `PATH_*`, `LOCK_BUSY`, I/O/path/lock 오류는 failed JSON error다.
 - conflict/error와 `DRAFT_NOT_ACTIVE`, `DIFF_BINDING_REQUIRED`, `MISSING_TARGET` 같은 domain blocked 결과는 기본 accept에서 blocked로 반환된다. `MISSING_TARGET`는 related/relationship target이 content에 없거나 active draft에만 존재할 때도 사용한다.
 - unresolved recovery가 있으면 `world init`, `input stage`, `approval attest`, `draft create`, `draft update`, `draft validate`(`runs/<run-id>/validation.json` writer), `draft diff`, `draft accept`, `draft reject`, `content validate` artifact writer, `content migrate` report writer, 기타 content report writer를 포함한 모든 world-root/run-writing command가 차단되며, `world_recover_run`만 write 예외다. read-only inspection은 허용한다.
-- `force`는 reason과 trusted approval attestation이 둘 다 있어야 하며, 하나라도 없으면 blocked가 아니라 failed다. reason 누락은 `INVALID_ARGUMENT`, auth context 문제는 대응하는 `AUTH_CONTEXT_*` failed code로 처리하고, semantic/timeline/relationship conflict 후보만 제한적으로 우회한다.
+- `force`는 reason과 trusted approval attestation이 둘 다 있어야 하며, 하나라도 없으면 blocked가 아니라 failed다. reason 누락은 `INVALID_ARGUMENT`, auth context 문제는 approval attestation 생성 경로에서만 대응하는 `AUTH_CONTEXT_*` failed code로 처리하고, semantic/timeline/relationship conflict 후보만 제한적으로 우회한다. accept-time attestation hash/payload mismatch는 `APPROVAL_ATTESTATION_*` failed code로 처리한다.
 - missing target, missing related target, missing relationship target, missing update/deprecate target, active-draft-only target, path/type/id/schema 불일치, structural error, id conflict, target path conflict, diff binding mismatch, storylet canon 승격, atomic write 실패, lock 실패는 force로도 우회할 수 없다.
 - `force`는 `approval_attestation_file`, `approval_attestation_hash`, `approver_id`, `approval_channel`, `authenticated_actor`가 함께 기록될 때만 승인 provenance가 완성된다. canonical 세부 계약은 `docs/commands.md`를 따른다.
 - `approval_channel` 예시는 `OpenCrabs-chat`을 사용하고, attestation, accept, audit 전반에서 byte-identical 값이어야 한다.
 - `authenticated_actor`는 OpenCrabs 인증 세션에서만 가져오고, `approval_channel`도 같은 trusted wrapper provenance로만 가져온다. `world_stage_input`과 `world_create_approval_attestation`이 반환한 파일 경로와 hash만 후속 tool에 전달한다.
-- attestation은 prompt/model output이 아니라 trusted OpenCrabs auth context wrapper에서 만들어야 하며, 이 wrapper는 `world_id`, `allowed_actions`/scope, `issuer`, `audience`, `issued_at`, `expires_at`, `authenticated_actor`, `approval_channel`을 함께 만족해야 한다. 세부 실패 코드는 `docs/commands.md`를 따른다. 없으면 accept 대신 `AUTH_CONTEXT_MISSING` 실패를 사용자에게 설명한다.
+- attestation은 prompt/model output이 아니라 trusted OpenCrabs auth context wrapper에서 만들어야 하며, 이 wrapper는 `world_id`, `allowed_actions`/scope, `issuer`, `audience`, `issued_at`, `expires_at`, `authenticated_actor`, `approval_channel`을 함께 만족해야 한다. 이 scope는 attestation minting과 downstream accept/force action을 함께 커버해야 한다. 세부 실패 코드는 `docs/commands.md`를 따른다. 없으면 accept 대신 `AUTH_CONTEXT_MISSING` 실패를 사용자에게 설명한다.
 - accept는 world root lock을 잡고 validation을 재실행한다.
 - accept는 사용자가 확인한 diff binding과 현재 draft/content hash가 일치할 때만 진행된다.
 - accept 이후 OpenCrabs는 content/index/cache를 다시 읽거나 재색인할 수 있다.

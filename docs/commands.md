@@ -81,7 +81,7 @@ Minimum `data` shape:
 | `input stage` | `kind`, `input_path`, `input_hash` | input 본문은 반환하지 않는다 |
 | `doc read/search` | `path` 또는 `results` | raw body는 explicit read에서만, search는 snippet만 허용한다 |
 | `draft create/update/read/list/validate/diff/accept/reject` | `draft_path`, `draft_hash` or `drafts`, `validation_status` when applicable, `diff_*`/`approval` only where relevant | reason/body/attestation payload는 hash와 path 중심으로 redact한다 |
-| `approval attest` | `approval_attestation_file`, `approval_attestation_hash`, `world_id`, `issuer`, `audience`, `scope_verification`, `authenticated_actor`, `approver_id`, `approval_channel`, `diff_run_id`, `draft_hash`, `target_base_hash`, `patch_hash` | auth context 원문과 session secret은 반환하지 않고 scope verification summary만 반환한다 |
+| `approval attest` | `approval_attestation_file`, `approval_attestation_hash`, `world_id`, `issuer`, `audience`, `scope_verification`, `authenticated_actor`, `approver_id`, `approval_channel`, `diff_run_id`, `draft_hash`, `target_base_hash`, `patch_hash` | auth context 원문과 session secret은 반환하지 않고, `scope_verification`에는 `world_create_approval_attestation`과 downstream action allowlist를 요약해 담는다 |
 | `content validate` | `validation_status`, `blockers`, `findings` or equivalent summary | content 본문 전체는 반환하지 않는다 |
 | `content migrate --dry-run` | `migration_run_id`, `migration_report_path`, `migration_actions_path`, `candidates`, `blockers`, `partial_apply` | report artifact 본문은 raw dump 대신 요약과 경로 중심으로 노출한다 |
 | `run list/get/get artifact/recover` | `runs` or `manifest`/`status_summary` or single artifact fields or `recovery_*` | staged inbox payload와 unredacted sensitive artifact는 노출하지 않는다 |
@@ -171,7 +171,7 @@ blocked envelope:
 
 ```json
 {
-  "code": "MISSING_TARGET",
+  "code": "ID_CONFLICT",
   "rule": "VR-101",
   "severity": "conflict",
   "message": "id nation_northern_empire already exists in content",
@@ -210,6 +210,8 @@ OpenCrabs는 `ok`, `command_status`, `data.validation_status`, `data.block_reaso
 | `AUTH_CONTEXT_EXPIRED` | failed | 아니오 | auth context expiry exceeded |
 | `AUTH_CONTEXT_SCOPE_DENIED` | failed | 아니오 | auth context scope mismatch for world/action/issuer/audience bindings |
 | `AUTH_CONTEXT_TEST_MODE_REQUIRED` | failed | 아니오 | fixture opt-in missing |
+| `APPROVAL_ATTESTATION_HASH_MISMATCH` | failed | 아니오 | staged approval attestation hash mismatch at accept time |
+| `APPROVAL_ATTESTATION_BINDING_MISMATCH` | failed | 아니오 | staged approval attestation payload mismatch against command/world/diff/reason/actor/channel/scope bindings |
 | `ID_CONFLICT` | blocked | 예 | canonical id already exists; create blocked reason 또는 validation issue code로 사용 |
 | `TARGET_PATH_CONFLICT` | blocked | 예 | target path would collide before mutation; accept blocked reason 또는 validation issue code로 사용 |
 | `MISSING_TARGET` | blocked | 예 | missing canon target; `draft create --change-type update|deprecate`, `draft diff`, `draft accept`의 blocked reason으로도, `draft validate` completed 결과의 validation issue code로도 쓰인다 |
@@ -256,6 +258,8 @@ OpenCrabs는 `ok`, `command_status`, `data.validation_status`, `data.block_reaso
 | `draft accept` target 계열 누락 | `blocked` | `MISSING_TARGET` | related/relationship/active-draft-only 포함; blocked reason으로 사용 |
 | `draft accept` validation internal conflict/error | `blocked` | `VALIDATION_BLOCKED` | issue code detail는 `TIMELINE_CONFLICT` 같은 underlying validation code |
 | `draft accept` diff binding mismatch | `blocked` | `DIFF_BINDING_MISMATCH` | issue code detail에 mismatch 원인 기록 |
+| `draft accept` approval attestation hash mismatch | `failed` | 없음 | accept-time provenance/artifact failure; `error.code: APPROVAL_ATTESTATION_HASH_MISMATCH`; staged attestation file hash does not match supplied hash |
+| `draft accept` approval attestation payload mismatch | `failed` | 없음 | accept-time provenance/artifact failure; `error.code: APPROVAL_ATTESTATION_BINDING_MISMATCH`; attestation payload, command/world/diff/reason/actor/channel/scope bindings must all match |
 | `draft accept` inactive draft | `blocked` | `DRAFT_NOT_ACTIVE` | issue code detail |
 | `draft accept` storylet canon | `blocked` | `STORYLET_NOT_CANON_TARGET` | issue code detail |
 | `draft accept` target path conflict before mutation | `blocked` | `TARGET_PATH_CONFLICT` | issue code detail은 `TARGET_PATH_CONFLICT` 또는 equivalent validation issue code |
@@ -525,7 +529,7 @@ world-tool approval attest \
 정책:
 - `--authenticated-actor`는 wrapper가 채운 값이어야 하며, prompt text, model output, staged input, Docker mount path에서 파생하면 안 된다. `world-tool`은 이 flag가 wrapper/request metadata의 authenticated actor와 일치하는지 확인하고, 해당 metadata가 없으면 flag 값과 무관하게 `AUTH_CONTEXT_MISSING`으로 실패한다.
 - `--auth-context-file`은 OpenCrabs trusted wrapper가 생성한 auth context 파일을 가리켜야 하며, selected world root 내부나 runtime-owned run directory에 있으면 안 된다. `--auth-context-hash`는 파일의 sha256 해시와 일치해야 하고, 파일의 `expires_at`이 만료되었으면 실패한다.
-- auth context 파일에는 최소 `world_id`, `allowed_actions` 또는 equivalent scope, `issuer`, `audience`, `session_id`, `authenticated_actor`, `approval_channel`, `issued_at`, `expires_at`이 들어 있어야 하며, `world-tool`은 파일 내용과 `--world`, `--approval-channel`, `--authenticated-actor`가 일치하는지 검증한다. `allowed_actions`는 최소한 `world_create_approval_attestation` 또는 equivalent action scope를 포함해야 한다. `world_id`/action/issuer/audience/approval_channel/authenticated_actor scope mismatch는 `AUTH_CONTEXT_SCOPE_DENIED`, `auth_context_hash` mismatch는 `AUTH_CONTEXT_HASH_MISMATCH`, `expires_at` 초과는 `AUTH_CONTEXT_EXPIRED`를 사용한다. `--approver-id`는 non-empty audit field로 검증하고 attestation payload에 기록한다.
+- auth context 파일에는 최소 `world_id`, `allowed_actions` 또는 equivalent scope, `issuer`, `audience`, `session_id`, `authenticated_actor`, `approval_channel`, `issued_at`, `expires_at`이 들어 있어야 하며, `world-tool`은 파일 내용과 `--world`, `--approval-channel`, `--authenticated-actor`가 일치하는지 검증한다. `allowed_actions`는 최소한 `world_create_approval_attestation`과 downstream action(`world_accept_draft` 또는 `world_force_accept_draft`)을 포함해야 한다. `scope_verification`은 이 allowlist를 요약해 담고, `draft accept`/`--force`는 invoked downstream action이 scope에 없으면 `APPROVAL_ATTESTATION_BINDING_MISMATCH`로 실패해야 한다. `world_id`/action/issuer/audience/approval_channel/authenticated_actor scope mismatch는 `AUTH_CONTEXT_SCOPE_DENIED`, `auth_context_hash` mismatch는 `AUTH_CONTEXT_HASH_MISMATCH`, `expires_at` 초과는 `AUTH_CONTEXT_EXPIRED`를 사용한다. `--approver-id`는 non-empty audit field로 검증하고 attestation payload에 기록한다.
 - test auth context는 `fixture_mode: true`를 명시한 local fixture와 `WORLD_TOOL_TEST_AUTH_CONTEXT=1` 환경변수가 둘 다 있을 때만 허용한다. 둘 중 하나라도 없으면 `AUTH_CONTEXT_TEST_MODE_REQUIRED` failed다.
 - 운영 기본 경로에서는 fixture mode를 provenance로 인정하지 않는다. fixture-backed context는 test-only 경로이며 production attestation provenance로 승격할 수 없다.
 - `approval attest`가 만든 attestation은 `draft accept`가 소비하기 전까지 `runs/inbox/`에만 머문다. `run get/list`는 이 inbox artifact를 노출하지 않는다.
@@ -580,13 +584,13 @@ world-tool draft accept \
 Accept 정책:
 - `draft accept`와 `draft accept --force`는 `--reason-file`, `--reason-hash`, `--approver-id`, `--approval-channel`, `--approval-attestation-file`, `--approval-attestation-hash`, `--authenticated-actor`를 모두 요구한다. `reason-file`만으로는 충분하지 않다.
 - `--reason-file`과 `--reason-hash`는 짝을 이뤄야 하며, `world-tool`은 acceptance metadata를 기록하기 전에 재해시해서 검증한다.
-- `--authenticated-actor`는 단독으로는 신뢰되지 않는다. CLI는 `--approval-attestation-file`과 `--approval-attestation-hash`를 함께 넘겨야 하며, 이 attestation은 trusted wrapper/session metadata가 생성한 파일이어야 한다. attestation은 `runs/inbox/` 같은 trusted staging area에 있어야 하고, `world-tool`은 파일 해시를 다시 계산한 뒤 attestation 내부의 `world_id`, `issuer`, `audience`, `scope_verification`, `authenticated_actor`, `approver_id`, `approval_channel`, `diff_run_id`, `draft_hash`, `target_base_hash`, `patch_hash`, `reason_hash`가 command/world/auth context와 command flags에 모두 일치하는지 검증한 다음에만 `approval.authenticated_actor`를 기록한다.
+- `--authenticated-actor`는 단독으로는 신뢰되지 않는다. CLI는 `--approval-attestation-file`과 `--approval-attestation-hash`를 함께 넘겨야 하며, 이 attestation은 trusted wrapper/session metadata가 생성한 파일이어야 한다. attestation은 `runs/inbox/` 같은 trusted staging area에 있어야 하고, `world-tool`은 파일 해시를 다시 계산한 뒤 attestation 내부의 `world_id`, `issuer`, `audience`, `scope_verification`, `authenticated_actor`, `approver_id`, `approval_channel`, `diff_run_id`, `draft_hash`, `target_base_hash`, `patch_hash`, `reason_hash`가 command/world/auth context와 command flags에 모두 일치하는지, 그리고 `scope_verification`이 invoked downstream action(`world_accept_draft` 또는 `world_force_accept_draft`)을 포함하는지 검증한 다음에만 `approval.authenticated_actor`를 기록한다. staged attestation file hash가 불일치하면 `APPROVAL_ATTESTATION_HASH_MISMATCH`, payload/command binding mismatch가 있으면 `APPROVAL_ATTESTATION_BINDING_MISMATCH`를 사용한다.
 - `pass`는 explicit approval provenance가 있으면 accept 가능하다.
 - `warning`은 기본 accept 가능하지만, warning과 approval provenance를 runs log에 남긴다.
 - `conflict`와 `error`는 기본 accept에서 `command_status: "blocked"`로 반환한다.
 - create accept는 target이 여전히 없어야 하며, accept 시점에 target이 존재하면 blocked다.
 - `related target` 또는 `relationship target`이 누락되면 `MISSING_TARGET`로 blocked다. active-draft-only related/relationship target도 accept 시점에는 canon target이 없는 것으로 간주하므로 `MISSING_TARGET`를 사용한다. 즉 `MISSING_TARGET`는 related/relationship target 누락과 active-draft-only target에도 쓰인다.
-- `--force`는 semantic/timeline/relationship conflict 후보만 우회할 수 있고 trusted approval attestation과 reason이 필수다. 모든 참조 대상이 이미 canon content일 때만 허용한다. reason이나 trusted attestation이 하나라도 없으면 `blocked`가 아니라 `failed`이며, 누락된 CLI 인자는 `INVALID_ARGUMENT`, auth context 문제는 대응하는 `AUTH_CONTEXT_*` 실패 코드로 처리한다.
+- `--force`는 semantic/timeline/relationship conflict 후보만 우회할 수 있고 trusted approval attestation과 reason이 필수다. 모든 참조 대상이 이미 canon content일 때만 허용한다. reason이나 trusted attestation이 하나라도 없으면 `blocked`가 아니라 `failed`이며, 누락된 CLI 인자는 `INVALID_ARGUMENT`, auth context 문제는 `approval attest` 생성 경로에서만 대응하는 `AUTH_CONTEXT_*` 실패 코드로 처리한다. accept-time attestation hash/payload mismatch는 `APPROVAL_ATTESTATION_*` 실패 코드를 사용한다.
 - `--force`는 `MISSING_TARGET` 계열(blocked cases 포함 missing target, missing related target, missing relationship target, missing update/deprecate target, active-draft-only target), path/type/id/schema 불일치, structural error, id conflict, target path conflict, inactive draft, storylet canon 승격, diff binding mismatch, atomic write 실패, lock 실패는 우회할 수 없다.
 - `change_type: deprecate`가 accept되면 target content를 `content/` 아래에서 in-place로 deprecated 상태와 deprecation audit metadata로 갱신하고, canon 파일은 제거하지 않는다. 해당 deprecate draft는 accepted draft와 동일하게 archive된다.
 - `type: storylet`은 MVP에서 content canon accept 대상이 아니며 `STORYLET_NOT_CANON_TARGET`으로 blocked다.
