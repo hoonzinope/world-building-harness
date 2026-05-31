@@ -102,6 +102,7 @@ Docker `--root` mode에서 registry/provenance가 host canonical root를 제공�
 | `world_update_draft` | `world-tool draft update` | draft 수정 |
 | `world_read_draft` | `world-tool draft read` | active draft 읽기 |
 | `world_validate_draft` | `world-tool draft validate` | schema/canon 검증 |
+| `world_validate_content` | `world-tool content validate` | content schema/canon 검증 |
 | `world_diff_draft` | `world-tool draft diff` | accept 예상 변경 확인 |
 | `world_create_approval_attestation` | `world-tool approval attest` | trusted auth context input과 diff/reason hash binding, exact downstream action binding을 approval attestation으로 staging |
 | `world_accept_draft` | `world-tool draft accept` | validation 후 content 승격, trusted approval attestation 필요, downstream_action은 `world_accept_draft`와 정확히 일치해야 함 |
@@ -110,6 +111,7 @@ Docker `--root` mode에서 registry/provenance가 host canonical root를 제공�
 | `world_recover_run` | `world-tool run recover` | `TRANSACTION_INCOMPLETE` / unresolved recovery 정리 |
 | `world_get_run` | `world-tool run get` | redacted manifest/status summary only |
 | `world_get_run_artifact` | `world-tool run get --artifact` | allowlisted safe artifact를 basename으로 조회 |
+| `world_list_runs` | `world-tool run list` | run 목록과 요약 조회 |
 
 ## 6. Draft 생성 흐름
 ```mermaid
@@ -345,12 +347,13 @@ internal/audit
 12. `draft diff`
 13. `approval attest`
 14. `draft accept/reject`
-15. `run get`
-16. `run get --artifact`
-17. `run recover`
-18. `opencrabs/skills/world-building/SKILL.md`
-19. `opencrabs/tools/world-tools.toml`
-20. sample world root와 end-to-end smoke test
+15. `run list`
+16. `run get`
+17. `run get --artifact`
+18. `run recover`
+19. `opencrabs/skills/world-building/SKILL.md`
+20. `opencrabs/tools/world-tools.toml`
+21. sample world root와 end-to-end smoke test
 
 ## 12. 설계 판단
 - OpenCrabs가 이미 provider, skill, dynamic tools, channel UX를 제공하므로 별도 agent runtime을 만들지 않는다.

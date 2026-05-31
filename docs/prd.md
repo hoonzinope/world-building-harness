@@ -48,7 +48,7 @@ OpenCrabs는 `world_validate_draft` tool을 호출해 draft가 schema와 canon �
 ## 6. 성공 기준
 - OpenCrabs 대화에서 draft 생성부터 validation까지 수행할 수 있다.
 - `content/`는 `world_accept_draft` 또는 정책 게이트가 걸린 `world_force_accept_draft` 이전에 변경되지 않는다.
-- 모든 write 작업은 `runs/`에 입력, 결과, validation, diff, hash binding을 남긴다.
+- 모든 write 작업은 `runs/`에 redacted input summary와 path/hash/binding metadata, 결과, validation, diff를 남긴다. raw staged input, inbox payloads, unredacted body/reason, auth context, approval attestation payload는 non-browsable internal/private artifact이며 `run list`, `run get`, `run get --artifact <basename>`로 노출되지 않는다.
 - accepted draft는 `archive/accepted/`로 이동하고 active validation 대상에서 제외된다.
 - validation/policy/precondition/domain stop은 blocked로 보고하고, failed와 구분한다. `TRANSACTION_INCOMPLETE`는 failed/recovery-required partial transaction으로 별도 취급한다.
 - OpenCrabs skill만으로 판단 흐름을 안내하되, 실제 파일 변경은 `world-tool`이 강제한다.

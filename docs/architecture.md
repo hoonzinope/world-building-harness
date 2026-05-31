@@ -138,7 +138,7 @@ canon source of truth다. OpenCrabs DB나 index가 손실되어도 content Markd
 pending 후보 설정이다. OpenCrabs/Codex가 생성한 설정은 먼저 drafts에 저장된다.
 
 ### runs/
-모든 write workflow의 입력, 결과, validation, diff, actor, timestamp를 기록한다.
+모든 write workflow의 redacted input summary, 결과, validation, diff, actor, timestamp, path/hash/binding metadata만 기록한다. raw staged input, inbox payloads, unredacted body/reason, auth context, approval attestation payload는 non-browsable internal/private artifact이며 `run list`, `run get`, `run get --artifact <basename>`로 노출되지 않는다.
 
 ### archive/
 accepted/rejected draft를 보관한다. deprecated는 content/ 내부에서 status: deprecated로 유지되며 archive로 옮기지 않는다. archive는 active validation과 id 중복 검사 기본 대상에서 제외한다.
