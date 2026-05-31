@@ -217,37 +217,9 @@ OpenCrabs, `world-tool`, skill/tools bundle을 컨테이너에서 운영할 수 
 - Codex OAuth provider 사용 시 컨테이너에 Codex CLI나 `~/.codex` 마운트가 필요하지 않다.
 - Codex CLI provider fallback을 사용할 때만 별도 auth volume을 사용한다.
 
-## 10. Phase 8: Graph Store
+## 10. Phase 8: Post-MVP Hardening
 ### 목표
-content 기반 graph 인덱스를 생성한다.
-
-### 기능
-- nodes.json 생성
-- edges.json 생성
-- graph rebuild
-- graph check
-- orphan report
-
-### 완료 기준
-- content 전체를 기준으로 graph를 재생성할 수 있음
-- graph가 원천 진실이 아니라 재생성 가능한 인덱스로 유지됨
-
-## 11. Phase 9: Storylet & Exporter
-### 목표
-세계관 설정 외에 사건 후보와 raw note 정리 기능을 추가한다.
-
-### 기능
-- storylet draft 생성
-- raw note를 schema markdown으로 변환
-- canon impact validation
-
-### 완료 기준
-- raw 메모를 draft로 정리 가능
-- 기존 canon 기반 storylet 생성 가능
-
-## 12. Phase 10: Post-MVP Hardening
-### 목표
-MVP 이후 안정화와 maintenance path를 추가한다.
+MVP 이후 안정화와 maintenance path를 추가한다. Graph Store와 Storylet & Exporter는 이 단계 아래의 post-MVP candidate work로만 다루고, 실제 구현 순서는 `docs/implementation-plan.md`를 따른다.
 
 ### 기능
 - world별 validation strictness
@@ -257,12 +229,16 @@ MVP 이후 안정화와 maintenance path를 추가한다.
 - OpenCrabs tool calling retry/timeout 정책
 - migration boundary fixture
 
+### 후보 작업
+- Graph Store: nodes.json 생성, edges.json 생성, graph rebuild/check, orphan report
+- Storylet & Exporter: storylet draft 생성, raw note를 schema markdown으로 변환, canon impact validation
+
 ### 완료 기준
 - `content migrate`는 `--dry-run`만 허용하고 report와 artifact만 남기며 content를 직접 변경하지 않는 report-only maintenance path다. no-option과 `--apply`는 `INVALID_ARGUMENT`다.
 - migration 결과가 blocked/warning/action item으로 분리됨
 - post-MVP maintenance path가 MVP core와 분리됨
 
-## 13. 우선순위
+## 11. 우선순위
 세부 체크리스트는 `docs/implementation-plan.md`의 milestone 순서를 기준으로 한다.
 
 최우선:
@@ -282,7 +258,7 @@ MVP 이후 안정화와 maintenance path를 추가한다.
 4. dashboard
 5. OpenCrabs native extension 또는 deeper integration
 
-## 14. 리스크
+## 12. 리스크
 ### skill만으로 규칙을 강제하려는 위험
 Skill은 지침일 뿐이다. content 보호, validation, accept 차단은 tool에서 강제해야 한다.
 

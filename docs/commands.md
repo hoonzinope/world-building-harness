@@ -116,7 +116,7 @@ validation 결과는 top-level `command_status`와 섞지 않고 `data.validatio
       "path": "drafts/nations/nation_northern_empire.md"
     }
   ],
-  "available_actions": ["world_update_draft", "world_reject_draft"]
+  "available_actions": ["world_update_draft", "world_reject_draft", "world_diff_draft", "world_validate_draft"]
 }
 ```
 
@@ -146,7 +146,7 @@ blocked envelope:
       "path": "drafts/nations/nation_northern_empire.md"
     }
   ],
-  "available_actions": ["world_update_draft", "world_reject_draft"]
+  "available_actions": ["world_update_draft", "world_reject_draft", "world_diff_draft", "world_validate_draft"]
 }
 ```
 
@@ -251,8 +251,9 @@ OpenCrabs는 `ok`, `command_status`, `data.validation_status`, `data.block_reaso
 | `MISSING_TARGET` blocked on create/update/diff/accept | `world_update_draft`, `world_reject_draft`, `world_diff_draft`, `world_validate_draft` |
 | `DIFF_BINDING_REQUIRED` or `DIFF_BINDING_MISMATCH` | `world_diff_draft`, `world_validate_draft`, `world_update_draft` |
 | `TRANSACTION_INCOMPLETE` or recovery-needed state | `world_recover_run`, `world_get_run_artifact` |
-| staged input / run artifact inspection | `world_stage_input`, `world_get_run_artifact` |
+| safe redacted run artifact inspection | `world_get_run`, `world_get_run_artifact` |
 
+`world_get_run_artifact`는 redacted run artifact 조회 전용이다. staged inbox input이나 approval-attestation payload inspection은 여기서 제공하지 않는다.
 `world_accept_draft`는 fresh diff가 다시 생성되고, 그 diff에 정확히 바인딩된 `world_create_approval_attestation`이 downstream action까지 성공적으로 만든 뒤에만 광고할 수 있다. `validation pass`와 `warning`은 그 전 단계의 탐색용으로만 `world_diff_draft`/`world_update_draft`/`world_reject_draft`를 권장한다.
 `DIFF_BINDING_REQUIRED`와 `DIFF_BINDING_MISMATCH`에서는 attestation이 아직 유효한 현재 diff에 바인딩될 수 없으므로 `world_create_approval_attestation`를 권장하지 않는다. 먼저 `world_diff_draft`로 fresh diff를 다시 만들고, 필요하면 `world_validate_draft`와 `world_update_draft`로 정리한 뒤 attestation을 생성해야 한다.
 `world_force_accept_draft`는 `FORCE_NOT_ALLOWED`가 아니고 trusted attestation이 존재할 때만 권장된다.
@@ -316,6 +317,12 @@ world-tool registry default --world ashen-continent --json
 2. 환경변수 `WORLD_TOOL_REGISTRY`
 3. `~/.opencrabs/worlds.yaml`
 4. `~/.config/world-tool/worlds.yaml`
+
+밖으로 나가는 registry/config 접근 가드레일:
+- world root 밖의 registry/config read/write는 위 4개 경로만 허용한다. 그 외의 home/config 탐색은 허용하지 않는다.
+- resolved registry path는 사용 전에 normalize하고 symlink를 검사해야 한다.
+- registry/config 해석은 일반적인 home/config discovery로 확장하면 안 된다.
+- 선택된 world root 밖의 content/staging/run path는 어떤 경우에도 허용하지 않는다. absolute path, symlink 경유, parent traversal 모두 거부한다.
 
 ## 6. world
 ```bash
@@ -594,7 +601,7 @@ world-tool draft accept \
 Accept 정책:
 - `draft accept`와 `draft accept --force`는 `--reason-file`, `--reason-hash`, `--approver-id`, `--approval-channel`, `--approval-attestation-file`, `--approval-attestation-hash`, `--authenticated-actor`를 모두 요구한다. `reason-file`만으로는 충분하지 않다.
 - `--reason-file`과 `--reason-hash`는 짝을 이뤄야 하며, `world-tool`은 acceptance metadata를 기록하기 전에 재해시해서 검증한다.
-- `--authenticated-actor`는 단독으로는 신뢰되지 않는다. CLI는 `--approval-attestation-file`과 `--approval-attestation-hash`를 함께 넘겨야 하며, 이 attestation은 trusted wrapper/session metadata가 생성한 파일이어야 한다. attestation은 `runs/inbox/` 같은 trusted staging area에 있어야 하고, `world-tool`은 파일 해시를 다시 계산한 뒤 attestation 내부의 `world_id`, `issuer`, `audience`, `scope_verification`, `downstream_action`, `authenticated_actor`, `approver_id`, `approval_channel`, `diff_run_id`, `draft_hash`, `target_base_hash`, `patch_hash`, `reason_hash`가 command/world/auth context와 command flags에 모두 일치하는지, 그리고 `downstream_action`이 실제 invoked downstream action과 정확히 일치하는지 검증한 다음에만 `approval.authenticated_actor`를 기록한다. `world_accept_draft`는 `downstream_action: world_accept_draft`, `world_force_accept_draft`는 `downstream_action: world_force_accept_draft`를 요구하며, `scope_verification` allowlist에 둘 다 포함되어 있어도 exact `downstream_action`이 다르면 `APPROVAL_ATTESTATION_BINDING_MISMATCH`로 실패해야 한다. staged attestation file hash가 불일치하면 `APPROVAL_ATTESTATION_HASH_MISMATCH`, payload/command binding mismatch가 있으면 `APPROVAL_ATTESTATION_BINDING_MISMATCH`를 사용한다.
+- `--authenticated-actor`는 단독으로는 신뢰되지 않는다. CLI는 `--approval-attestation-file`과 `--approval-attestation-hash`를 함께 넘겨야 하며, 이 attestation은 trusted wrapper/session metadata가 생성한 파일이어야 한다. attestation은 world-root-relative `runs/inbox/*-approval-attestation.json` path여야 하고 `approval attest`로 생성된 것만 허용한다. alternate staging directories, symlinks, absolute paths, 그리고 `runs/inbox/` 밖의 path는 모두 거부한다. `world-tool`은 파일 해시를 다시 계산한 뒤 attestation 내부의 `world_id`, `issuer`, `audience`, `scope_verification`, `downstream_action`, `authenticated_actor`, `approver_id`, `approval_channel`, `diff_run_id`, `draft_hash`, `target_base_hash`, `patch_hash`, `reason_hash`가 command/world/auth context와 command flags에 모두 일치하는지, 그리고 `downstream_action`이 실제 invoked downstream action과 정확히 일치하는지 검증한 다음에만 `approval.authenticated_actor`를 기록한다. `world_accept_draft`는 `downstream_action: world_accept_draft`, `world_force_accept_draft`는 `downstream_action: world_force_accept_draft`를 요구하며, `scope_verification` allowlist에 둘 다 포함되어 있어도 exact `downstream_action`이 다르면 `APPROVAL_ATTESTATION_BINDING_MISMATCH`로 실패해야 한다. staged attestation file hash가 불일치하면 `APPROVAL_ATTESTATION_HASH_MISMATCH`, payload/command binding mismatch가 있으면 `APPROVAL_ATTESTATION_BINDING_MISMATCH`를 사용한다.
 - `pass`는 explicit approval provenance가 있으면 accept 가능하다.
 - `warning`은 기본 accept 가능하지만, warning과 approval provenance를 runs log에 남긴다.
 - `conflict`와 `error`는 기본 accept에서 `command_status: "blocked"`로 반환한다.

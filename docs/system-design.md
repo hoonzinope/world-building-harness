@@ -238,7 +238,7 @@ stateDiagram-v2
     "draft_hash": "sha256:..."
   },
   "issues": [],
-  "available_actions": ["world_read_draft", "world_validate_draft", "world_diff_draft", "world_update_draft", "world_reject_draft"]
+  "available_actions": ["world_read_draft", "world_validate_draft", "world_update_draft", "world_reject_draft"]
 }
 ```
 
@@ -297,7 +297,7 @@ stateDiagram-v2
       "message": "이 draft는 기존 세계 연표의 성립 시점과 충돌하므로 accept할 수 없음"
     }
   ],
-  "available_actions": ["world_update_draft", "world_reject_draft"]
+  "available_actions": ["world_update_draft", "world_reject_draft", "world_diff_draft", "world_validate_draft"]
 }
 ```
 

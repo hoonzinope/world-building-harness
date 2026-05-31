@@ -241,6 +241,7 @@ MVP에서 `type: storylet` active draft는 `drafts/storylets/` 아래에만 존�
 `--force`는 semantic, timeline, relationship conflict 후보만 우회할 수 있다. 이때도 referenced target이 모두 content에 이미 존재해야 한다.
 
 - missing target, missing related target, missing relationship target, missing update/deprecate target, active-draft-only target은 `--force`로 우회할 수 없다.
+- missing target, missing related target, missing relationship target, missing update/deprecate target, active-draft-only target은 `command_status: "blocked"`, `data.block_reason: "MISSING_TARGET"`, `data.validation_status: "conflict"`로 처리한다.
 - draft diff와 draft accept에서 missing target, missing related target, missing relationship target, missing update/deprecate target, active-draft-only target은 blocked `MISSING_TARGET`로 처리한다.
 - path/type/id/schema 불일치, structural error, id conflict, target path conflict, diff binding mismatch, storylet canon 승격, atomic write 실패, lock 실패는 `--force`로 우회할 수 없다.
 - `--force`는 오직 all-referenced-targets-in-canon 상태의 semantic/timeline/relationship conflict 후보에만 적용한다.
@@ -304,6 +305,7 @@ warning은 기본 accept를 차단하지 않는다. 단, accept reason에는 war
 `--force` 사용 시에도 reason과 trusted approval attestation이 필요하며 runs log에 기록한다. `--force`가 우회할 수 있는 것은 semantic/timeline/relationship conflict 후보에 한정한다.
 
 `--force`로도 우회할 수 없는 조건:
+- `MISSING_TARGET` 계열(missing target, missing related target, missing relationship target, missing update/deprecate target, active-draft-only target)
 - path boundary violation
 - inactive draft
 - malformed markdown 또는 YAML parse failure

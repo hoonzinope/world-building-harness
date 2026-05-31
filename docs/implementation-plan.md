@@ -194,7 +194,7 @@ draft를 canon과 비교해 구조 오류와 명백한 충돌을 탐지한다.
 
 ### 완료 기준
 - accept는 validation을 다시 실행한다.
-- `run recover`는 unresolved recovery를 해결하고 recovery artifact를 기록한다.
+- `run recover`는 unresolved recovery를 idempotently resolve하고 `recovery.json`을 resolved로 기록한다. 이후부터는 동일 world root의 write command가 다시 허용되지만, recovery path는 원래 `draft accept`를 재생하는 것이 아니다.
 - `run get`은 recovery inspection에 필요한 최소 run metadata와 artifact 참조를 조회할 수 있다.
 - `run get --artifact <basename>`은 basename allowlist를 통과한 safe artifact만 제공하고, `runs/inbox/**`는 제외하며, redacted/safe artifact만 노출한다.
 - accept는 diff binding이 없거나 불일치하면 blocked다.
@@ -341,7 +341,7 @@ OpenCrabs가 `world-tool`을 범용 shell이 아니라 의미 단위 tool로 호
 - staged input hash mismatch는 hash binding을 소비하는 모든 command에서 command-level `INPUT_HASH_MISMATCH`로 반환된다.
 - path boundary safety fixtures는 `../` traversal, absolute path, symlink escape, unsafe run artifact basename traversal, invalid `--auth-context-file` location 사례를 모두 커버한다.
 - registry/config boundary fixtures는 safe absolute path normalization, traversal rejection, symlink escape rejection, directory-confusion rejection을 각각 커버한다.
-- recovery resolution fixture는 recovery artifact가 해결된 뒤 동일 draft가 다시 accept될 수 있어야 한다는 점을 검증한다.
+- recovery resolution fixture는 `run recover`가 recorded transaction state를 idempotently resolve하고 `recovery.json`을 resolved로 남긴 뒤, 이후 write command가 다시 허용되는지 검증하며, 원래 `draft accept` 재실행이 recovery path가 아님을 확인한다.
 - storylet draft는 content canon accept에서 차단된다.
 - storylet content path/status 위반은 validation `error`로 보고되고 accept에서 blocked된다.
 - approval attestation 안전 fixture는 누락된 auth context, hash mismatch, expiry, scope denial, fixture opt-in missing, actor/channel mismatch, accept-time hash/binding mismatch 사례를 모두 커버한다.

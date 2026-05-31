@@ -75,7 +75,7 @@ export WORLD_TOOL_REGISTRY="$REGISTRY_FILE"
 issued_at=$(python3 -c 'from datetime import datetime, timedelta, timezone; now=datetime.now(timezone.utc).replace(microsecond=0); print(now.isoformat().replace("+00:00", "Z"))')
 expires_at=$(python3 -c 'from datetime import datetime, timedelta, timezone; now=datetime.now(timezone.utc).replace(microsecond=0) + timedelta(hours=1); print(now.isoformat().replace("+00:00", "Z"))')
 
-world_init_json=$(world-tool world init --registry "$REGISTRY_FILE" --root "$WORLD_ROOT" --world-id "$WORLD_ID" --json)
+world_init_json=$(world-tool world init --root "$WORLD_ROOT" --world-id "$WORLD_ID" --json)
 registry_json=$(world-tool registry add --registry "$REGISTRY_FILE" --world "$WORLD_ID" --root "$WORLD_ROOT" --title "잿빛 대륙" --json)
 world_list_json=$(world-tool world list --registry "$REGISTRY_FILE" --json)
 
