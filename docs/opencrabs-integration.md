@@ -285,8 +285,9 @@ OpenCrabs: world_validate_draft 호출
 OpenCrabs: id, draft path, validation status, 다음 행동 제안
 사용자: 승인 검토해줘
 OpenCrabs: world_diff_draft 출력은 create에서 `target_exists=false`, `target_base_hash=null`로 나오며, OpenCrabs dynamic tool layer가 diff summary와 binding values를 보여준다; approval attest/accept CLI 호출 직전 이 null을 CLI template 변수 `target_base_hash="none"`으로 매핑하고, update/deprecate 경로의 sha256 `target_base_hash`는 사용자 확인에 묶음
-사용자: 이 diff 승인해
 OpenCrabs: reason을 world_stage_input으로 staging
+OpenCrabs: reason_file/reason_hash와 diff binding values를 함께 보여주고, 사용자가 diff와 staged reason file/hash를 명시 승인하도록 대기
+사용자: 이 diff와 staged reason 승인해
 OpenCrabs: world_create_approval_attestation 호출(trusted auth context input, exact downstream_action binding, diff/reason hash binding, auth_context_file/hash)
 OpenCrabs: world_accept_draft 호출(create 경로는 target_base_hash=none, update/deprecate 경로는 sha256 target_base_hash; reason_file, reason_hash, approval_attestation_file, approval_attestation_hash, approver_id, approval_channel=OpenCrabs-chat, authenticated_actor 포함)
 world-tool: validation 재실행 후 content 승격

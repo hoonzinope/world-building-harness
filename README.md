@@ -108,6 +108,11 @@ patch_hash=$(jq -r '.data.patch_hash' <<<"$diff_json")
 reason_json=$(printf '%s\n' '제국 설정을 처음 반영하고, 승인을 위한 변경 사유를 남긴다.' | world-tool input stage --world "$WORLD_ID" --kind reason --stdin --json)
 reason_file=$(jq -r '.data.input_path' <<<"$reason_json")
 reason_hash=$(jq -r '.data.input_hash' <<<"$reason_json")
+jq -e --arg reason_file "$reason_file" --arg reason_hash "$reason_hash" '.ok == true and .data.input_path == $reason_file and .data.input_hash == $reason_hash' <<<"$reason_json" >/dev/null
+
+# explicit approval checkpoint: only continue after the user has reviewed the diff binding
+# and the staged reason file/hash, then set APPROVAL_CONFIRMED=true manually.
+: "${APPROVAL_CONFIRMED:?explicit approval required after diff and staged reason review}"
 
 cat > "$AUTH_CONTEXT_FILE" <<JSON
 {

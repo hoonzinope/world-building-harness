@@ -206,7 +206,7 @@ draft를 canon과 비교해 구조 오류와 명백한 충돌을 탐지한다.
 - conflict/error가 있으면 기본 accept가 blocked다.
 - force accept는 missing target, missing related target, missing relationship target, missing update/deprecate target, active draft-only target, path/type/id/schema 불일치, structural error, id conflict, target path conflict, diff binding mismatch, storylet canon 승격, atomic write 실패, lock 실패는 우회할 수 없다. reason 누락은 `INVALID_ARGUMENT` failed로, auth context/attestation provenance 문제는 대응하는 `AUTH_CONTEXT_*` 또는 attestation/hash mismatch failed로 처리한다.
 - force accept는 semantic/timeline/relationship conflict 후보 중 referenced target이 모두 canon content에 있는 경우에만 제한적으로 우회할 수 있다.
-- `approval attest`는 `WORLD_TOOL_TEST_AUTH_CONTEXT=1` explicit opt-in test fixture 경로와 trusted wrapper boundary를 연결하며, production auth context input은 signature/MAC 또는 configured wrapper trust-material 검증과 expected issuer/audience/scope policy를 통과해야 하고, `auth_context_hash`는 integrity binding으로만 사용된다.
+- `approval attest`는 `WORLD_TOOL_TEST_AUTH_CONTEXT=1` explicit opt-in test fixture 경로와 trusted wrapper boundary를 연결하며, production auth context input은 먼저 configured wrapper-owned auth-context boundary의 normalized regular file 또는 trusted request-file/FD mechanism을 만족해야 하고, traversal/symlink/selected world root/runtime-owned run dir/staged inbox는 hash/parse/signature/MAC/trust-material 검증 전에 거부되며, 그 뒤에 signature/MAC 또는 configured wrapper trust-material 검증과 expected issuer/audience/scope policy를 통과해야 하고, `auth_context_hash`는 integrity binding으로만 사용된다.
 - accept 성공 시 content 문서가 생성 또는 갱신된다.
 - accept 성공 시 draft 원본은 `archive/accepted/`로 이동한다.
 - 모든 변경은 runs artifact로 추적 가능하다.

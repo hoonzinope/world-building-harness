@@ -248,7 +248,8 @@ OpenCrabs는 `ok`, `command_status`, `data.validation_status`, `data.block_reaso
 | validation `pass` | `world_diff_draft`, `world_update_draft`, `world_reject_draft` |
 | validation `warning` | `world_diff_draft`, `world_update_draft`, `world_reject_draft` |
 | `draft diff` completed | `world_stage_input` |
-| `reason` input staged or reason-staged follow-up state | `world_create_approval_attestation` |
+| `reason` input staged, explicit approval not yet confirmed | `[]` |
+| explicit approval confirmed for diff + staged reason | `world_create_approval_attestation` |
 | validation `conflict` | `world_update_draft`, `world_reject_draft`, `world_diff_draft`, `world_validate_draft` |
 | validation `error` | `world_update_draft`, `world_reject_draft`, `world_validate_draft` |
 | `approval attest` completed | `world_accept_draft` when `data.downstream_action` is `world_accept_draft`; `world_force_accept_draft` when `data.downstream_action` is `world_force_accept_draft` |
@@ -260,7 +261,7 @@ OpenCrabs는 `ok`, `command_status`, `data.validation_status`, `data.block_reaso
 
 `world_get_run_artifact`는 redacted run artifact 조회 전용이다. staged inbox input이나 approval-attestation payload inspection은 여기서 제공하지 않는다.
 `MISSING_TARGET`가 `draft create --change-type update|deprecate`에서 발생한 경우에는 no-write failure라서 draft가 생성되지 않았다고 본다. 이 경우 `available_actions`에는 `world_update_draft`, `world_reject_draft`, `world_diff_draft`, `world_validate_draft` 같은 draft-bound action을 넣지 않는다. 반대로 `draft diff`/`draft accept`의 target-family `MISSING_TARGET`는 이미 active draft가 있는 경우에만 위 draft-bound action을 권장한다.
-`world_accept_draft`는 fresh diff가 다시 생성되고, reason이 staged된 뒤 그 diff와 reason에 정확히 바인딩된 `world_create_approval_attestation`이 downstream action까지 성공적으로 만든 뒤에만 광고할 수 있다. `validation pass`와 `warning`은 그 전 단계의 탐색용으로만 `world_diff_draft`/`world_update_draft`/`world_reject_draft`를 권장한다.
+`world_accept_draft`는 fresh diff가 다시 생성되고 reason이 staged된 뒤, 그 diff와 staged reason에 대한 explicit approval이 확인되고 나서야 `world_create_approval_attestation`이 광고/호출 가능하다. 그 attestation이 downstream action까지 성공적으로 만들기 전에는 `world_accept_draft`를 광고하지 않는다. `validation pass`와 `warning`은 그 전 단계의 탐색용으로만 `world_diff_draft`/`world_update_draft`/`world_reject_draft`를 권장한다.
 `DIFF_BINDING_REQUIRED`와 `DIFF_BINDING_MISMATCH`에서는 attestation이 아직 유효한 현재 diff에 바인딩될 수 없으므로 `world_create_approval_attestation`를 권장하지 않는다. 먼저 `world_diff_draft`로 fresh diff를 다시 만들고, 필요하면 `world_validate_draft`와 `world_update_draft`로 정리한 뒤 attestation을 생성해야 한다.
 `world_force_accept_draft`는 force가 정책상 허용되고, 현재 diff/reason/actor/channel에 바인딩된 fresh, non-expired approval attestation이 있으며 attestation의 `downstream_action`이 `world_force_accept_draft`로 exact match할 때만 권장된다. `world_accept_draft`용 attestation은 force 권한을 대체하지 않는다.
 
@@ -686,7 +687,7 @@ world-tool run recover --world ashen-continent --run-id 20260530-001 --json
 - 최근 실행 목록과 immutable summary만 조회
 - `run get`은 기본적으로 redacted manifest와 상태 요약만 반환한다. 이때 `data`에는 최소 `manifest`와 `status_summary`가 들어가며 둘 다 redacted다.
 - `run get`은 명시적인 safe artifact allowlist만 허용한다. `--artifact <artifact_name>`는 단일 값만 허용하며, 여러 artifact가 필요하면 `run get`을 반복 호출한다. basename allowlist에서만 선택할 수 있다. 예: `manifest.json`, `summary.json`, `result-summary.json`, `validation.json`, redacted `recovery.json`
-- sensitive artifact, raw staged input, inbox payload, unredacted result/body/reason는 `run get`이나 dynamic tools에서 노출하지 않는다. MVP 범위에서 privileged access 또는 explicit privileged flag로 우회하지 않는다. 이런 자료가 future에 필요하면 separate, explicitly specified command로만 다루고, 그 command는 own auth/redaction contract를 가져야 한다.
+- sensitive artifact, raw request/body/reason payloads, auth context payloads, approval attestation payloads, staged inbox payloads, unredacted draft/body/reason artifacts, and unredacted result/body/reason는 `run get`이나 dynamic tools에서 노출하지 않는다. MVP 범위에서 privileged access 또는 explicit privileged flag로 우회하지 않는다. 이런 자료가 future에 필요하면 separate, explicitly specified command로만 다루고, 그 command는 own auth/redaction contract를 가져야 한다.
 - `world_get_run_artifact`는 `run get`의 explicit safe artifact retrieval 전용 mapping이다. arbitrary path는 허용하지 않는다. 이 command의 `data`는 단일 artifact object shape로 `run_id`, `artifact_name`, `artifact_hash`, `media_type`, `size_bytes`, `redacted`, `content`를 포함하고 `content_path`는 반환하지 않으며, 여러 artifact가 필요하면 반복 호출한다.
 - `run recover`는 `TRANSACTION_INCOMPLETE` 또는 unresolved `recovery.json`를 해결하는 운영자용 command다. 대상 run의 `recovery.json`, 현재 content hash, archive state, result state를 다시 읽고, 이미 복구가 끝났다면 no-op으로 끝낸다.
 - `run recover`는 멱등적이어야 하며, 반복 호출해도 duplicate write를 만들지 않는다. 복구가 필요한 경우에만 남은 단계를 수행하고 `recovery.json`를 resolved로 표시한다.

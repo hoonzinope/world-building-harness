@@ -104,14 +104,14 @@ Docker `--root` mode에서 registry/provenance가 host canonical root를 제공�
 | `world_validate_draft` | `world-tool draft validate` | schema/canon 검증 |
 | `world_validate_content` | `world-tool content validate` | content schema/canon 검증 |
 | `world_diff_draft` | `world-tool draft diff` | accept 예상 변경 확인 |
+| `world_list_runs` | `world-tool run list` | run 목록과 요약 조회 |
+| `world_get_run` | `world-tool run get` | redacted manifest/status summary only |
+| `world_get_run_artifact` | `world-tool run get --artifact` | allowlisted safe artifact를 basename으로 조회 |
+| `world_recover_run` | `world-tool run recover` | `TRANSACTION_INCOMPLETE` / unresolved recovery 정리 |
 | `world_create_approval_attestation` | `world-tool approval attest` | trusted auth context input과 diff/reason hash binding, exact downstream action binding을 approval attestation으로 staging |
 | `world_accept_draft` | `world-tool draft accept` | validation 후 content 승격, trusted approval attestation 필요, downstream_action은 `world_accept_draft`와 정확히 일치해야 함 |
 | `world_force_accept_draft` | `world-tool draft accept --force` | 오퍼레이터가 승인한 예외 경로, trusted approval attestation과 policy limits 필요, downstream_action은 `world_force_accept_draft`와 정확히 일치해야 함 |
 | `world_reject_draft` | `world-tool draft reject` | draft 반려 |
-| `world_recover_run` | `world-tool run recover` | `TRANSACTION_INCOMPLETE` / unresolved recovery 정리 |
-| `world_get_run` | `world-tool run get` | redacted manifest/status summary only |
-| `world_get_run_artifact` | `world-tool run get --artifact` | allowlisted safe artifact를 basename으로 조회 |
-| `world_list_runs` | `world-tool run list` | run 목록과 요약 조회 |
 
 ## 6. Draft 생성 흐름
 ```mermaid
@@ -177,13 +177,14 @@ sequenceDiagram
     Tool->>WT: world-tool draft diff --world ashen-continent --draft drafts/nations/<draft>.md --json
     WT-->>OpenCrabs: diff summary + diff_run_id + hashes
     OpenCrabs-->>User: 변경 내용 확인
-    User->>OpenCrabs: "승인"
     OpenCrabs->>Tool: world_stage_input(kind=reason)
     Tool->>WT: world-tool input stage --world ashen-continent --kind reason --stdin --json
     WT-->>OpenCrabs: input_path + input_hash
     OpenCrabs->>OpenCrabs: remap input_path/input_hash -> reason_file/reason_hash
+    OpenCrabs-->>User: diff binding + staged reason file/hash 확인 요청
+    User->>OpenCrabs: "diff와 staged reason 승인"
     OpenCrabs->>Tool: world_create_approval_attestation(diff_run_id, draft_hash, target_base_hash, patch_hash, approver_id, approval_channel, downstream_action, authenticated_actor, auth_context_file, auth_context_hash, reason_hash)
-    Tool->>WT: world-tool approval attest --world ashen-continent --diff-run-id 20260530-010 --draft-hash sha256:... --target-base-hash <target_base_hash_or_none> --patch-hash sha256:... --approver-id park.hana --approval-channel OpenCrabs-chat --downstream-action world_accept_draft --authenticated-actor openid:codex-oauth:user-123 --auth-context-file /tmp/opencrabs-auth-context.json --auth-context-hash sha256:... --reason-hash sha256:... --json
+    Tool->>WT: world-tool approval attest --world ashen-continent --diff-run-id 20260530-010 --draft-hash sha256:... --target-base-hash <target_base_hash_or_none> --patch-hash sha256:... --approver-id park.hana --approval-channel OpenCrabs-chat --downstream-action world_accept_draft --authenticated-actor openid:codex-oauth:user-123 --auth-context-file /var/lib/opencrabs/auth-contexts/20260530-010.json --auth-context-hash sha256:... --reason-hash sha256:... --json
     WT-->>OpenCrabs: approval_attestation_file + approval_attestation_hash
     OpenCrabs->>Tool: world_accept_draft(draft_path, diff_run_id, draft_hash, target_base_hash, patch_hash, reason_file, reason_hash, approval_attestation_file, approval_attestation_hash, approver_id, approval_channel, authenticated_actor)
     Tool->>WT: world-tool draft accept --world ashen-continent --draft drafts/nations/<draft>.md --diff-run-id 20260530-010 --draft-hash sha256:... --target-base-hash <target_base_hash_or_none> --patch-hash sha256:... --approver-id park.hana --approval-channel OpenCrabs-chat --approval-attestation-file runs/inbox/<approval-attestation>.json --approval-attestation-hash sha256:... --authenticated-actor openid:codex-oauth:user-123 --reason-file runs/inbox/<reason-file> --reason-hash sha256:... --json
@@ -214,7 +215,8 @@ stateDiagram-v2
     DraftConflict --> NeedsRevision
     NeedsRevision --> DraftCreated: update draft
     DiffReady --> ReasonStaged: world_stage_input(kind=reason)
-    ReasonStaged --> AttestationReady: world_create_approval_attestation
+    ReasonStaged --> ApprovalConfirmed: explicit approval over diff + staged reason
+    ApprovalConfirmed --> AttestationReady: world_create_approval_attestation
     AttestationReady --> Accepted: world_accept_draft
     AttestationReady --> Rejected: user rejects
     Accepted --> ArchivedAccepted

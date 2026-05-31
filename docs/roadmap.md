@@ -47,7 +47,7 @@ OpenCrabs 없이도 로컬 CLI로 파일 관리와 validation을 수행할 수 �
 - path boundary와 symlink resolution을 가장 먼저 구현한다.
 - Markdown parser와 YAML frontmatter parser는 round-trip 안정성을 기준으로 선택한다.
 - 긴 draft body, 검색 query, title, reason, retcon_reason은 command-line argument가 아니라 stdin 또는 world root 내부 `runs/inbox/` staging file로 받는다.
-- `world_stage_input`과 `world_create_approval_attestation`이 돌려준 file path와 hash만 후속 tool에 넘기고, `authenticated_actor`는 OpenCrabs 인증 세션에서만 채운다. `auth_context_hash`는 integrity binding이며 production trusted auth context input은 signature/MAC 또는 configured wrapper trust-material 검증과 expected issuer/audience/scope policy를 만족해야 한다.
+- `world_stage_input`과 `world_create_approval_attestation`이 돌려준 file path와 hash만 후속 tool에 넘기고, `authenticated_actor`는 OpenCrabs 인증 세션에서만 채운다. `auth_context_hash`는 integrity binding이며 production trusted auth context input은 먼저 configured wrapper-owned auth-context boundary의 normalized regular file 또는 trusted request-file/FD mechanism을 만족해야 하고, traversal/symlink/selected world root/runtime-owned run dir/staged inbox는 hash/parse/signature/MAC/trust-material 검증 전에 거부되며, 그 뒤에 signature/MAC 또는 configured wrapper trust-material 검증과 expected issuer/audience/scope policy를 만족해야 한다.
 - 모든 command는 `commands.md`의 JSON envelope와 exit code 정책을 일관되게 지킨다.
 - write command는 world root lock을 사용한다.
 - diff와 accept는 hash binding으로 묶는다.
