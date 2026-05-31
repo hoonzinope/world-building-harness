@@ -241,7 +241,7 @@ OpenCrabs는 `ok`, `command_status`, `data.validation_status`, `data.block_reaso
 
 ### 3.2 available_actions enum and recommended mapping
 
-허용값은 최소한 다음을 포함한다: `world_update_draft`, `world_read_draft`, `world_accept_draft`, `world_force_accept_draft`, `world_reject_draft`, `world_create_approval_attestation`, `world_recover_run`, `world_get_run`, `world_get_run_artifact`, `world_stage_input`, `world_diff_draft`, `world_validate_draft`, `world_validate_content`, `world_list_runs`.
+허용값은 최소한 다음을 포함한다: `world_update_draft`, `world_read_draft`, `world_accept_draft`, `world_force_accept_draft`, `world_reject_draft`, `world_create_approval_attestation`, `world_list_runs`, `world_get_run`, `world_get_run_artifact`, `world_recover_run`, `world_stage_input`, `world_diff_draft`, `world_validate_draft`, `world_validate_content`.
 
 | 상태/결과 | recommended `available_actions` |
 | --- | --- |
@@ -785,6 +785,24 @@ executor = "shell"
 command = "world-tool run list --world {{world_id}} --json"
 
 [[tools]]
+name = "world_get_run"
+description = "Read the redacted run manifest and status summary"
+executor = "shell"
+command = "world-tool run get --world {{world_id}} --run-id {{run_id}} --json"
+
+[[tools]]
+name = "world_get_run_artifact"
+description = "Read one explicit safe run artifact by basename allowlist"
+executor = "shell"
+command = "world-tool run get --world {{world_id}} --run-id {{run_id}} --artifact {{artifact_name}} --json"
+
+[[tools]]
+name = "world_recover_run"
+description = "Resolve a partially committed transaction using run recovery state without replaying the original write command"
+executor = "shell"
+command = "world-tool run recover --world {{world_id}} --run-id {{run_id}} --json"
+
+[[tools]]
 name = "world_create_approval_attestation"
 description = "Create trusted approval attestation from OpenCrabs session metadata, diff binding, and exact downstream action"
 executor = "shell"
@@ -807,24 +825,6 @@ name = "world_reject_draft"
 description = "Archive a draft as rejected with a reason"
 executor = "shell"
 command = "world-tool draft reject --world {{world_id}} --draft {{draft_path}} --reason-file {{reason_file}} --reason-hash {{reason_hash}} --json"
-
-[[tools]]
-name = "world_recover_run"
-description = "Resolve a partially committed transaction using run recovery state without replaying the original write command"
-executor = "shell"
-command = "world-tool run recover --world {{world_id}} --run-id {{run_id}} --json"
-
-[[tools]]
-name = "world_get_run"
-description = "Read the redacted run manifest and status summary"
-executor = "shell"
-command = "world-tool run get --world {{world_id}} --run-id {{run_id}} --json"
-
-[[tools]]
-name = "world_get_run_artifact"
-description = "Read one explicit safe run artifact by basename allowlist"
-executor = "shell"
-command = "world-tool run get --world {{world_id}} --run-id {{run_id}} --artifact {{artifact_name}} --json"
 ```
 
 OpenCrabs는 query/title/body/reason/retcon_reason을 command template에 직접 넣지 않는다. 먼저 `world_stage_input`으로 `runs/inbox/` path를 만들고, 그 JSON 결과의 `input_path`/`input_hash`를 kind별로 `{{kind}}_file`/`{{kind}}_hash` 변수에 재매핑한 뒤 후속 tool에는 path와 hash만 넘긴다. approval attestation은 `world_create_approval_attestation`으로 attestation path/hash를 만든 뒤 후속 tool에는 path와 hash만 넘긴다. `downstream_action`은 실제 호출 경로와 정확히 일치하는 `world_accept_draft` 또는 `world_force_accept_draft` 중 하나로만 넣는다. `world_search_docs`는 `--scope active`를 명시하고, 각 후속 command는 대응하는 `--*-hash`를 함께 전달해야 한다. `world_get_run_artifact`는 basename allowlist에 있는 `artifact_name`만 읽는다.

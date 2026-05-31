@@ -134,11 +134,11 @@ OpenCrabs가 `world-tool`을 의미 단위 tool로 호출하게 한다.
 - 각 tool은 stdout JSON을 반환함
 - 범용 shell tool 없이 세계관 workflow를 수행할 수 있음
 - 긴 markdown body를 file/stdin 기반으로 전달하는 tool이 동작함
-- trusted wrapper/adapter가 authenticated session metadata를 받아 `auth_context_file`을 생성하고 hash를 계산해 `auth_context_hash`와 함께 tool 변수로 채움. production trusted auth context input은 signature/MAC 또는 configured wrapper trust-material 검증과 expected issuer/audience/scope policy를 만족해야 하며, `auth_context_hash`는 integrity binding만 담당함
+- trusted wrapper/adapter가 authenticated session metadata를 받아 `auth_context_file`을 생성하고 hash를 계산해 `auth_context_hash`와 함께 tool 변수로 채움. production trusted auth context input은 configured wrapper-owned auth-context boundary의 normalized regular file 또는 trusted request-file/FD mechanism에서만 받아야 하고, traversal/symlink/selected world root/runtime-owned run dir/staged inbox는 hash/parse/signature/MAC/trust-material 검증 전에 거부해야 하며, `auth_context_hash`는 integrity binding만 담당함
 - `auth_context_file`의 trusted contents는 expiry, scope, session metadata, approval channel, authenticated actor, downstream_action provenance 등이다. wrapper는 세션 종료 또는 attestation 사용 후 이를 정리/무효화한다. local fixture mode는 `WORLD_TOOL_TEST_AUTH_CONTEXT=1` explicit opt-in 테스트 전용 경로임
 - `approver_id`는 CLI/template input으로 별도 전달되는 non-authoritative audit/display label로 attestation과 audit에 기록됨.
 - approval attestation은 wrapper가 주입한 auth-context provenance를 `auth_context_file/auth_context_hash`, expected issuer/audience/scope policy, actor/channel 기준으로 검증하고, raw actor 문자열만으로 승인 provenance를 만들지 않음
-- `approval attest`는 invalid `auth_context_file` location과 path escape를 거부하며, world root 밖 trusted auth context input은 production trusted wrapper verification을 통과한 경우에만 read-only 예외로 허용함
+- `approval attest`는 invalid `auth_context_file` location과 path escape를 거부하며, configured wrapper-owned auth-context boundary 또는 trusted request-file/FD를 먼저 만족한 production trusted auth context input만 read-only 예외로 허용하고, boundary-before-hash/parse/signature/MAC/trust-material ordering을 유지함
 - registry/config file path validation은 null-root registry behavior에서 explicit absolute registry/config file path를 safe normalization/validation 후 허용하되, unsafe traversal, symlink escape, directory confusion, world-root document/artifact path escape는 거부함
 - safe artifact retrieval은 명시적 basename allowlist와 path boundary 검증만 허용함
 - recovery inspection은 `world_get_run`과 필요 시 `world_get_run_artifact`의 조회로 가능해야 하며, `world_recover_run`은 unresolved recovery 상태만 해소해야 함

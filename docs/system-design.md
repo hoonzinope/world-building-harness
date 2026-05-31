@@ -53,7 +53,7 @@ flowchart TD
 
 ### world-tool
 - Go 단일 바이너리다.
-- world root 밖 path를 기본적으로 차단한다. `approval attest`는 trusted auth context input만 read-only로 허용하며, production input은 wrapper-signed 또는 MACed envelope이거나 configured wrapper trust material로 검증 가능한 equivalent여야 하고, expected issuer/audience/scope policy를 만족해야 한다. hash/expiry 검증은 보조 무결성 확인일 뿐이다.
+- world root 밖 path를 기본적으로 차단한다. `approval attest`는 trusted auth context input만 read-only로 허용하며, production input은 configured wrapper-owned auth-context boundary의 normalized regular file 또는 trusted request-file/FD mechanism에서만 받아야 하고, traversal/symlink/selected world root/runtime-owned run dir/staged inbox는 hash/parse/signature/MAC/trust-material 검증 전에 거부해야 한다. signature/MAC 또는 configured wrapper trust material 검증, expected issuer/audience/scope policy, hash/expiry 확인은 그 다음 단계의 무결성 및 provenance 검증이다.
 - Markdown/frontmatter를 파싱하고 정규화한다.
 - validation, diff, accept/reject, runs log, recovery handling을 수행한다.
 - recovery handling은 `world-tool run recover`로만 수행하며(`world_recover_run` 매핑), 원래 write command를 재실행하는 repair shortcut은 제공하지 않는다.

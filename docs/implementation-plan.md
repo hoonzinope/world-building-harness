@@ -310,7 +310,12 @@ OpenCrabs가 `world-tool`을 범용 shell이 아니라 의미 단위 tool로 호
 - absolute path fixture
 - symlink escape fixture
 - unsafe run artifact basename traversal fixture
-- invalid `--auth-context-file` location fixture
+- invalid `--auth-context-file` traversal fixture
+- invalid `--auth-context-file` symlink fixture
+- invalid `--auth-context-file` selected world root fixture
+- invalid `--auth-context-file` runtime-owned run directory fixture
+- invalid `--auth-context-file` staged inbox fixture
+- invalid `--auth-context-file` validation-before-hash/parse/trust-material ordering fixture
 - relationship domain/range mismatch fixture
 - active draft only target at accept fixture
 - recovery resolution fixture
@@ -352,7 +357,7 @@ OpenCrabs가 `world-tool`을 범용 shell이 아니라 의미 단위 tool로 호
 - relationship domain/range mismatch는 conflict로 탐지된다.
 - related id 또는 relationship target이 active draft에만 존재하면 draft validate에서는 warning, accept/diff에서는 `command_status: "blocked"`, `data.block_reason: "MISSING_TARGET"`, `data.validation_status: "conflict"`로 처리된다.
 - staged input hash mismatch는 hash binding을 소비하는 모든 command에서 command-level `INPUT_HASH_MISMATCH`로 반환된다.
-- path boundary safety fixtures는 `../` traversal, absolute path, symlink escape, unsafe run artifact basename traversal, invalid `--auth-context-file` location 사례를 모두 커버한다.
+- path boundary safety fixtures는 `../` traversal, absolute path, symlink escape, unsafe run artifact basename traversal, invalid `--auth-context-file` traversal/symlink/selected world root/runtime-owned run directory/staged inbox, validation-before-hash/parse/trust-material ordering 사례를 모두 커버한다.
 - registry/config boundary fixtures는 safe absolute path normalization, traversal rejection, symlink escape rejection, directory-confusion rejection을 각각 커버한다.
 - recovery resolution fixture는 `run recover`가 recorded transaction state를 idempotently resolve하고 `recovery.json`을 resolved로 남긴 뒤, 이후 write command가 다시 허용되는지 검증하며, 원래 `draft accept` 재실행이 recovery path가 아님을 확인한다.
 - `run get` redacted manifest/status fixture는 run metadata의 민감 필드를 가리고 최소 상태만 노출하는지 검증한다.
