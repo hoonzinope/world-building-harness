@@ -14,11 +14,15 @@ OpenCrabs를 세계관 빌딩 하네스이자 오케스트레이터로 사용하
 ## 문서 읽는 순서
 1. [docs/prd.md](docs/prd.md): 제품 경계와 MVP 목표
 2. [docs/system-design.md](docs/system-design.md): 전체 컴포넌트와 workflow
-3. [docs/commands.md](docs/commands.md): `world-tool` CLI와 JSON 계약
-4. [docs/schema.md](docs/schema.md): Markdown frontmatter와 relationship schema
-5. [docs/validation-rules.md](docs/validation-rules.md): validator 규칙과 accept 차단 정책
-6. [docs/security-boundary.md](docs/security-boundary.md): path, secret, Docker 보안 경계
-7. [docs/implementation-plan.md](docs/implementation-plan.md): 구현 milestone과 완료 기준
+3. [docs/architecture.md](docs/architecture.md): 구현 구조와 설계 기준
+4. [docs/workflow.md](docs/workflow.md): 작업 흐름과 승인 흐름
+5. [docs/commands.md](docs/commands.md): `world-tool` CLI와 JSON 계약
+6. [docs/schema.md](docs/schema.md): Markdown frontmatter와 relationship schema
+7. [docs/validation-rules.md](docs/validation-rules.md): validator 규칙과 accept 차단 정책
+8. [docs/security-boundary.md](docs/security-boundary.md): path, secret, Docker 보안 경계
+9. [docs/opencrabs-integration.md](docs/opencrabs-integration.md): OpenCrabs 연동 경계와 책임
+10. [docs/implementation-plan.md](docs/implementation-plan.md): 구현 milestone과 완료 기준
+11. [docs/roadmap.md](docs/roadmap.md): 후속 확장 우선순위와 범위
 
 ## 구현 예정 산출물
 ```text
@@ -78,6 +82,7 @@ expires_at=$(python3 -c 'from datetime import datetime, timedelta, timezone; now
 world_init_json=$(world-tool world init --root "$WORLD_ROOT" --world-id "$WORLD_ID" --json)
 registry_json=$(world-tool registry add --registry "$REGISTRY_FILE" --world "$WORLD_ID" --root "$WORLD_ROOT" --title "잿빛 대륙" --json)
 world_list_json=$(world-tool world list --registry "$REGISTRY_FILE" --json)
+jq -e --arg world_id "$WORLD_ID" '.ok == true and any(.data.worlds[]?; . == $world_id or .world_id == $world_id or .id == $world_id)' <<<"$world_list_json" >/dev/null
 
 title_json=$(printf '%s\n' '잿빛 대륙' | world-tool input stage --world "$WORLD_ID" --kind title --stdin --json)
 title_file=$(jq -r '.data.input_path' <<<"$title_json")

@@ -249,12 +249,14 @@ OpenCrabs는 `ok`, `command_status`, `data.validation_status`, `data.block_reaso
 | validation `warning` | `world_diff_draft`, `world_update_draft`, `world_reject_draft` |
 | validation `conflict` | `world_update_draft`, `world_reject_draft`, `world_diff_draft`, `world_validate_draft` |
 | validation `error` | `world_update_draft`, `world_reject_draft`, `world_validate_draft` |
-| `MISSING_TARGET` blocked on create/update/diff/accept | `world_update_draft`, `world_reject_draft`, `world_diff_draft`, `world_validate_draft` |
+| `MISSING_TARGET` on `draft create --change-type update|deprecate` with no draft created | `[]` |
+| `MISSING_TARGET` on `draft diff/accept` with active draft already present | `world_update_draft`, `world_reject_draft`, `world_diff_draft`, `world_validate_draft` |
 | `DIFF_BINDING_REQUIRED` or `DIFF_BINDING_MISMATCH` | `world_diff_draft`, `world_validate_draft`, `world_update_draft` |
 | `TRANSACTION_INCOMPLETE` or recovery-needed state | `world_recover_run`, `world_get_run_artifact` |
 | safe redacted run artifact inspection | `world_get_run`, `world_get_run_artifact` |
 
 `world_get_run_artifact`는 redacted run artifact 조회 전용이다. staged inbox input이나 approval-attestation payload inspection은 여기서 제공하지 않는다.
+`MISSING_TARGET`가 `draft create --change-type update|deprecate`에서 발생한 경우에는 no-write failure라서 draft가 생성되지 않았다고 본다. 이 경우 `available_actions`에는 `world_update_draft`, `world_reject_draft`, `world_diff_draft`, `world_validate_draft` 같은 draft-bound action을 넣지 않는다. 반대로 `draft diff`/`draft accept`의 target-family `MISSING_TARGET`는 이미 active draft가 있는 경우에만 위 draft-bound action을 권장한다.
 `world_accept_draft`는 fresh diff가 다시 생성되고, 그 diff에 정확히 바인딩된 `world_create_approval_attestation`이 downstream action까지 성공적으로 만든 뒤에만 광고할 수 있다. `validation pass`와 `warning`은 그 전 단계의 탐색용으로만 `world_diff_draft`/`world_update_draft`/`world_reject_draft`를 권장한다.
 `DIFF_BINDING_REQUIRED`와 `DIFF_BINDING_MISMATCH`에서는 attestation이 아직 유효한 현재 diff에 바인딩될 수 없으므로 `world_create_approval_attestation`를 권장하지 않는다. 먼저 `world_diff_draft`로 fresh diff를 다시 만들고, 필요하면 `world_validate_draft`와 `world_update_draft`로 정리한 뒤 attestation을 생성해야 한다.
 `world_force_accept_draft`는 force가 정책상 허용되고, 현재 diff/reason/actor/channel에 바인딩된 fresh, non-expired approval attestation이 있으며 attestation의 `downstream_action`이 `world_force_accept_draft`로 exact match할 때만 권장된다. `world_accept_draft`용 attestation은 force 권한을 대체하지 않는다.

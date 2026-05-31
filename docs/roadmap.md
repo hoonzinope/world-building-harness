@@ -155,35 +155,16 @@ OpenCrabs 대화에서 draft 생성, 검증, 승인 흐름이 자연스럽게 �
 ## 8. Phase 6: Sample World E2E
 ### 목표
 샘플 world root로 end-to-end 흐름을 검증한다.
+세부 fixture 체크리스트는 `docs/implementation-plan.md`의 Milestone 8을 canonical 기준으로 삼는다.
 
 ### 기능
 - `examples/worlds/ashen-continent`
 - 최소 canon 문서 3개 이상
-- draft 생성 fixture
-- validation conflict fixture
-- update/retcon fixture
-- target path collision fixture
-- `../` traversal fixture
-- absolute path fixture
-- symlink escape fixture
-- unsafe run artifact basename traversal fixture
-- invalid `--auth-context-file` location fixture
-- storylet accept block fixture
-- force denied fixture
-- lock/base-hash mismatch fixture
-- relationship allowlist fixture
-- accept/reject fixture
-- registry/config safe absolute path normalization fixture
-- registry/config traversal rejection fixture
-- registry/config symlink escape rejection fixture
-- registry/config directory-confusion rejection fixture
-- missing auth context approval attestation fixture
-- auth context hash mismatch approval attestation fixture
-- auth context expiry approval attestation fixture
-- auth context scope denial approval attestation fixture
-- fixture opt-in missing approval attestation fixture
-- actor/channel mismatch approval attestation fixture
-- accept-time approval attestation hash/binding mismatch fixture
+- draft 생성, validation conflict, update/retcon, accept/reject 기본 흐름 fixture
+- path boundary 및 registry/config boundary fixture
+- approval attestation 안전 fixture
+- run recovery/get 라이프사이클 fixture
+- storylet, force, lock/base-hash, relationship allowlist fixture
 - OpenCrabs skill + tools 수동 테스트 스크립트
 
 ### 완료 기준
@@ -191,9 +172,10 @@ OpenCrabs 대화에서 draft 생성, 검증, 승인 흐름이 자연스럽게 �
 - conflict draft가 accept에서 차단됨
 - diff binding mismatch가 accept에서 차단됨
 - storylet draft가 content canon으로 승격되지 않음
-- path boundary safety fixtures는 `../` traversal, absolute path, symlink escape, unsafe run artifact basename traversal, invalid `--auth-context-file` location 사례를 모두 커버한다.
-- registry/config boundary fixtures는 safe absolute path normalization, traversal rejection, symlink escape rejection, directory-confusion rejection을 각각 커버한다.
-- approval attestation 안전 fixture는 누락된 auth context, hash mismatch, expiry, scope denial, fixture opt-in missing, actor/channel mismatch, accept-time hash/binding mismatch 사례를 모두 커버한다. production trusted auth context input criteria는 signature/MAC 또는 configured wrapper trust-material verification plus expected issuer/audience/scope policy이며, local fixture mode는 `WORLD_TOOL_TEST_AUTH_CONTEXT=1` explicit opt-in만 허용한다.
+- path boundary, registry/config boundary, approval attestation 안전 fixture가 Milestone 8 기준으로 모두 커버된다.
+- recovery resolution, redacted run metadata, safe artifact retrieval, inbox/sensitive artifact rejection, unresolved recovery inspection before `run recover` 흐름이 샘플 world에서 검증된다.
+- `run get`은 redacted manifest/status만 노출하고 allowlisted safe artifact만 반환하며, inbox/sensitive artifact는 거부한다.
+- `run recover`는 unresolved recovery를 idempotently resolve하고 `recovery.json`을 resolved로 남긴다.
 - accepted draft가 archive/accepted/로 이동함
 - runs artifact가 재현 가능한 형태로 남음
 
