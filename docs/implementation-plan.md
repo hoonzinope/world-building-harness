@@ -133,6 +133,7 @@ draft를 canon과 비교해 구조 오류와 명백한 충돌을 탐지한다.
 - id uniqueness rule
 - create with target_id/retcon_reason rule
 - missing target_id rule
+- missing update/deprecate target rule
 - target id mismatch rule
 - relationship target existence rule
 - relationship normalization, dedupe, and consistency rule
@@ -150,6 +151,7 @@ draft를 canon과 비교해 구조 오류와 명백한 충돌을 탐지한다.
 - `change_type: update` 또는 `change_type: deprecate`에서 target_id가 없거나 id가 target_id와 다르면 `error`로 반환된다.
 - active draft path/type 규칙 위반은 `error`로 반환된다.
 - `change_type: create`에서 기존 canon id와 중복되는 draft는 `conflict`로 반환된다.
+- `change_type: update` 또는 `change_type: deprecate`의 target_id가 canon content에 없으면 `conflict`로 반환되며 `block_reason`은 `MISSING_TARGET`다.
 - convenience field는 explicit relationships[]가 없어도 graph fact로 normalize된다.
 - convenience field와 explicit relationships[]가 같은 fact로 normalize되면 dedupe된다.
 - convenience field와 explicit relationships[]가 서로 다른 fact를 만들면 `conflict`로 반환된다.
@@ -158,6 +160,7 @@ draft를 canon과 비교해 구조 오류와 명백한 충돌을 탐지한다.
 - accept validation에서 active draft에만 존재하는 relationship target은 `conflict`로 반환된다.
 - 알 수 없는 relationship type과 domain/range mismatch는 `conflict`로 반환된다.
 - related id와 relationship target이 active draft에만 존재하는 경우는 draft validate에서 warning, accept에서 blocked로 처리한다.
+- unresolved recovery가 있으면 `draft validate`처럼 `runs/<run-id>/validation.json`을 쓰는 run-writing command는 blocked된다.
 - validation 결과는 `runs/<run-id>/validation.json`에 저장된다.
 
 ## 8. Milestone 5: Diff, Accept, Audit
@@ -184,7 +187,7 @@ draft를 canon과 비교해 구조 오류와 명백한 충돌을 탐지한다.
 - accept는 validation을 다시 실행한다.
 - accept는 diff binding이 없거나 불일치하면 blocked다.
 - conflict/error가 있으면 기본 accept가 blocked다.
-- force accept는 reason과 trusted approval attestation provenance 중 하나라도 없으면 blocked이며 missing target, missing related target, active draft-only target, structural error, id conflict, path violation, target path conflict, storylet canon 승격, diff binding mismatch는 우회할 수 없다.
+- force accept는 reason과 trusted approval attestation provenance 중 하나라도 없으면 blocked이며 missing target, missing related target, missing relationship target, missing update/deprecate target, active draft-only target, structural error, id conflict, path violation, target path conflict, storylet canon 승격, diff binding mismatch는 우회할 수 없다.
 - force accept는 semantic/timeline/relationship conflict 후보 중 referenced target이 모두 canon content에 있는 경우에만 우회할 수 있다.
 - accept 성공 시 content 문서가 생성 또는 갱신된다.
 - accept 성공 시 draft 원본은 `archive/accepted/`로 이동한다.
@@ -281,6 +284,7 @@ OpenCrabs, `world-tool`, skill/tools bundle을 컨테이너에서 운영할 수 
 - conflict draft fixture
 - update/retcon draft fixture
 - missing retcon_reason fixture
+- missing update/deprecate target fixture
 - convenience-vs-explicit relationship conflict fixture
 - inverse/symmetric contradiction fixture
 - related-only-active-draft target fixture
@@ -324,9 +328,9 @@ OpenCrabs, `world-tool`, skill/tools bundle을 컨테이너에서 운영할 수 
 - accepted draft는 `content/`에 반영되고 `archive/accepted/`로 이동한다.
 - `runs/` artifact만 보고 어떤 변경이 있었는지 추적할 수 있다.
 
-## 13. Milestone 10: Hardening
+## 13. Milestone 10: Post-MVP Hardening
 ### 목표
-MVP 이후 장기 운영에 필요한 안정성 기능을 추가한다.
+MVP 이후 장기 운영과 maintenance path를 추가한다.
 
 ### 후보 작업
 - validation rule strictness를 world별로 설정
@@ -334,7 +338,7 @@ MVP 이후 장기 운영에 필요한 안정성 기능을 추가한다.
 - archive pruning/compression/export
 - retcon/versioning report
 - schema migration and migration report
-- `content migrate` report-only workflow
+- `content migrate` report-only maintenance workflow
 - migration boundary fixture
 - OpenCrabs tool calling retry/timeout 정책
 - semantic search integration
@@ -344,11 +348,11 @@ MVP 이후 장기 운영에 필요한 안정성 기능을 추가한다.
 - 장편 세계관에서 archive와 runs가 늘어나도 운영 정책이 있다.
 - graph는 content에서 재생성 가능한 인덱스로 유지된다.
 - validator가 확정 판정기가 아니라 conflict 후보 탐지기라는 경계가 유지된다.
-- migration command는 report만 만들고 content를 변경하지 않는다.
+- migration command는 report-only maintenance path이며 content를 변경하지 않는다.
 - migration command는 report-only이며 content를 직접 변경하는 mutating mode를 제공하지 않는다.
 
 ### Migration workflow
-- `content migrate`는 report와 artifact만 남기고 content를 변경하지 않는다.
+- `content migrate`는 report와 artifact만 남기는 post-MVP hardening maintenance path이며 content를 변경하지 않는다.
 - `content migrate`는 warning-only legacy/import 이슈를 actionable report로 묶고 blocked 항목과 분리하되 content를 직접 변경하지 않는다.
 - migration report는 source 문서, path move 여부, field normalization 결과, before/after hash, blocker 목록을 포함한다.
 - migration 완료 기준은 warning이 사라졌는지가 아니라, warning이 의사결정 가능한 action item으로 정리되고 blocked 항목이 남지 않았는지다.

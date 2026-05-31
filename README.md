@@ -47,21 +47,23 @@ world-tool draft accept
 
 ## 구현 후 Quickstart 목표
 아래는 CLI가 구현된 뒤 통과해야 하는 첫 성공 경로다.
-`approval attest` 단계는 OpenCrabs trusted wrapper/session metadata로부터 생성된 `auth_context_file`/`auth_context_hash`를 사용하며, 이 파일은 world root 밖에서 만들어지고 prompt, model output, staged files는 신뢰하지 않는다.
-`draft create`는 명시적 `--id`를 입력으로 받고, `draft update/deprecate`는 명시적 `--target-id`를 사용한다. create에서 나온 id로 파생된 `draft_path`를 기준으로 validate, diff, approval attestation, accept가 이어진다.
+`approval attest` 단계는 OpenCrabs trusted wrapper/session metadata로부터 생성된 `auth_context_file`/`auth_context_hash`를 사용하며, 이 파일은 OpenCrabs trusted wrapper가 생성한다. 로컬 CLI 테스트에서는 명시적인 test fixture/mock auth context만 사용하고, 운영 provenance로는 취급하지 않는다. prompt, model output, staged files는 신뢰하지 않는다.
+`draft create`는 명시적 `--id`를 입력으로 받고, `draft update/deprecate`는 명시적 `--target-id`를 사용한다. create에서 나온 id로 파생된 `draft_path`를 기준으로 validate, diff, approval attestation, accept가 이어진다. create diff의 JSON은 `target_exists: false`, `target_base_hash: null`이고, create 경로의 `approval attest`와 `draft accept`는 `--target-base-hash none`을 사용한다. update/deprecate만 sha256 `target_base_hash`를 사용한다.
 
 ```bash
 world-tool world init --root ./examples/worlds/ashen-continent --world-id ashen-continent --json
 world-tool registry add --world ashen-continent --root ./examples/worlds/ashen-continent --title "잿빛 대륙" --json
 world-tool world list --json
+# world-tool input stage returns input_path + input_hash; OpenCrabs remaps them by kind:
+# title -> title_file/title_hash, body -> body_file/body_hash, reason -> reason_file/reason_hash, retcon_reason -> retcon_reason_file/retcon_reason_hash.
 world-tool input stage --world ashen-continent --kind title --stdin --json
 world-tool input stage --world ashen-continent --kind body --stdin --json
 world-tool draft create --world ashen-continent --change-type create --type nation --id nation_ashen_empire --title-file runs/inbox/<title-file> --title-hash <hash> --body-file runs/inbox/<body-file> --body-hash <hash> --json
 world-tool draft validate --world ashen-continent --draft drafts/nations/<id>.md --json
 world-tool draft diff --world ashen-continent --draft drafts/nations/<id>.md --json
 world-tool input stage --world ashen-continent --kind reason --stdin --json
-world-tool approval attest --world ashen-continent --diff-run-id <run> --draft-hash <hash> --target-base-hash <hash> --patch-hash <hash> --approver-id <user> --approval-channel OpenCrabs-chat --authenticated-actor <actor> --auth-context-file <auth-context-file> --auth-context-hash <hash> --reason-hash <hash> --json
-world-tool draft accept --world ashen-continent --draft drafts/nations/<id>.md --diff-run-id <run> --draft-hash <hash> --target-base-hash <hash> --patch-hash <hash> --approver-id <user> --approval-channel OpenCrabs-chat --approval-attestation-file runs/inbox/<approval-attestation>.json --approval-attestation-hash <hash> --authenticated-actor <actor> --reason-file runs/inbox/<reason-file> --reason-hash <hash> --json
+world-tool approval attest --world ashen-continent --diff-run-id <run> --draft-hash <hash> --target-base-hash none --patch-hash <hash> --approver-id <user> --approval-channel OpenCrabs-chat --authenticated-actor <actor> --auth-context-file <auth-context-file> --auth-context-hash <hash> --reason-hash <hash> --json
+world-tool draft accept --world ashen-continent --draft drafts/nations/<id>.md --diff-run-id <run> --draft-hash <hash> --target-base-hash none --patch-hash <hash> --approver-id <user> --approval-channel OpenCrabs-chat --approval-attestation-file runs/inbox/<approval-attestation>.json --approval-attestation-hash <hash> --authenticated-actor <actor> --reason-file runs/inbox/<reason-file> --reason-hash <hash> --json
 ```
 
 ## 현재 주의점

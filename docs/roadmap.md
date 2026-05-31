@@ -41,7 +41,6 @@ OpenCrabs 없이도 로컬 CLI로 파일 관리와 validation을 수행할 수 �
 - Markdown parser와 YAML frontmatter parser는 round-trip 안정성을 기준으로 선택한다.
 - 긴 draft body, 검색 query, title, reason, retcon_reason은 command-line argument가 아니라 stdin 또는 world root 내부 `runs/inbox/` staging file로 받는다.
 - `world_stage_input`과 `world_create_approval_attestation`이 돌려준 file path와 hash만 후속 tool에 넘기고, `authenticated_actor`는 OpenCrabs 인증 세션에서만 채운다.
-- `content migrate`는 report-only로 유지하고, migration artifact만 `runs/`에 남긴다. content mutation은 draft accept 경로에 남긴다.
 - 모든 command는 `commands.md`의 JSON envelope와 exit code 정책을 일관되게 지킨다.
 - write command는 world root lock을 사용한다.
 - diff와 accept는 hash binding으로 묶는다.
@@ -196,7 +195,24 @@ content 기반 graph 인덱스를 생성한다.
 - raw 메모를 draft로 정리 가능
 - 기존 canon 기반 storylet 생성 가능
 
-## 11. 우선순위
+## 11. Phase 9: Post-MVP Hardening
+### 목표
+MVP 이후 안정화와 maintenance path를 추가한다.
+
+### 기능
+- world별 validation strictness
+- schema migration and migration report
+- `content migrate` report-only maintenance path
+- archive pruning/compression/export
+- OpenCrabs tool calling retry/timeout 정책
+- migration boundary fixture
+
+### 완료 기준
+- `content migrate`는 report와 artifact만 남기고 content를 직접 변경하지 않음
+- migration 결과가 blocked/warning/action item으로 분리됨
+- post-MVP maintenance path가 MVP core와 분리됨
+
+## 12. 우선순위
 세부 체크리스트는 `docs/implementation-plan.md`의 milestone 순서를 기준으로 한다.
 
 최우선:
@@ -215,7 +231,7 @@ content 기반 graph 인덱스를 생성한다.
 4. dashboard
 5. OpenCrabs native extension 또는 deeper integration
 
-## 12. 리스크
+## 13. 리스크
 ### skill만으로 규칙을 강제하려는 위험
 Skill은 지침일 뿐이다. content 보호, validation, accept 차단은 tool에서 강제해야 한다.
 

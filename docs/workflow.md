@@ -98,8 +98,8 @@ receive user request in OpenCrabs
 - blocked는 validation/policy/precondition/domain stop을 의미하며, failed와 구분한다.
 - `TRANSACTION_INCOMPLETE`는 failed/recovery-required partial transaction이며, normal blocked no-mutation 결과가 아니다.
 - `PATH_*`, `LOCK_BUSY`, I/O/path/lock 오류는 failed JSON error다.
-- conflict/error와 `DRAFT_NOT_ACTIVE`, `DIFF_BINDING_REQUIRED` 같은 domain blocked 결과는 기본 accept에서 blocked로 반환된다.
-- unresolved recovery가 있으면 `input stage`, `approval attest`, `draft diff`, `draft create`, `draft validate`, `draft accept`, `draft reject`, content report writer를 포함한 모든 world-root/run-writing command가 차단되며, `world_recover_run`만 write 예외다.
+- conflict/error와 `DRAFT_NOT_ACTIVE`, `DIFF_BINDING_REQUIRED`, `MISSING_TARGET` 같은 domain blocked 결과는 기본 accept에서 blocked로 반환된다.
+- unresolved recovery가 있으면 `input stage`, `approval attest`, `draft diff`, `draft create`, `draft validate`(`runs/<run-id>/validation.json` writer), `draft accept`, `draft reject`, content report writer를 포함한 모든 world-root/run-writing command가 차단되며, `world_recover_run`만 write 예외다.
 - `force`는 reason과 trusted approval attestation 중 하나라도 없으면 blocked이며, semantic/timeline/relationship conflict 후보만 제한적으로 우회한다.
 - structural error, id conflict, path/target 충돌, storylet canon 승격, diff binding mismatch는 force로도 우회할 수 없다.
 - `force`는 `approval_attestation_file`, `approval_attestation_hash`, `approver_id`, `approval_channel`, `authenticated_actor`가 함께 기록될 때만 승인 provenance가 완성된다.

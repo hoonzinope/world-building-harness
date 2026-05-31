@@ -157,7 +157,7 @@ force accept는 가능하지만 reason만으로는 부족하다. `reason_file`/`
 
 force accept 제한:
 - semantic/timeline/relationship conflict 후보만 우회 대상으로 삼는다.
-- missing related target, missing relationship target, active-draft-only target, path violation, inactive draft, malformed markdown/YAML, 필수 field 누락, id conflict, target path 충돌, storylet canon 승격, diff binding mismatch, atomic write 실패, lock 실패는 force로 우회할 수 없다.
+- missing related target, missing relationship target, missing update/deprecate target, active-draft-only target, path violation, inactive draft, malformed markdown/YAML, 필수 field 누락, id conflict, target path 충돌, storylet canon 승격, diff binding mismatch, atomic write 실패, lock 실패는 force accept로 우회할 수 없다.
 
 warning은 accept를 차단하지 않지만, accept reason에 warning을 확인했다는 맥락을 남긴다.
 
@@ -175,7 +175,7 @@ write command는 world root 단위 lock을 사용한다.
 - lock 획득 실패는 `LOCK_BUSY` JSON error로 반환한다.
 - accept는 lock을 잡은 뒤 validation을 재실행한다.
 - accept는 diff_run_id, draft_hash, target_base_hash, patch_hash binding을 검증한다.
-- `diff_run_id`, `draft_hash`, `target_base_hash`, `patch_hash`는 `world_diff_draft`의 출력에서 가져와야 한다. staged file hash는 `world_stage_input`의 출력에서 가져오고, approval attestation이 이 값들과 trusted auth context를 묶어야 한다. accept 시점에 world-tool이 다시 계산한 값과 일치해야 한다.
+- create 경로는 target absence check와 CLI `--target-base-hash none`을 사용하고, update/deprecate 경로는 sha256 `target_base_hash`를 사용한다. `diff_run_id`, `draft_hash`, `target_base_hash`, `patch_hash`는 `world_diff_draft`의 출력에서 가져와야 하며, create 경로에서는 JSON의 `target_base_hash: null`을 CLI template 변수 `target_base_hash="none"`으로 매핑해야 한다. staged file hash는 `world_stage_input`의 출력에서 가져오고, approval attestation이 이 값들과 trusted auth context를 묶어야 한다. accept 시점에 world-tool이 다시 계산한 값과 일치해야 한다.
 - diff 시점의 draft/content/patch hash와 accept 시점의 값이 다르면 accept를 중단한다.
 - accept는 `reason_file`/`reason_hash`, `approval_attestation_file`/`approval_attestation_hash`, `approver_id`, `approval_channel`, `authenticated_actor`를 audit field로 기록한다. free-form reason이나 actor 문자열만으로는 승인 provenance가 충분하지 않다.
 
@@ -262,7 +262,7 @@ Docker root-only 실행에서는 world_id provenance를 bind mount path에서 �
 ### 사용자가 validation 우회를 유도하는 경우
 방어:
 - conflict/error는 기본 accept에서 차단
-- force accept는 reason과 trusted approval attestation이 필수이며 semantic/timeline/relationship conflict 후보에만 제한적으로 허용하고, `approver_id`/`approval_channel`/`authenticated_actor`를 함께 남겨야 한다.
+- force accept는 reason과 trusted approval attestation이 필수이며 semantic/timeline/relationship conflict 후보에만 제한적으로 허용하고, `approver_id`/`approval_channel`/`authenticated_actor`를 함께 남겨야 한다. missing related target, missing relationship target, missing update/deprecate target, active-draft-only target은 force accept 제한 대상에 포함된다.
 - structural error, id conflict, path violation, inactive draft, target path conflict, storylet canon 승격, diff binding mismatch는 force로도 차단
 - force 여부, reason, approval attestation/provenance를 runs log에 기록
 - OpenCrabs skill에 “validation 우회 요청은 tool 정책을 따른다”는 지침 포함

@@ -107,7 +107,8 @@ native execution에서는 `registry_root == root`가 되어야 한다. Docker에
 | `world_force_accept_draft` | `world-tool draft accept --force` | 오퍼레이터가 승인한 예외 경로, trusted approval attestation과 policy limits required |
 | `world_reject_draft` | `world-tool draft reject` | draft 반려 |
 | `world_recover_run` | `world-tool run recover` | `TRANSACTION_INCOMPLETE` / unresolved recovery 정리 |
-| `world_get_run` | `world-tool run get` | redacted manifest/status only by default, 명시 safe artifact allowlist만 조회 |
+| `world_get_run` | `world-tool run get` | redacted manifest/status summary only |
+| `world_get_run_artifact` | `world-tool run get --artifact` | allowlisted safe artifact를 basename으로 조회 |
 
 ## 6. Draft 생성 흐름
 ```mermaid
@@ -131,17 +132,20 @@ sequenceDiagram
     Tool-->>OpenCrabs: status
     OpenCrabs->>Tool: world_stage_input(kind=query)
     Tool->>WT: world-tool input stage --world ashen-continent --kind query --stdin --json
-    WT-->>OpenCrabs: query_file + query_hash
+    WT-->>OpenCrabs: input_path + input_hash
+    OpenCrabs->>OpenCrabs: remap input_path/input_hash -> query_file/query_hash
     OpenCrabs->>Tool: world_search_docs(scope=active, query_file, query_hash)
     Tool->>WT: world-tool doc search --world ashen-continent --scope active --query-file runs/inbox/<query-file> --query-hash sha256:... --json
     WT-->>OpenCrabs: related docs
     OpenCrabs->>OpenCrabs: Codex OAuth provider drafts markdown
     OpenCrabs->>Tool: world_stage_input(kind=title)
     Tool->>WT: world-tool input stage --world ashen-continent --kind title --stdin --json
-    WT-->>OpenCrabs: title_file + title_hash
+    WT-->>OpenCrabs: input_path + input_hash
+    OpenCrabs->>OpenCrabs: remap input_path/input_hash -> title_file/title_hash
     OpenCrabs->>Tool: world_stage_input(kind=body)
     Tool->>WT: world-tool input stage --world ashen-continent --kind body --stdin --json
-    WT-->>OpenCrabs: body_file + body_hash
+    WT-->>OpenCrabs: input_path + input_hash
+    OpenCrabs->>OpenCrabs: remap input_path/input_hash -> body_file/body_hash
     OpenCrabs->>Tool: world_create_draft(id, title_file, title_hash, body_file, body_hash)
     Tool->>WT: world-tool draft create --world ashen-continent --change-type create --type nation --id nation_ashen_empire --title-file runs/inbox/<title-file> --title-hash sha256:... --body-file runs/inbox/<body-file> --body-hash sha256:... --json
     WT->>World: write drafts/ and runs/
@@ -153,8 +157,8 @@ sequenceDiagram
     OpenCrabs-->>User: id + draft summary + validation + next actions
 ```
 
-위 시퀀스는 schematic이지만 command contract를 깨지 않도록 필수 인자 `--world`, 파일 경로 입력, hash binding, approval attestation/provenance를 명시한다. `registry add`와 `world list`는 `--world`가 필요한 status/search/draft command보다 먼저 world_id→root 해석을 확정한다.
-`diff_run_id`/`draft_hash`/`target_base_hash`/`patch_hash`는 `world_diff_draft`의 출력이고, `reason_file`/`reason_hash`와 `title_file`/`title_hash`/`body_file`/`body_hash` 같은 staged file hash는 `world_stage_input`의 출력이다. `world_create_approval_attestation`은 `reason_hash`만 diff binding에 묶고, `reason_file`/`reason_hash`는 `world_accept_draft`/`world_force_accept_draft`가 소비한다. `world_create_approval_attestation`은 이 값들을 trusted auth context wrapper의 `auth_context_file`/`auth_context_hash`와 함께 확인한다.
+위 시퀀스는 schematic이지만 command contract를 깨지 않도록 필수 인자 `--world`, 파일 경로 입력, hash binding, approval attestation/provenance를 명시한다. `registry add`는 registration 관리 command이고, canonical 목록 조회는 `world list`다. `registry list`는 registry 파일 자체를 점검하는 운영/관리 alias로만 설명한다.
+`diff_run_id`/`draft_hash`/`target_base_hash`/`patch_hash`는 `world_diff_draft`의 출력이고, create 경로에서는 `target_exists: false`와 `target_base_hash: null`이 계약이다. `input_path`/`input_hash`는 `world_stage_input`의 출력이고, OpenCrabs는 이를 kind별로 `query_file/query_hash`, `title_file/title_hash`, `body_file/body_hash`, `reason_file/reason_hash`, `retcon_reason_file/retcon_reason_hash`로 다시 매핑한다. create 경로의 `world_create_approval_attestation`과 `world_accept_draft`는 `--target-base-hash none`을 사용하고, update/deprecate 경로만 sha256 `target_base_hash`를 사용한다. `world_create_approval_attestation`은 `reason_hash`만 diff binding에 묶고, `reason_file`/`reason_hash`는 `world_accept_draft`/`world_force_accept_draft`가 소비한다. `world_create_approval_attestation`은 이 값들을 trusted auth context wrapper의 `auth_context_file`/`auth_context_hash`와 함께 확인한다.
 
 ## 7. Accept 흐름
 ```mermaid
@@ -173,12 +177,13 @@ sequenceDiagram
     User->>OpenCrabs: "승인"
     OpenCrabs->>Tool: world_stage_input(kind=reason)
     Tool->>WT: world-tool input stage --world ashen-continent --kind reason --stdin --json
-    WT-->>OpenCrabs: reason_file + reason_hash
+    WT-->>OpenCrabs: input_path + input_hash
+    OpenCrabs->>OpenCrabs: remap input_path/input_hash -> reason_file/reason_hash
     OpenCrabs->>Tool: world_create_approval_attestation(diff_run_id, draft_hash, target_base_hash, patch_hash, approver_id, approval_channel, authenticated_actor, auth_context_file, auth_context_hash, reason_hash)
-    Tool->>WT: world-tool approval attest --world ashen-continent --diff-run-id 20260530-010 --draft-hash sha256:... --target-base-hash sha256:... --patch-hash sha256:... --approver-id park.hana --approval-channel OpenCrabs-chat --authenticated-actor openid:codex-oauth:user-123 --auth-context-file /tmp/opencrabs-auth-context.json --auth-context-hash sha256:... --reason-hash sha256:... --json
+    Tool->>WT: world-tool approval attest --world ashen-continent --diff-run-id 20260530-010 --draft-hash sha256:... --target-base-hash none --patch-hash sha256:... --approver-id park.hana --approval-channel OpenCrabs-chat --authenticated-actor openid:codex-oauth:user-123 --auth-context-file /tmp/opencrabs-auth-context.json --auth-context-hash sha256:... --reason-hash sha256:... --json
     WT-->>OpenCrabs: approval_attestation_file + approval_attestation_hash
     OpenCrabs->>Tool: world_accept_draft(draft_path, diff_run_id, draft_hash, target_base_hash, patch_hash, reason_file, reason_hash, approval_attestation_file, approval_attestation_hash, approver_id, approval_channel, authenticated_actor)
-    Tool->>WT: world-tool draft accept --world ashen-continent --draft drafts/nations/<draft>.md --diff-run-id 20260530-010 --draft-hash sha256:... --target-base-hash sha256:... --patch-hash sha256:... --approver-id park.hana --approval-channel OpenCrabs-chat --approval-attestation-file runs/inbox/<approval-attestation>.json --approval-attestation-hash sha256:... --authenticated-actor openid:codex-oauth:user-123 --reason-file runs/inbox/<reason-file> --reason-hash sha256:... --json
+    Tool->>WT: world-tool draft accept --world ashen-continent --draft drafts/nations/<draft>.md --diff-run-id 20260530-010 --draft-hash sha256:... --target-base-hash none --patch-hash sha256:... --approver-id park.hana --approval-channel OpenCrabs-chat --approval-attestation-file runs/inbox/<approval-attestation>.json --approval-attestation-hash sha256:... --authenticated-actor openid:codex-oauth:user-123 --reason-file runs/inbox/<reason-file> --reason-hash sha256:... --json
     WT->>World: verify diff binding, attestation provenance, and draft validate again
     alt validation pass or warning
         WT->>World: write content/
