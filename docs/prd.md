@@ -41,7 +41,7 @@ OpenCrabs는 `world_validate_draft` tool을 호출해 draft가 schema와 canon �
 1. OpenCrabs skill: 세계관 작업 원칙과 workflow 지침 제공
 2. Dynamic tools: OpenCrabs에서 호출 가능한 `world_*` tool 세트
 3. Go `world-tool` CLI: 파일/설정/검증/승격 작업을 deterministic하게 수행
-4. `input stage`, `draft create/validate/diff/accept/reject`, `registry add/list/remove/default` 명령 계약
+4. `world init/status/list`, `registry add/list/remove/default`, `input stage`, `doc read/search`, `draft create/update/read/list/validate/diff/accept/reject`, `approval attest`, `run get`, `run get --artifact <basename>`, `run recover` 같은 MVP 핵심 명령 가족과 JSON 계약
 5. `content/`, `drafts/`, `runs/`, `archive/` 기반 world root 구조
 6. JSON 출력과 audit/run log
 

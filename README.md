@@ -90,7 +90,8 @@ body_hash=$(jq -r '.data.input_hash' <<<"$body_json")
 draft_create_json=$(world-tool draft create --world "$WORLD_ID" --change-type create --type nation --id nation_ashen_empire --title-file "$title_file" --title-hash "$title_hash" --body-file "$body_file" --body-hash "$body_hash" --json)
 draft_path=$(jq -r '.data.draft_path' <<<"$draft_create_json")
 
-world-tool draft validate --world "$WORLD_ID" --draft "$draft_path" --json
+validate_json=$(world-tool draft validate --world "$WORLD_ID" --draft "$draft_path" --json)
+jq -e '.ok == true and .command_status == "completed" and (.data.validation_status == "pass" or .data.validation_status == "warning")' <<<"$validate_json" >/dev/null
 
 diff_json=$(world-tool draft diff --world "$WORLD_ID" --draft "$draft_path" --json)
 diff_run_id=$(jq -r '.data.diff_run_id' <<<"$diff_json")
@@ -123,7 +124,8 @@ approval_attest_json=$(WORLD_TOOL_TEST_AUTH_CONTEXT=1 world-tool approval attest
 approval_attestation_file=$(jq -r '.data.approval_attestation_file' <<<"$approval_attest_json")
 approval_attestation_hash=$(jq -r '.data.approval_attestation_hash' <<<"$approval_attest_json")
 
-world-tool draft accept --world "$WORLD_ID" --draft "$draft_path" --diff-run-id "$diff_run_id" --draft-hash "$draft_hash" --target-base-hash "$target_base_hash" --patch-hash "$patch_hash" --approver-id "$APPROVER_ID" --approval-channel "$APPROVAL_CHANNEL" --approval-attestation-file "$approval_attestation_file" --approval-attestation-hash "$approval_attestation_hash" --authenticated-actor "$AUTHENTICATED_ACTOR" --reason-file "$reason_file" --reason-hash "$reason_hash" --json
+accept_json=$(world-tool draft accept --world "$WORLD_ID" --draft "$draft_path" --diff-run-id "$diff_run_id" --draft-hash "$draft_hash" --target-base-hash "$target_base_hash" --patch-hash "$patch_hash" --approver-id "$APPROVER_ID" --approval-channel "$APPROVAL_CHANNEL" --approval-attestation-file "$approval_attestation_file" --approval-attestation-hash "$approval_attestation_hash" --authenticated-actor "$AUTHENTICATED_ACTOR" --reason-file "$reason_file" --reason-hash "$reason_hash" --json)
+jq -e '.ok == true and .command_status == "completed"' <<<"$accept_json" >/dev/null
 ```
 로컬 CLI 테스트용 auth context는 world root 밖의 임시 파일을 쓰는 local fixture/mock 전용이며, 운영 provenance가 아니다.
 
