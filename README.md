@@ -127,11 +127,12 @@ JSON
 auth_context_hash=$(python3 -c 'import hashlib, pathlib, sys; print("sha256:" + hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest())' "$AUTH_CONTEXT_FILE")
 
 approval_attest_json=$(WORLD_TOOL_TEST_AUTH_CONTEXT=1 world-tool approval attest --world "$WORLD_ID" --diff-run-id "$diff_run_id" --draft-hash "$draft_hash" --target-base-hash "$target_base_hash" --patch-hash "$patch_hash" --approver-id "$APPROVER_ID" --approval-channel "$APPROVAL_CHANNEL" --downstream-action world_accept_draft --authenticated-actor "$AUTHENTICATED_ACTOR" --auth-context-file "$AUTH_CONTEXT_FILE" --auth-context-hash "$auth_context_hash" --reason-hash "$reason_hash" --json)
+jq -e '.ok == true and .command_status == "completed" and .data.downstream_action == "world_accept_draft" and .data.target_base_hash == null' <<<"$approval_attest_json" >/dev/null
 approval_attestation_file=$(jq -r '.data.approval_attestation_file' <<<"$approval_attest_json")
 approval_attestation_hash=$(jq -r '.data.approval_attestation_hash' <<<"$approval_attest_json")
 
 accept_json=$(world-tool draft accept --world "$WORLD_ID" --draft "$draft_path" --diff-run-id "$diff_run_id" --draft-hash "$draft_hash" --target-base-hash "$target_base_hash" --patch-hash "$patch_hash" --approver-id "$APPROVER_ID" --approval-channel "$APPROVAL_CHANNEL" --approval-attestation-file "$approval_attestation_file" --approval-attestation-hash "$approval_attestation_hash" --authenticated-actor "$AUTHENTICATED_ACTOR" --reason-file "$reason_file" --reason-hash "$reason_hash" --json)
-jq -e '.ok == true and .command_status == "completed"' <<<"$accept_json" >/dev/null
+jq -e --arg reason_file "$reason_file" --arg reason_hash "$reason_hash" --arg approval_attestation_file "$approval_attestation_file" --arg approval_attestation_hash "$approval_attestation_hash" '.ok == true and .command_status == "completed" and .data.approval.downstream_action == "world_accept_draft" and .data.approval.reason_file == $reason_file and .data.approval.reason_hash == $reason_hash and .data.approval.approval_attestation_file == $approval_attestation_file and .data.approval.approval_attestation_hash == $approval_attestation_hash' <<<"$accept_json" >/dev/null
 ```
 로컬 CLI 테스트용 auth context는 world root 밖의 임시 파일을 쓰는 local fixture/mock 전용이며, 운영 provenance가 아니다.
 

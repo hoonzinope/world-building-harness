@@ -61,7 +61,9 @@ dynamic tool은 `opencrab_exec_shell` 같은 범용 명령이 아니라 의미 �
 - `world_update_draft`
 - `world_read_draft`
 - `world_validate_draft`
+- `world_validate_content`
 - `world_diff_draft`
+- `world_list_runs`
 - `world_create_approval_attestation` (uses trusted auth context input, exact downstream_action binding, and diff/reason binding)
 - `world_accept_draft`
 - `world_force_accept_draft`

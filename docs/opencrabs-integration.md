@@ -137,6 +137,12 @@ executor = "shell"
 command = "world-tool draft validate --world {{world_id}} --draft {{draft_path}} --json"
 
 [[tools]]
+name = "world_validate_content"
+description = "Validate canon content against schema and canon rules"
+executor = "shell"
+command = "world-tool content validate --world {{world_id}} --json"
+
+[[tools]]
 name = "world_diff_draft"
 description = "Return the content changes that accept would apply"
 executor = "shell"
@@ -173,6 +179,12 @@ executor = "shell"
 command = "world-tool run recover --world {{world_id}} --run-id {{run_id}} --json"
 
 [[tools]]
+name = "world_list_runs"
+description = "List immutable run summaries"
+executor = "shell"
+command = "world-tool run list --world {{world_id}} --json"
+
+[[tools]]
 name = "world_get_run"
 description = "Read the redacted run manifest and status summary"
 executor = "shell"
@@ -186,6 +198,7 @@ command = "world-tool run get --world {{world_id}} --run-id {{run_id}} --artifac
 ```
 
 `world_get_run`은 redacted manifest/status summary만 반환한다. 안전한 artifact가 필요할 때만 `world_get_run_artifact`를 호출하고, allowlist에 있는 basename만 읽는다. `runs/inbox/**`는 노출하지 않는다.
+`world_validate_content`는 canon content만 검사한다. `world_list_runs`는 redacted immutable run summaries만 반환하고 `runs/inbox/**`는 노출하지 않는다.
 
 `world_create_approval_attestation`이 staged approval attestation에 기록한 `downstream_action`은 `world_accept_draft` 또는 `world_force_accept_draft`와 exact match여야 한다.
 

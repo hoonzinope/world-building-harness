@@ -37,6 +37,7 @@ OpenCrabs 없이도 로컬 CLI로 파일 관리와 validation을 수행할 수 �
 - `world-tool approval attest`
 - `world-tool draft accept`
 - `world-tool draft reject`
+- `world-tool run list`
 - `world-tool run recover`
 - `world-tool run get`
 - `world-tool run get --artifact <basename>`
@@ -116,11 +117,13 @@ OpenCrabs가 `world-tool`을 의미 단위 tool로 호출하게 한다.
 - `world_update_draft`
 - `world_read_draft`
 - `world_validate_draft`
+- `world_validate_content`
 - `world_diff_draft`
 - `world_create_approval_attestation`
 - `world_accept_draft`
 - `world_force_accept_draft`
 - `world_reject_draft`
+- `world_list_runs`
 - `world_recover_run`
 - `world_get_run`
 - `world_get_run_artifact`

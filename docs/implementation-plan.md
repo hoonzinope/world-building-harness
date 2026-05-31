@@ -172,8 +172,10 @@ draft를 canon과 비교해 구조 오류와 명백한 충돌을 탐지한다.
 
 ### 산출물
 - `world-tool draft diff`
-- `world-tool draft accept`
 - `world-tool approval attest`
+- `world-tool draft accept`
+- `world-tool draft reject`
+- `world-tool run list`
 - `world-tool run recover`
 - `world-tool run get`
 - `world-tool run get --artifact <basename>`
@@ -194,7 +196,9 @@ draft를 canon과 비교해 구조 오류와 명백한 충돌을 탐지한다.
 
 ### 완료 기준
 - accept는 validation을 다시 실행한다.
+- `approval attest`는 `draft accept` 또는 `draft accept --force` 전에 생성되어야 하며, staged approval attestation의 exact downstream_action binding이 맞지 않으면 accept/force accept가 실패한다.
 - `run recover`는 unresolved recovery를 idempotently resolve하고 `recovery.json`을 resolved로 기록한다. 이후부터는 동일 world root의 write command가 다시 허용되지만, recovery path는 원래 `draft accept`를 재생하는 것이 아니다.
+- `run list`는 immutable run summary만 반환하고 `runs/inbox/**`를 노출하지 않는다.
 - `run get`은 recovery inspection에 필요한 최소 run metadata와 artifact 참조를 조회할 수 있다.
 - `run get --artifact <basename>`은 basename allowlist를 통과한 safe artifact만 제공하고, `runs/inbox/**`는 제외하며, redacted/safe artifact만 노출한다.
 - `run get`은 redacted manifest/status를 반환하고, `run get --artifact`는 redacted recovery metadata 같은 allowlisted safe artifact만 제공하며 inbox/sensitive artifact는 거부하고, `run recover` 전에 unresolved recovery를 inspection할 수 있어야 한다.
@@ -245,11 +249,13 @@ OpenCrabs가 `world-tool`을 범용 shell이 아니라 의미 단위 tool로 호
 - `world_update_draft`
 - `world_read_draft`
 - `world_validate_draft`
+- `world_validate_content`
 - `world_diff_draft`
 - `world_create_approval_attestation`
 - `world_accept_draft`
 - `world_force_accept_draft`
 - `world_reject_draft`
+- `world_list_runs`
 - `world_recover_run`
 - `world_get_run`
 - `world_get_run_artifact`

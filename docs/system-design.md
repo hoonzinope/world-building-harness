@@ -268,7 +268,7 @@ stateDiagram-v2
       "recommendation": "후계 국가인지 역사 서술인지 명확히 할 것"
     }
   ],
-  "available_actions": ["world_update_draft", "world_diff_draft", "world_reject_draft"]
+  "available_actions": ["world_diff_draft", "world_update_draft", "world_reject_draft"]
 }
 ```
 
@@ -333,9 +333,9 @@ internal/audit
 ## 11. 구현 순서
 1. Go module과 `world-tool --version`
 2. world root resolver와 path boundary
-3. `world-tool registry add`
-4. `world-tool world list`
-5. `world-tool world init/status`
+3. `world-tool world init/status`
+4. `world-tool registry add`
+5. `world-tool world list`
 6. Markdown/frontmatter parser
 7. `world-tool doc list/read/search`
 8. `input stage`

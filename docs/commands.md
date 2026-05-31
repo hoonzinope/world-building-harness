@@ -241,13 +241,14 @@ OpenCrabs는 `ok`, `command_status`, `data.validation_status`, `data.block_reaso
 
 ### 3.2 available_actions enum and recommended mapping
 
-허용값은 최소한 다음을 포함한다: `world_update_draft`, `world_read_draft`, `world_accept_draft`, `world_force_accept_draft`, `world_reject_draft`, `world_create_approval_attestation`, `world_recover_run`, `world_get_run`, `world_get_run_artifact`, `world_stage_input`, `world_diff_draft`, `world_validate_draft`.
+허용값은 최소한 다음을 포함한다: `world_update_draft`, `world_read_draft`, `world_accept_draft`, `world_force_accept_draft`, `world_reject_draft`, `world_create_approval_attestation`, `world_recover_run`, `world_get_run`, `world_get_run_artifact`, `world_stage_input`, `world_diff_draft`, `world_validate_draft`, `world_validate_content`, `world_list_runs`.
 
 | 상태/결과 | recommended `available_actions` |
 | --- | --- |
 | validation `pass` | `world_diff_draft`, `world_update_draft`, `world_reject_draft` |
 | validation `warning` | `world_diff_draft`, `world_update_draft`, `world_reject_draft` |
-| `draft diff` completed | `world_stage_input`, `world_create_approval_attestation` |
+| `draft diff` completed | `world_stage_input` |
+| `reason` input staged or reason-staged follow-up state | `world_create_approval_attestation` |
 | validation `conflict` | `world_update_draft`, `world_reject_draft`, `world_diff_draft`, `world_validate_draft` |
 | validation `error` | `world_update_draft`, `world_reject_draft`, `world_validate_draft` |
 | `approval attest` completed | `world_accept_draft` when `data.downstream_action` is `world_accept_draft`; `world_force_accept_draft` when `data.downstream_action` is `world_force_accept_draft` |
@@ -259,7 +260,7 @@ OpenCrabs는 `ok`, `command_status`, `data.validation_status`, `data.block_reaso
 
 `world_get_run_artifact`는 redacted run artifact 조회 전용이다. staged inbox input이나 approval-attestation payload inspection은 여기서 제공하지 않는다.
 `MISSING_TARGET`가 `draft create --change-type update|deprecate`에서 발생한 경우에는 no-write failure라서 draft가 생성되지 않았다고 본다. 이 경우 `available_actions`에는 `world_update_draft`, `world_reject_draft`, `world_diff_draft`, `world_validate_draft` 같은 draft-bound action을 넣지 않는다. 반대로 `draft diff`/`draft accept`의 target-family `MISSING_TARGET`는 이미 active draft가 있는 경우에만 위 draft-bound action을 권장한다.
-`world_accept_draft`는 fresh diff가 다시 생성되고, 그 diff에 정확히 바인딩된 `world_create_approval_attestation`이 downstream action까지 성공적으로 만든 뒤에만 광고할 수 있다. `validation pass`와 `warning`은 그 전 단계의 탐색용으로만 `world_diff_draft`/`world_update_draft`/`world_reject_draft`를 권장한다.
+`world_accept_draft`는 fresh diff가 다시 생성되고, reason이 staged된 뒤 그 diff와 reason에 정확히 바인딩된 `world_create_approval_attestation`이 downstream action까지 성공적으로 만든 뒤에만 광고할 수 있다. `validation pass`와 `warning`은 그 전 단계의 탐색용으로만 `world_diff_draft`/`world_update_draft`/`world_reject_draft`를 권장한다.
 `DIFF_BINDING_REQUIRED`와 `DIFF_BINDING_MISMATCH`에서는 attestation이 아직 유효한 현재 diff에 바인딩될 수 없으므로 `world_create_approval_attestation`를 권장하지 않는다. 먼저 `world_diff_draft`로 fresh diff를 다시 만들고, 필요하면 `world_validate_draft`와 `world_update_draft`로 정리한 뒤 attestation을 생성해야 한다.
 `world_force_accept_draft`는 force가 정책상 허용되고, 현재 diff/reason/actor/channel에 바인딩된 fresh, non-expired approval attestation이 있으며 attestation의 `downstream_action`이 `world_force_accept_draft`로 exact match할 때만 권장된다. `world_accept_draft`용 attestation은 force 권한을 대체하지 않는다.
 
@@ -405,7 +406,7 @@ world-tool doc search --world ashen-continent --scope active --query-file runs/i
 - path boundary와 scope 검사 후 문서 읽기
 - title, tag, id, full-text 기반 검색
 
-`--query "text"`는 local CLI 편의 기능으로만 허용한다. OpenCrabs dynamic tools는 `input stage`로 만든 `--query-file`과 `--query-hash`를 함께 사용한다. `--scope`를 생략하면 local CLI에서는 `active`를 기본으로 쓸 수 있지만, canonical dynamic tool mapping에서는 `--scope active`를 명시한다.
+`--query "text"`는 테스트 전용의 비민감 synthetic 입력에만 허용한다. OpenCrabs dynamic tools와 일반 워크플로우는 `input stage`로 만든 `--query-file`과 `--query-hash`를 반드시 함께 사용하며, user/model text를 argv로 직접 넘기지 않는다. `--scope`를 생략하면 local CLI에서는 `active`를 기본으로 쓸 수 있지만, canonical dynamic tool mapping에서는 `--scope active`를 명시한다.
 
 ## 9. draft
 ```bash
@@ -769,6 +770,18 @@ name = "world_diff_draft"
 description = "Return the content changes that accept would apply"
 executor = "shell"
 command = "world-tool draft diff --world {{world_id}} --draft {{draft_path}} --json"
+
+[[tools]]
+name = "world_validate_content"
+description = "Validate content canon against schema and path rules"
+executor = "shell"
+command = "world-tool content validate --world {{world_id}} --json"
+
+[[tools]]
+name = "world_list_runs"
+description = "List run indexes and summaries"
+executor = "shell"
+command = "world-tool run list --world {{world_id}} --json"
 
 [[tools]]
 name = "world_create_approval_attestation"
