@@ -80,7 +80,7 @@ OpenCrabs shell executor는 template 값을 argv-safe하게 escape해야 한다.
 
 `runs/inbox/` 정책:
 - world root 내부에 있어야 한다.
-- active command가 읽은 뒤 해당 run artifact로 복사하거나 삭제한다.
+- active command가 읽은 뒤에는 consumed staged input을 내부/private run artifact로만 복사하거나 삭제한다. 외부에 노출되는 artifact는 redacted summary/hash만 허용하고, approval attestation payload는 non-browsable로 유지한다. `run get`/`world_get_run_artifact`는 raw staged input, inbox payload, unredacted reason/body를 절대 반환하지 않는다.
 - symlink는 허용하지 않는다.
 - 파일 크기 상한을 둔다. MVP 기본값은 문서당 1 MiB를 권장한다.
 

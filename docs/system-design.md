@@ -147,7 +147,7 @@ sequenceDiagram
     Tool->>WT: world-tool input stage --world ashen-continent --kind body --stdin --json
     WT-->>OpenCrabs: input_path + input_hash
     OpenCrabs->>OpenCrabs: remap input_path/input_hash -> body_file/body_hash
-    OpenCrabs->>Tool: world_create_draft(id, title_file, title_hash, body_file, body_hash)
+    OpenCrabs->>Tool: world_create_draft(type, id, title_file, title_hash, body_file, body_hash)
     Tool->>WT: world-tool draft create --world ashen-continent --change-type create --type nation --id nation_ashen_empire --title-file runs/inbox/<title-file> --title-hash sha256:... --body-file runs/inbox/<body-file> --body-hash sha256:... --json
     WT->>World: write drafts/ and runs/
     WT-->>OpenCrabs: id, draft_path, run_id
@@ -337,14 +337,20 @@ internal/audit
 4. `world-tool world list`
 5. `world-tool world init/status`
 6. Markdown/frontmatter parser
-7. `input stage`
-8. `draft create/read/list/update`
-9. `draft validate`
-10. `draft diff`
-11. `draft accept/reject`
-12. `opencrabs/skills/world-building/SKILL.md`
-13. `opencrabs/tools/world-tools.toml`
-14. sample world root와 end-to-end smoke test
+7. `world-tool doc list/read/search`
+8. `input stage`
+9. `draft create/read/list/update`
+10. `draft validate`
+11. `content validate`
+12. `draft diff`
+13. `approval attest`
+14. `draft accept/reject`
+15. `run get`
+16. `run get --artifact`
+17. `run recover`
+18. `opencrabs/skills/world-building/SKILL.md`
+19. `opencrabs/tools/world-tools.toml`
+20. sample world root와 end-to-end smoke test
 
 ## 12. 설계 판단
 - OpenCrabs가 이미 provider, skill, dynamic tools, channel UX를 제공하므로 별도 agent runtime을 만들지 않는다.

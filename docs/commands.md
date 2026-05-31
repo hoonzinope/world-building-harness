@@ -254,7 +254,7 @@ OpenCrabs는 `ok`, `command_status`, `data.validation_status`, `data.block_reaso
 | `MISSING_TARGET` on `draft create --change-type update|deprecate` with no draft created | `[]` |
 | `MISSING_TARGET` on `draft diff/accept` with active draft already present | `world_update_draft`, `world_reject_draft`, `world_diff_draft`, `world_validate_draft` |
 | `DIFF_BINDING_REQUIRED` or `DIFF_BINDING_MISMATCH` | `world_diff_draft`, `world_validate_draft`, `world_update_draft` |
-| `TRANSACTION_INCOMPLETE` or recovery-needed state | `world_recover_run`, `world_get_run_artifact` |
+| `TRANSACTION_INCOMPLETE` or recovery-needed state | `world_get_run`, `world_get_run_artifact`, `world_recover_run` |
 | safe redacted run artifact inspection | `world_get_run`, `world_get_run_artifact` |
 
 `world_get_run_artifact`는 redacted run artifact 조회 전용이다. staged inbox input이나 approval-attestation payload inspection은 여기서 제공하지 않는다.
@@ -651,7 +651,7 @@ Transaction/recovery 정책:
 - content write는 temp file 작성 후 atomic rename으로 수행한다.
 - archive move도 같은 filesystem 안에서 atomic rename을 사용한다.
 - content write 성공 후 archive/result 기록이 실패하면 `ok: false`, `command_status: "failed"`, `error.code: "TRANSACTION_INCOMPLETE"`를 반환하고 recovery instruction을 `runs/<run-id>/recovery.json`에 남긴다. 이 경우 partial mutation이 이미 발생했을 수 있다.
-- 실패 응답에는 `data.recovery` metadata를 포함하고 `available_actions`는 `["world_recover_run", "world_get_run_artifact"]` 같은 복구/안전 조회 조합을 가리켜야 한다. write replay나 원래 write command 재실행은 허용하지 않는다.
+- 실패 응답에는 `data.recovery` metadata를 포함하고 `available_actions`는 `["world_get_run", "world_get_run_artifact", "world_recover_run"]` 같은 순서로 inspect -> safe artifact -> recover 조합을 가리켜야 한다. write replay나 원래 write command 재실행은 허용하지 않는다.
 - recovery는 content hash와 archive 상태를 기준으로 idempotent하게 재시도할 수 있어야 한다.
 - `runs/<run-id>/recovery.json`가 unresolved인 동안에는 같은 world root를 쓰는 모든 write command와 write artifact/report command가 blocked다. 여기에는 같은 root의 `world init`, `input stage`, `approval attest`, `draft create`, `draft update`, `draft validate`의 validation artifact writer, `draft diff`, `draft accept`, `draft reject`, `content validate`의 artifact writer, `content migrate`의 report writer, 기타 content report writer가 포함된다. read-only command는 계속 허용된다.
 - `run recover`만 이 차단의 예외이며, `TRANSACTION_INCOMPLETE` 또는 unresolved `recovery.json`를 복구하는 유일한 운영자용 repair command다. 이 command는 원래 write command를 다시 실행하지 않고, 기록된 transaction state만 안전하게 수습한다.
