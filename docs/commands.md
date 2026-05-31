@@ -231,13 +231,13 @@ OpenCrabs는 `ok`, `command_status`, `data.validation_status`, `data.block_reaso
 | `TIMELINE_CONFLICT` | validation issue | 예 | validation timeline conflict; use in issues[].code, not data.block_reason |
 | `VALIDATION_BLOCKED` | blocked | 아니오 | accept blocked by validation stop envelope; use underlying validation issue codes in issues[].code |
 | `MIGRATION_BLOCKED` | blocked | 예 | content migration blocker |
-| `FORCE_NOT_ALLOWED` | blocked | 예 | force cannot override this failure mode |
+| `FORCE_NOT_ALLOWED` | blocked | 예 | `draft accept --force`가 policy-non-overridable validation/domain stop에 부딪힐 때만 사용; `MISSING_TARGET`, `DIFF_BINDING_REQUIRED`, `DIFF_BINDING_MISMATCH`, `DRAFT_NOT_ACTIVE`, `STORYLET_NOT_CANON_TARGET`, `TARGET_PATH_CONFLICT`, `LOCK_BUSY`, `IO_ERROR`, `TRANSACTION_INCOMPLETE` 같은 기존 non-bypassable precondition/binding/infra failure는 원래 코드 유지 |
 | `LOCK_BUSY` | failed | 아니오 | lock contention |
 | `TRANSACTION_INCOMPLETE` | failed | 아니오 | partial mutation and recovery metadata required |
 | `IO_ERROR` | failed | 아니오 | filesystem or persistence failure |
 | `INTERNAL_ERROR` | failed | 아니오 | panic or unexpected internal failure |
 
-`data.block_reason`는 command-level stop 이유이고 `issues[].code`는 underlying validation/domain cause code다. 둘을 섞지 않는다. `VALIDATION_BLOCKED`는 validation conflict/error를 묶는 aggregate `data.block_reason` 전용 code이고, section 3.3에 나열된 command-level blocked code만 `data.block_reason`으로 허용한다. `MISSING_TARGET`는 예외적으로 blocked reason과 validation issue code 양쪽에서 문맥에 따라 쓸 수 있다. `draft validate`는 validation 자체가 완료되면 항상 completed로 끝나며, `issues[].code`만 채울 수 있다.
+`data.block_reason`는 command-level stop 이유이고 `issues[].code`는 underlying validation/domain cause code다. 둘을 섞지 않는다. `VALIDATION_BLOCKED`는 validation conflict/error를 묶는 aggregate `data.block_reason` 전용 code이고, section 3.3에 나열된 command-level blocked code만 `data.block_reason`으로 허용한다. `MISSING_TARGET`는 예외적으로 blocked reason과 validation issue code 양쪽에서 문맥에 따라 쓸 수 있다. `FORCE_NOT_ALLOWED`는 `draft accept --force`가 policy상 non-overridable인 validation/domain stop에 부딪힐 때만 `data.block_reason`으로 사용하고, `MISSING_TARGET`, `DIFF_BINDING_REQUIRED`, `DIFF_BINDING_MISMATCH`, `DRAFT_NOT_ACTIVE`, `STORYLET_NOT_CANON_TARGET`, `TARGET_PATH_CONFLICT`, `LOCK_BUSY`, `IO_ERROR`, `TRANSACTION_INCOMPLETE` 같은 기존 non-bypassable precondition/binding/infra failure는 원래 코드로 유지한다. `draft validate`는 validation 자체가 완료되면 항상 completed로 끝나며, `issues[].code`만 채울 수 있다.
 
 ### 3.2 available_actions enum and recommended mapping
 
@@ -257,7 +257,7 @@ OpenCrabs는 `ok`, `command_status`, `data.validation_status`, `data.block_reaso
 `world_get_run_artifact`는 redacted run artifact 조회 전용이다. staged inbox input이나 approval-attestation payload inspection은 여기서 제공하지 않는다.
 `world_accept_draft`는 fresh diff가 다시 생성되고, 그 diff에 정확히 바인딩된 `world_create_approval_attestation`이 downstream action까지 성공적으로 만든 뒤에만 광고할 수 있다. `validation pass`와 `warning`은 그 전 단계의 탐색용으로만 `world_diff_draft`/`world_update_draft`/`world_reject_draft`를 권장한다.
 `DIFF_BINDING_REQUIRED`와 `DIFF_BINDING_MISMATCH`에서는 attestation이 아직 유효한 현재 diff에 바인딩될 수 없으므로 `world_create_approval_attestation`를 권장하지 않는다. 먼저 `world_diff_draft`로 fresh diff를 다시 만들고, 필요하면 `world_validate_draft`와 `world_update_draft`로 정리한 뒤 attestation을 생성해야 한다.
-`world_force_accept_draft`는 `FORCE_NOT_ALLOWED`가 아니고 trusted attestation이 존재할 때만 권장된다.
+`world_force_accept_draft`는 force가 정책상 허용되고, 현재 diff/reason/actor/channel에 바인딩된 fresh, non-expired approval attestation이 있으며 attestation의 `downstream_action`이 `world_force_accept_draft`로 exact match할 때만 권장된다. `world_accept_draft`용 attestation은 force 권한을 대체하지 않는다.
 
 ### 3.3 command별 block_reason / issue code 매핑
 
@@ -277,6 +277,7 @@ OpenCrabs는 `ok`, `command_status`, `data.validation_status`, `data.block_reaso
 | `draft accept` inactive draft | `blocked` | `DRAFT_NOT_ACTIVE` | issue code detail |
 | `draft accept` storylet canon | `blocked` | `STORYLET_NOT_CANON_TARGET` | issue code detail |
 | `draft accept` target path conflict before mutation | `blocked` | `TARGET_PATH_CONFLICT` | issue code detail은 `TARGET_PATH_CONFLICT` 또는 equivalent validation issue code |
+| `draft accept --force` policy-non-overridable validation/domain stop | `blocked` | `FORCE_NOT_ALLOWED` | force로도 우회할 수 없는 validation/domain stop에만 사용하고, non-bypassable precondition/binding/infra failure는 기존 코드 유지 |
 
 ## 4. Path Scope
 문서 path 인자는 world root 기준 상대 경로만 허용한다. command별 추가 allowlist는 다음을 따른다.
@@ -610,11 +611,11 @@ Accept 정책:
 - `conflict`와 `error`는 기본 accept에서 `command_status: "blocked"`로 반환한다.
 - create accept는 target이 여전히 없어야 하며, accept 시점에 target이 존재하면 blocked다.
 - `related target` 또는 `relationship target`이 누락되면 `MISSING_TARGET`로 blocked다. active-draft-only related/relationship target도 accept 시점에는 canon target이 없는 것으로 간주하므로 `MISSING_TARGET`를 사용한다. 즉 `MISSING_TARGET`는 related/relationship target 누락과 active-draft-only target에도 쓰인다.
-- `--force`는 semantic/timeline/relationship conflict 후보만 우회할 수 있고 trusted approval attestation과 reason이 필수다. 모든 참조 대상이 이미 canon content일 때만 허용한다. reason이나 trusted attestation이 하나라도 없으면 `blocked`가 아니라 `failed`이며, 누락된 CLI 인자는 `INVALID_ARGUMENT`, auth context 문제는 `approval attest` 생성 경로에서만 대응하는 `AUTH_CONTEXT_*` 실패 코드로 처리한다. accept-time attestation hash/payload mismatch는 `APPROVAL_ATTESTATION_*` 실패 코드를 사용한다.
+- `--force`는 semantic/timeline/relationship conflict 후보만 우회할 수 있고 trusted approval attestation과 reason이 필수다. 모든 참조 대상이 이미 canon content일 때만 허용한다. reason이나 trusted attestation이 하나라도 없으면 `blocked`가 아니라 `failed`이며, 누락된 CLI 인자는 `INVALID_ARGUMENT`, auth context 문제는 `approval attest` 생성 경로에서만 대응하는 `AUTH_CONTEXT_*` 실패 코드로 처리한다. accept-time attestation hash/payload mismatch는 `APPROVAL_ATTESTATION_*` 실패 코드를 사용한다. `--approval-attestation-file`은 현재 diff/reason/actor/channel에 바인딩되고 `downstream_action: world_force_accept_draft`를 가진 fresh, non-expired attestation이어야 하며, `world_accept_draft`용 attestation은 `--force`를 허용하지 않는다.
 - `--force`는 `MISSING_TARGET` 계열(blocked cases 포함 missing target, missing related target, missing relationship target, missing update/deprecate target, active-draft-only target), path/type/id/schema 불일치, structural error, id conflict, target path conflict, inactive draft, storylet canon 승격, diff binding mismatch, atomic write 실패, lock 실패는 우회할 수 없다.
 - `change_type: deprecate`가 accept되면 target content를 `content/` 아래에서 in-place로 deprecated 상태와 deprecation audit metadata로 갱신하고, canon 파일은 제거하지 않는다. 해당 deprecate draft는 accepted draft와 동일하게 archive된다.
 - `type: storylet`은 MVP에서 content canon accept 대상이 아니며 `STORYLET_NOT_CANON_TARGET`으로 blocked다.
-- accept 성공 시 `data.approval`은 `approver_id`, `approval_channel`, `authenticated_actor`, `approval_attestation_file`, `approval_attestation_hash`, `reason_file`, `reason_hash`, `downstream_action`를 포함해야 한다. alias를 정의하지 않는 한 path suffix 이름은 쓰지 않는다.
+- accept 성공 시 `data.approval`은 `approver_id`, `approval_channel`, `authenticated_actor`, `issuer`, `audience`, `scope_verification`, `issued_at`, `expires_at`, `attestation_validated_at`, `approval_attestation_file`, `approval_attestation_hash`, `reason_file`, `reason_hash`, `downstream_action`를 포함해야 한다. alias를 정의하지 않는 한 path suffix 이름은 쓰지 않는다.
 
 Diff binding 정책:
 - accept는 `--diff-run-id`, `--draft-hash`, `--target-base-hash`, `--patch-hash` 중 하나라도 없으면 `DIFF_BINDING_REQUIRED`로 blocked다.
