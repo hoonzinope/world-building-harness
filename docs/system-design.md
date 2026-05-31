@@ -80,12 +80,13 @@ canonical root binding:
 
 | Concept | Meaning |
 | --- | --- |
-| `world_id` | logical registry key. Docker `--root` mode에서는 registry metadata나 `harness.yaml`에서 복원해야 하며 mount path 자체로 추론하지 않는다. |
-| `registry_root` | registry에 저장된 canonical root. root-only execution이면 registry-backed resolution으로 결정된 canonical path다. |
+| `world_id` | logical registry key. Docker `--root` mode에서는 `--world-id` 또는 `harness.yaml` provenance가 있을 때만 resolve하며, mount path 자체로 추론하지 않는다. |
+| `registry_root` | registry 또는 provenance가 제공하는 host canonical root. host canonical provenance가 있으면 여기에 기록하고, 없으면 null이다. |
 | `root` | 실제 tool process가 접근하는 effective root |
 | audit fields | `world_id`, `registry_root`, `root`, `run_id` |
 
 native execution에서는 `registry_root == root`가 되어야 한다. Docker에서는 registry root와 effective root인 `root`가 달라질 수 있으므로, audit/result envelope가 둘을 구분해 기록해야 한다.
+Docker `--root` mode에서 registry/provenance가 host canonical root를 제공하면 `registry_root`에는 그 값을, `root`에는 container effective root를 기록한다. `--root`만 있고 host canonical root provenance가 없으면 host path를 invent하지 말고 `registry_root: null`, `root: <effective root>`로 기록하거나 root-only mode를 provenance 부족으로 제한해야 한다.
 
 ## 5. 주요 Tool 세트
 | Tool | 내부 command | 역할 |
@@ -233,7 +234,8 @@ stateDiagram-v2
   "run_id": "20260530-001",
   "data": {
     "id": "nation_northern_empire",
-    "draft_path": "drafts/nations/nation_northern_empire.md"
+    "draft_path": "drafts/nations/nation_northern_empire.md",
+    "draft_hash": "sha256:..."
   },
   "issues": [],
   "available_actions": ["world_read_draft", "world_validate_draft", "world_diff_draft", "world_reject_draft"]
@@ -254,6 +256,7 @@ stateDiagram-v2
   "run_id": "20260530-001",
   "data": {
     "draft_path": "drafts/nations/nation_northern_empire.md",
+    "draft_hash": "sha256:...",
     "validation_status": "warning"
   },
   "issues": [
@@ -288,7 +291,7 @@ stateDiagram-v2
   },
   "issues": [
     {
-      "code": "VALIDATION_BLOCKED",
+      "code": "ID_CONFLICT",
       "rule": "VR-101",
       "severity": "conflict",
       "message": "id nation_northern_empire already exists in content"
@@ -298,7 +301,7 @@ stateDiagram-v2
 }
 ```
 
-이 예시에서는 `data.block_reason`이 accept 차단 사유를 나타내고, `issues[].code`가 그 차단과 연결된 validation issue code를 드러낸다.
+이 예시에서는 `data.block_reason`과 `issues[].code`가 독립 채널이다. `data.block_reason`은 wrapper/domain 차원의 accept 차단 사유를 나타내고, `issues[].code`는 underlying validation cause를 드러낸다.
 
 ## 10. 내부 Go 모듈
 ```text
@@ -350,7 +353,7 @@ internal/audit
 - dynamic tools는 command template quoting 문제를 피하기 위해 긴 query/title/body/reason/retcon_reason을 `world_stage_input`으로 staging한 뒤 file path와 hash만 전달한다.
 - 기본 provider는 Codex OAuth다. Codex CLI provider는 OAuth provider를 사용할 수 없는 환경에서만 fallback으로 둔다.
 - OpenCrabs credential/config volume은 world root volume과 분리한다.
-- world_id는 logical registry key, registry_root는 canonical registry path, root는 실제 실행 effective root다. Docker에서는 registry_root와 root를 분리해 audit하고, root field는 항상 실행 root 기준으로 해석한다.
+- world_id는 logical registry key, registry/provenance가 있으면 `registry_root`는 host canonical root, 없으면 null이며 `root`는 실제 execution/effective root다. Docker에서는 registry_root와 root를 분리해 audit하고, root field는 항상 실행 root 기준으로 해석한다.
 
 ## 13. MVP 준비 상태
 현재 문서는 구현 전 설계 기준이다. 구현이 필요한 산출물은 다음이다.

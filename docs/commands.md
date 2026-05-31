@@ -65,11 +65,11 @@ Canonical command order:
 
 Top-level field 규칙:
 - 모든 JSON은 `schema_version`, `ok`, `command_status`, `command`, `data`, `issues`, `available_actions`를 가진다.
-- world root를 여는 command는 `world_id`, `registry_root`, `root`, `run_id`를 가진다. `world_id`는 `--world`나 `--root`+`--world-id`, 또는 `harness.yaml`에서 resolved된 값이다. `registry_root`는 registry 또는 명시적 `--root`로 선택된 canonical root이고, `root`는 현재 process가 실제로 접근하는 effective root다. container/bind-mount 환경에서는 둘이 다를 수 있다.
+- world root를 여는 command는 `world_id`, `registry_root`, `root`, `run_id`를 가진다. `world_id`는 `--world`나 `--root`+`--world-id`, 또는 `harness.yaml`에서 resolved된 값이다. `registry_root`는 registry 또는 명시적 `--root`/harness provenance로 확인된 host canonical root이고, `root`는 현재 process가 실제로 접근하는 effective root다. container/bind-mount 환경에서는 둘이 다를 수 있다. `--root` 모드에서 host canonical root provenance가 없으면 `registry_root`는 `null`로 두고 `root`만 기록한다.
 - `registry list`와 `world list`는 `world_id`, `registry_root`, `root`, `run_id`를 모두 null로 둔다. `registry add`, `registry remove`, `registry default`는 world root를 열지 않지만 `world_id`에 selected/target id를 담고 `registry_root`, `root`, `run_id`는 null이다.
 - `ok: false`인 경우 `error.code`와 `error.message`가 필수다.
 - validation severity는 top-level에 두지 않고 `data.validation_status`에만 둔다.
-- `data.block_reason`은 `command_status: "blocked"`일 때만 사용한다. validation issue code는 `issues[].code` 또는 equivalent issue field에 넣고, `draft validate`의 missing target은 completed 결과에서 issue로만 보고한다. `MISSING_TARGET`는 blocked code와 validation issue code를 분리해서 사용한다.
+- `data.block_reason`은 `command_status: "blocked"`일 때만 사용한다. validation issue code는 `issues[].code` 또는 equivalent issue field에 넣는다. `VALIDATION_BLOCKED`는 `data.block_reason` 전용 envelope code이고, `ID_CONFLICT`, `TARGET_PATH_CONFLICT`, `TIMELINE_CONFLICT` 같은 원인 코드는 underlying issue code로 `issues[].code`에 둔다. `MISSING_TARGET`는 예외적으로 `draft create --change-type update|deprecate`, `draft diff`, `draft accept`에서는 blocked `data.block_reason`으로도 쓰이고, `draft validate` completed 결과에서는 validation issue `issues[].code`로도 쓸 수 있다.
 
 Minimum `data` shape:
 
@@ -81,7 +81,7 @@ Minimum `data` shape:
 | `input stage` | `kind`, `input_path`, `input_hash` | input 본문은 반환하지 않는다 |
 | `doc read/search` | `path` 또는 `results` | raw body는 explicit read에서만, search는 snippet만 허용한다 |
 | `draft create/update/read/list/validate/diff/accept/reject` | `draft_path`, `draft_hash` or `drafts`, `validation_status` when applicable, `diff_*`/`approval` only where relevant | reason/body/attestation payload는 hash와 path 중심으로 redact한다 |
-| `approval attest` | `approval_attestation_file`, `approval_attestation_hash`, `authenticated_actor`, `approver_id`, `approval_channel`, `diff_run_id`, `draft_hash`, `target_base_hash`, `patch_hash` | auth context 원문과 session secret은 반환하지 않는다 |
+| `approval attest` | `approval_attestation_file`, `approval_attestation_hash`, `world_id`, `issuer`, `audience`, `scope_verification`, `authenticated_actor`, `approver_id`, `approval_channel`, `diff_run_id`, `draft_hash`, `target_base_hash`, `patch_hash` | auth context 원문과 session secret은 반환하지 않고 scope verification summary만 반환한다 |
 | `content validate` | `validation_status`, `blockers`, `findings` or equivalent summary | content 본문 전체는 반환하지 않는다 |
 | `content migrate --dry-run` | `migration_run_id`, `migration_report_path`, `migration_actions_path`, `candidates`, `blockers`, `partial_apply` | report artifact 본문은 raw dump 대신 요약과 경로 중심으로 노출한다 |
 | `run list/get/get artifact/recover` | `runs` or `manifest`/`status_summary` or single artifact fields or `recovery_*` | staged inbox payload와 unredacted sensitive artifact는 노출하지 않는다 |
@@ -131,10 +131,10 @@ blocked envelope:
   },
   "issues": [
     {
-      "code": "VALIDATION_BLOCKED",
+      "code": "TIMELINE_CONFLICT",
       "rule": "VR-220",
       "severity": "conflict",
-      "message": "conflict blocks accept until the draft is updated",
+      "message": "timeline conflict blocks accept until the draft is updated",
       "path": "drafts/nations/nation_northern_empire.md"
     }
   ],
@@ -208,16 +208,17 @@ OpenCrabs는 `ok`, `command_status`, `data.validation_status`, `data.block_reaso
 | `AUTH_CONTEXT_MISSING` | failed | 아니오 | trusted auth context missing |
 | `AUTH_CONTEXT_HASH_MISMATCH` | failed | 아니오 | auth context hash mismatch |
 | `AUTH_CONTEXT_EXPIRED` | failed | 아니오 | auth context expiry exceeded |
-| `AUTH_CONTEXT_SCOPE_DENIED` | failed | 아니오 | auth context scope mismatch |
+| `AUTH_CONTEXT_SCOPE_DENIED` | failed | 아니오 | auth context scope mismatch for world/action/issuer/audience bindings |
 | `AUTH_CONTEXT_TEST_MODE_REQUIRED` | failed | 아니오 | fixture opt-in missing |
-| `ID_CONFLICT` | blocked | 아니오 | canonical id already exists |
-| `TARGET_PATH_CONFLICT` | blocked | 아니오 | target path would collide before mutation |
-| `MISSING_TARGET` | blocked | 예 | missing canon target or equivalent validation issue |
+| `ID_CONFLICT` | blocked | 예 | canonical id already exists; create blocked reason 또는 validation issue code로 사용 |
+| `TARGET_PATH_CONFLICT` | blocked | 예 | target path would collide before mutation; accept blocked reason 또는 validation issue code로 사용 |
+| `MISSING_TARGET` | blocked | 예 | missing canon target; `draft create --change-type update|deprecate`, `draft diff`, `draft accept`의 blocked reason으로도, `draft validate` completed 결과의 validation issue code로도 쓰인다 |
 | `DRAFT_NOT_ACTIVE` | blocked | 예 | draft not active at accept/diff time |
 | `DIFF_BINDING_REQUIRED` | blocked | 예 | accept missing diff binding inputs |
 | `DIFF_BINDING_MISMATCH` | blocked | 예 | accept diff binding mismatch |
 | `STORYLET_NOT_CANON_TARGET` | blocked | 예 | storylet cannot be canonical accept target |
-| `VALIDATION_BLOCKED` | blocked | 예 | accept blocked by validation/conflict |
+| `TIMELINE_CONFLICT` | validation issue | 예 | validation timeline conflict; use in issues[].code, not data.block_reason |
+| `VALIDATION_BLOCKED` | blocked | 아니오 | accept blocked by validation stop envelope; use underlying validation issue codes in issues[].code |
 | `MIGRATION_BLOCKED` | blocked | 예 | content migration blocker |
 | `FORCE_NOT_ALLOWED` | blocked | 예 | force cannot override this failure mode |
 | `LOCK_BUSY` | failed | 아니오 | lock contention |
@@ -225,7 +226,7 @@ OpenCrabs는 `ok`, `command_status`, `data.validation_status`, `data.block_reaso
 | `IO_ERROR` | failed | 아니오 | filesystem or persistence failure |
 | `INTERNAL_ERROR` | failed | 아니오 | panic or unexpected internal failure |
 
-Validation issue codes may reuse the same symbolic code as a blocked command result, but `data.block_reason` and `issues[].code` are independent channels. `draft validate` always completes normally when validation itself completes, even when it reports `MISSING_TARGET` or other issues.
+`data.block_reason`는 command-level stop 이유이고 `issues[].code`는 underlying validation issue code다. 둘을 섞지 않는다. `VALIDATION_BLOCKED`는 block_reason 전용 envelope code이고, `ID_CONFLICT`, `TARGET_PATH_CONFLICT`, `TIMELINE_CONFLICT` 같은 issue code는 `issues[].code`에 둔다. `MISSING_TARGET`는 예외적으로 blocked reason과 validation issue code 양쪽에서 문맥에 따라 쓸 수 있다. `draft validate`는 validation 자체가 완료되면 항상 completed로 끝나며, `issues[].code`만 채울 수 있다.
 
 ### 3.2 available_actions enum and recommended mapping
 
@@ -249,15 +250,15 @@ Validation issue codes may reuse the same symbolic code as a blocked command res
 | Command / case | `command_status` | `data.block_reason` | issue code / note |
 | --- | --- | --- | --- |
 | `draft create` id 중복 | `blocked` | `ID_CONFLICT` | issue code는 필요 시 동일 코드 또는 equivalent |
-| `draft create --change-type update|deprecate` missing canon target | `blocked` | `MISSING_TARGET` | no-write; `issues[].code`는 동일 코드 또는 equivalent |
+| `draft create --change-type update|deprecate` missing canon target | `blocked` | `MISSING_TARGET` | no-write; accept/diff와 동일하게 blocked reason으로 사용 |
 | `draft validate` missing target | `completed` | 없음 | `issues[].code: MISSING_TARGET` |
-| `draft diff` target 계열 누락 | `blocked` | `MISSING_TARGET` | related/relationship/active-draft-only 포함 |
-| `draft accept` target 계열 누락 | `blocked` | `MISSING_TARGET` | related/relationship/active-draft-only 포함 |
-| `draft accept` validation internal conflict/error | `blocked` | `VALIDATION_BLOCKED` | issue code detail는 conflict/error 원인 코드 |
+| `draft diff` target 계열 누락 | `blocked` | `MISSING_TARGET` | related/relationship/active-draft-only 포함; blocked reason으로 사용 |
+| `draft accept` target 계열 누락 | `blocked` | `MISSING_TARGET` | related/relationship/active-draft-only 포함; blocked reason으로 사용 |
+| `draft accept` validation internal conflict/error | `blocked` | `VALIDATION_BLOCKED` | issue code detail는 `TIMELINE_CONFLICT` 같은 underlying validation code |
 | `draft accept` diff binding mismatch | `blocked` | `DIFF_BINDING_MISMATCH` | issue code detail에 mismatch 원인 기록 |
 | `draft accept` inactive draft | `blocked` | `DRAFT_NOT_ACTIVE` | issue code detail |
 | `draft accept` storylet canon | `blocked` | `STORYLET_NOT_CANON_TARGET` | issue code detail |
-| `draft accept` target path conflict before mutation | `blocked` | `TARGET_PATH_CONFLICT` | issue code detail |
+| `draft accept` target path conflict before mutation | `blocked` | `TARGET_PATH_CONFLICT` | issue code detail은 `TARGET_PATH_CONFLICT` 또는 equivalent validation issue code |
 
 ## 4. Path Scope
 문서 path 인자는 world root 기준 상대 경로만 허용한다. command별 추가 allowlist는 다음을 따른다.
@@ -517,14 +518,14 @@ world-tool approval attest \
 동작:
 - OpenCrabs trusted wrapper/session metadata에서 authenticated actor와 channel provenance를 확인한다.
 - `runs/inbox/<run-id>-approval-attestation.json`을 생성하고 `approval_attestation_file`, `approval_attestation_hash`를 반환한다.
-- attestation payload에는 `authenticated_actor`, `approver_id`, `approval_channel`, `diff_run_id`, `draft_hash`, `target_base_hash`, `patch_hash`, `reason_hash`, `session_id`, `created_at`을 포함한다.
+- attestation payload에는 `world_id`, `authenticated_actor`, `approver_id`, `approval_channel`, `issuer`, `audience`, `scope_verification`, `diff_run_id`, `draft_hash`, `target_base_hash`, `patch_hash`, `reason_hash`, `session_id`, `created_at`을 포함한다.
 - create diff/accept은 `--target-base-hash none`을 사용하고 attestation payload와 JSON 결과에서는 `target_base_hash: null`로 기록한다. update/deprecate는 sha256 해시를 사용한다.
-- trusted auth/session metadata가 없으면 `command_status: "failed"`와 `error.code: "AUTH_CONTEXT_MISSING"`을 반환한다.
+- trusted auth/session metadata가 없으면 `command_status: "failed"`와 `error.code: "AUTH_CONTEXT_MISSING"`을 반환한다. hash mismatch는 `AUTH_CONTEXT_HASH_MISMATCH`, expiry 초과는 `AUTH_CONTEXT_EXPIRED`, world/action/issuer/audience scope mismatch는 `AUTH_CONTEXT_SCOPE_DENIED`, fixture opt-in 누락은 `AUTH_CONTEXT_TEST_MODE_REQUIRED`로 실패한다.
 
 정책:
 - `--authenticated-actor`는 wrapper가 채운 값이어야 하며, prompt text, model output, staged input, Docker mount path에서 파생하면 안 된다. `world-tool`은 이 flag가 wrapper/request metadata의 authenticated actor와 일치하는지 확인하고, 해당 metadata가 없으면 flag 값과 무관하게 `AUTH_CONTEXT_MISSING`으로 실패한다.
 - `--auth-context-file`은 OpenCrabs trusted wrapper가 생성한 auth context 파일을 가리켜야 하며, selected world root 내부나 runtime-owned run directory에 있으면 안 된다. `--auth-context-hash`는 파일의 sha256 해시와 일치해야 하고, 파일의 `expires_at`이 만료되었으면 실패한다.
-- auth context 파일에는 `session_id`, `authenticated_actor`, `approval_channel`, `issued_at`, `expires_at`이 들어 있어야 하며, `world-tool`은 파일 내용과 `--approval-channel`, `--authenticated-actor`가 일치하는지 검증한다. `--approver-id`는 non-empty audit field로 검증하고 attestation payload에 기록한다.
+- auth context 파일에는 최소 `world_id`, `allowed_actions` 또는 equivalent scope, `issuer`, `audience`, `session_id`, `authenticated_actor`, `approval_channel`, `issued_at`, `expires_at`이 들어 있어야 하며, `world-tool`은 파일 내용과 `--world`, `--approval-channel`, `--authenticated-actor`가 일치하는지 검증한다. `allowed_actions`는 최소한 `world_create_approval_attestation` 또는 equivalent action scope를 포함해야 한다. `world_id`/action/issuer/audience/approval_channel/authenticated_actor scope mismatch는 `AUTH_CONTEXT_SCOPE_DENIED`, `auth_context_hash` mismatch는 `AUTH_CONTEXT_HASH_MISMATCH`, `expires_at` 초과는 `AUTH_CONTEXT_EXPIRED`를 사용한다. `--approver-id`는 non-empty audit field로 검증하고 attestation payload에 기록한다.
 - test auth context는 `fixture_mode: true`를 명시한 local fixture와 `WORLD_TOOL_TEST_AUTH_CONTEXT=1` 환경변수가 둘 다 있을 때만 허용한다. 둘 중 하나라도 없으면 `AUTH_CONTEXT_TEST_MODE_REQUIRED` failed다.
 - 운영 기본 경로에서는 fixture mode를 provenance로 인정하지 않는다. fixture-backed context는 test-only 경로이며 production attestation provenance로 승격할 수 없다.
 - `approval attest`가 만든 attestation은 `draft accept`가 소비하기 전까지 `runs/inbox/`에만 머문다. `run get/list`는 이 inbox artifact를 노출하지 않는다.
@@ -579,13 +580,13 @@ world-tool draft accept \
 Accept 정책:
 - `draft accept`와 `draft accept --force`는 `--reason-file`, `--reason-hash`, `--approver-id`, `--approval-channel`, `--approval-attestation-file`, `--approval-attestation-hash`, `--authenticated-actor`를 모두 요구한다. `reason-file`만으로는 충분하지 않다.
 - `--reason-file`과 `--reason-hash`는 짝을 이뤄야 하며, `world-tool`은 acceptance metadata를 기록하기 전에 재해시해서 검증한다.
-- `--authenticated-actor`는 단독으로는 신뢰되지 않는다. CLI는 `--approval-attestation-file`과 `--approval-attestation-hash`를 함께 넘겨야 하며, 이 attestation은 trusted wrapper/session metadata가 생성한 파일이어야 한다. attestation은 `runs/inbox/` 같은 trusted staging area에 있어야 하고, `world-tool`은 파일 해시를 다시 계산한 뒤 attestation 내부의 `authenticated_actor`, `approver_id`, `approval_channel`, `diff_run_id`, `draft_hash`, `target_base_hash`, `patch_hash`, `reason_hash`가 command flags와 일치하는지 검증한 다음에만 `approval.authenticated_actor`를 기록한다.
+- `--authenticated-actor`는 단독으로는 신뢰되지 않는다. CLI는 `--approval-attestation-file`과 `--approval-attestation-hash`를 함께 넘겨야 하며, 이 attestation은 trusted wrapper/session metadata가 생성한 파일이어야 한다. attestation은 `runs/inbox/` 같은 trusted staging area에 있어야 하고, `world-tool`은 파일 해시를 다시 계산한 뒤 attestation 내부의 `world_id`, `issuer`, `audience`, `scope_verification`, `authenticated_actor`, `approver_id`, `approval_channel`, `diff_run_id`, `draft_hash`, `target_base_hash`, `patch_hash`, `reason_hash`가 command/world/auth context와 command flags에 모두 일치하는지 검증한 다음에만 `approval.authenticated_actor`를 기록한다.
 - `pass`는 explicit approval provenance가 있으면 accept 가능하다.
 - `warning`은 기본 accept 가능하지만, warning과 approval provenance를 runs log에 남긴다.
 - `conflict`와 `error`는 기본 accept에서 `command_status: "blocked"`로 반환한다.
 - create accept는 target이 여전히 없어야 하며, accept 시점에 target이 존재하면 blocked다.
 - `related target` 또는 `relationship target`이 누락되면 `MISSING_TARGET`로 blocked다. active-draft-only related/relationship target도 accept 시점에는 canon target이 없는 것으로 간주하므로 `MISSING_TARGET`를 사용한다. 즉 `MISSING_TARGET`는 related/relationship target 누락과 active-draft-only target에도 쓰인다.
-- `--force`는 semantic/timeline/relationship conflict 후보만 우회할 수 있고 trusted approval attestation과 reason이 필수다. 모든 참조 대상이 이미 canon content일 때만 허용한다.
+- `--force`는 semantic/timeline/relationship conflict 후보만 우회할 수 있고 trusted approval attestation과 reason이 필수다. 모든 참조 대상이 이미 canon content일 때만 허용한다. reason이나 trusted attestation이 하나라도 없으면 `blocked`가 아니라 `failed`이며, 누락된 CLI 인자는 `INVALID_ARGUMENT`, auth context 문제는 대응하는 `AUTH_CONTEXT_*` 실패 코드로 처리한다.
 - `--force`는 `MISSING_TARGET` 계열(blocked cases 포함 missing target, missing related target, missing relationship target, missing update/deprecate target, active-draft-only target), path/type/id/schema 불일치, structural error, id conflict, target path conflict, inactive draft, storylet canon 승격, diff binding mismatch, atomic write 실패, lock 실패는 우회할 수 없다.
 - `change_type: deprecate`가 accept되면 target content를 `content/` 아래에서 in-place로 deprecated 상태와 deprecation audit metadata로 갱신하고, canon 파일은 제거하지 않는다. 해당 deprecate draft는 accepted draft와 동일하게 archive된다.
 - `type: storylet`은 MVP에서 content canon accept 대상이 아니며 `STORYLET_NOT_CANON_TARGET`으로 blocked다.

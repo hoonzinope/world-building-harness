@@ -66,7 +66,7 @@ opencrabs/tools/world-tools.toml
 
 canonical dynamic tool:
 
-아래 예시는 표준 command shape를 보여주는 pre-implementation contract다. 현재 OpenCrabs TOML과 shell executor는 `executor = "shell"`, argv-safe template escaping, `stdin = "{{input}}"` payload binding을 지원한다고 가정한다. 이 필드를 지원하지 않는 runtime은 표준 adapter wrapper를 사용해야 하며, wrapper는 JSON request를 받아 argv/stdin/auth-context를 안전하게 주입해야 한다. auth metadata는 wrapper/session metadata에서만 와야 하고 prompt나 staged input에서 오면 안 된다.
+아래 예시는 표준 command shape를 보여주는 pre-implementation contract다. 현재 OpenCrabs TOML과 shell executor는 `executor = "shell"`, argv-safe template escaping, `stdin = "{{input}}"` payload binding을 지원한다고 가정한다. 이 필드를 지원하지 않는 runtime은 표준 adapter wrapper를 사용해야 하며, wrapper는 JSON request를 받아 argv/stdin/auth-context를 안전하게 주입해야 한다. auth metadata는 wrapper/session metadata에서만 와야 하고 prompt나 staged input에서 오면 안 된다. `world_id`, allowed action/scope, issuer/audience, actor/channel/expiry, hash 검증은 trusted wrapper가 제공하고 검증해야 하며, prompt나 staged input에서 오면 안 된다.
 
 ```toml
 [[tools]]
@@ -187,7 +187,7 @@ command = "world-tool run get --world {{world_id}} --run-id {{run_id}} --artifac
 
 `world_get_run`은 redacted manifest/status summary만 반환한다. 안전한 artifact가 필요할 때만 `world_get_run_artifact`를 호출하고, allowlist에 있는 basename만 읽는다. `runs/inbox/**`는 노출하지 않는다.
 
-긴 markdown body, 검색 query, title, reason, retcon_reason은 command template에 직접 넣지 않는다. 먼저 `world_stage_input`으로 world root 내부 `runs/inbox/`에 staging한다. `world_stage_input`은 `input_path`와 `input_hash`만 반환하고, OpenCrabs가 kind별로 이를 `query_file/query_hash`, `title_file/title_hash`, `body_file/body_hash`, `reason_file/reason_hash`, `retcon_reason_file/retcon_reason_hash`로 다시 매핑한다. 승인 provenance는 `world_create_approval_attestation`으로 별도 attestation을 staging하고, trusted auth context wrapper는 world root 밖에서 생성한 `auth_context_file`/`auth_context_hash`로 전달한다. 후속 tool에는 이러한 file/hash binding과 approval attestation binding만 넘긴다.
+긴 markdown body, 검색 query, title, reason, retcon_reason은 command template에 직접 넣지 않는다. 먼저 `world_stage_input`으로 world root 내부 `runs/inbox/`에 staging한다. `world_stage_input`은 `input_path`와 `input_hash`만 반환하고, OpenCrabs가 kind별로 이를 `query_file/query_hash`, `title_file/title_hash`, `body_file/body_hash`, `reason_file/reason_hash`, `retcon_reason_file/retcon_reason_hash`로 다시 매핑한다. 승인 provenance는 `world_create_approval_attestation`으로 별도 attestation을 staging하고, trusted auth context wrapper는 world root 밖에서 생성한 `auth_context_file`/`auth_context_hash`로 전달한다. 이 wrapper는 `world_id`, allowed action/scope, issuer/audience, actor/channel/expiry, hash 검증을 함께 제공해야 한다. 후속 tool에는 이러한 file/hash binding과 approval attestation binding만 넘긴다.
 
 template 변수는 OpenCrabs가 넣더라도 신뢰하지 않는다. `world-tool`은 `world_id`, `kind`, `type`, `id`, `scope`, `target_id`, `path`, `draft_path`, `query_file`, `query_hash`, `title_file`, `title_hash`, `body_file`, `body_hash`, `reason_file`, `reason_hash`, `retcon_reason_file`, `retcon_reason_hash`, `approver_id`, `approval_channel`, `approval_attestation_file`, `approval_attestation_hash`, `authenticated_actor`, `auth_context_file`, `auth_context_hash`, `run_id`, `diff_run_id`, `draft_hash`, `target_base_hash`, `patch_hash`, `artifact_name`를 다시 검증한다.
 
@@ -234,12 +234,14 @@ canonical root binding:
 
 | Concept | Meaning |
 | --- | --- |
-| `world_id` | registry가 식별하는 logical world key. `registry add/remove/default`에서는 selected/target id를 담고, `registry list`와 `world list`에서는 null이다. Docker `--root` mode에서는 registry metadata나 `harness.yaml` provenance로 resolve해야 하며 id 문자열 자체를 path로 취급하지 않는다. |
-| `registry_root` | registry에 저장된 world root의 canonical path |
+| `world_id` | registry가 식별하는 logical world key. `registry add/remove/default`에서는 selected/target id를 담고, `registry list`와 `world list`에서는 null이다. Docker `--root` mode에서는 mount path로 추측하지 않고 `--world-id` 또는 `harness.yaml` provenance가 있을 때만 resolve한다. |
+| `registry_root` | registry 또는 provenance가 제공하는 host canonical world root. provenance가 없으면 null이다. |
 | `root` | 실제 tool process가 접근하는 effective root |
 | audit fields | command별로 `world_id`, `registry_root`, `root`, `run_id`의 null 여부를 구분해 기록한다. |
 
 native execution에서는 `registry_root == root`여야 한다. Docker에서는 registry_root와 effective root인 `root`가 달라질 수 있으므로, registry resolution과 audit logging이 둘을 구분해 기록해야 한다.
+
+Docker `--root` mode에서 registry/provenance가 host canonical root를 제공하면 `registry_root`에는 host canonical root를, `root`에는 container 안의 effective root를 기록한다. `--root`만 있고 host canonical root provenance가 없으면 host path를 추측하지 말고 `registry_root: null`, `root: <effective root>`로 기록하거나, root-only mode를 provenance 부족으로 제한해야 한다. 이때 `world_id`도 `--world-id` 또는 `harness.yaml` provenance 없이는 mount path에서 추측하지 않는다.
 
 world id 규칙:
 - 영문 소문자, 숫자, 하이픈만 허용한다.
@@ -275,14 +277,23 @@ world-tool: validation 재실행 후 content 승격
 ```
 
 ## 8. Docker 운영
-권장 운영 방식은 OpenCrabs와 `world-tool`을 같은 이미지에 넣고, OpenCrabs credential/config volume과 world root volume을 분리해 마운트하는 것이다. Codex OAuth provider를 사용하므로 컨테이너 안에 Codex CLI를 설치하거나 `~/.codex`를 마운트하는 것은 기본 요구사항이 아니다.
+권장 운영 방식은 OpenCrabs와 `world-tool`을 같은 이미지에 넣되, security boundary를 만족하는 hardened 실행 옵션을 기본으로 두는 것이다. OpenCrabs credential/config volume과 world root volume을 분리해 마운트하고, Codex OAuth provider 호출을 위해 제한된 egress network를 붙인다. provider egress allowlist는 OpenCrabs 설정의 책임이며 `world-tool`은 arbitrary external fetch를 하지 않는다. Codex CLI provider를 쓰지 않는다면 컨테이너 안에 Codex CLI를 설치하거나 `~/.codex`를 마운트하는 것은 기본 요구사항이 아니다.
 
 ```bash
 docker run --rm \
+  --user 1000:1000 \
+  --network opencrabs-min-egress \
+  --read-only \
+  --tmpfs /tmp \
+  --tmpfs /run \
+  --cap-drop ALL \
+  --security-opt no-new-privileges \
   -v opencrabs-config:/home/opencrabs/.opencrabs \
   -v /host/worlds/ashen-continent:/workspace/world \
   opencrabs-world:latest
 ```
+
+이 권장 예시는 accepted flow에서 `runs/`, `drafts/`, `archive/`, `content/`에 write해야 하므로 world root bind mount는 writable이어야 한다. `--read-only`는 root filesystem hardening으로 유지하되, world root 자체를 read-only로 두지 않는다.
 
 강한 격리가 필요하면 OpenCrabs 자체는 host에서 실행하되, dynamic tool command가 per-world container에서 `world-tool`을 실행하도록 구성할 수 있다.
 
@@ -292,10 +303,15 @@ docker run --rm \
   --network none \
   --read-only \
   --tmpfs /tmp \
-  -v /host/worlds/ashen-continent:/workspace/world \
+  --tmpfs /run \
+  --cap-drop ALL \
+  --security-opt no-new-privileges \
+  -v /host/worlds/ashen-continent:/workspace/world:ro \
   world-tool:latest \
   world-tool draft validate --root /workspace/world --world-id ashen-continent --draft drafts/nations/nation_northern_empire.md --json
 ```
+
+이 예시는 validation/read-only commands에만 쓰는 read-only world root 예시다.
 
 개발 단계에서는 host에 설치된 `world-tool`을 직접 호출해도 된다.
 
@@ -307,8 +323,8 @@ OpenCrabs는 raw stdout을 사용자에게 그대로 보여주지 않고, tool �
 
 stdout에 JSON이 있으면 `schema_version`을 확인한 뒤 `ok` → `command_status` → `data.validation_status` → `data.block_reason` → `issues` → `available_actions` → `error.code` 순서로 해석한다. stdout이 비어 있거나 JSON parse가 실패하면 dynamic tool 자체 실패로 처리한다.
 
-`world_stage_input`은 `input_path`와 `input_hash`를 반환한다. 이후 tool 호출은 그 파일 경로와 해시를 그대로 넘기고, `world-tool`이 다시 계산한 해시와 비교해야 한다. `authenticated_actor`는 OpenCrabs의 인증된 세션 또는 provider identity에서 가져와야 하며, prompt나 staging file에서 받아서는 안 된다. `world_create_approval_attestation`은 trusted auth context wrapper가 없으면 `AUTH_CONTEXT_MISSING`으로 실패한다. 승인 provenance는 `reason_file`/`reason_hash`, `approval_attestation_file`/`approval_attestation_hash`, `approver_id`, `approval_channel`, `authenticated_actor`가 모두 맞아야 유효하다. `world_create_approval_attestation`은 `auth_context_file`/`auth_context_hash`를 world root 밖에서 생성된 입력으로 받아야 하고, create 경로의 `diff_run_id`/`draft_hash`/`target_base_hash`/`patch_hash`는 `world_diff_draft`의 출력에서 오되 `target_base_hash=null`을 approval attest/accept 직전에 CLI template 변수 `target_base_hash="none"`으로 정규화해 bind해야 하며, create 경로의 `reason_hash`는 `world_stage_input`의 출력으로만 bind해야 하고 `reason_file`은 `world_accept_draft`/`world_force_accept_draft`가 소비해야 한다. update/deprecate 경로는 sha256 `target_base_hash`를 사용한다.
-OpenCrabs는 blocked 결과를 읽을 때 `ok` → `command_status` → `data.validation_status` → `data.block_reason` → `issues` → `available_actions` → `error.code` 순서로 해석한다. `data.block_reason`이 있으면 먼저 domain blocked 사유로 다루고, 그 다음 `issues`로 세부 원인을 읽고, `available_actions`로 다음 행동을 고른다. `TRANSACTION_INCOMPLETE`는 failed/recovery-required partial transaction으로 다뤄야 하며, `PATH_*`, `LOCK_BUSY`, I/O/path/lock 문제는 failed JSON error로 분리해야 한다. 승인 provenance는 `reason_file`/`reason_hash`, `approval_attestation_file`/`approval_attestation_hash`, `approver_id`, `approval_channel`, `authenticated_actor`가 모두 맞아야 유효하며, attestation 내부 actor/channel은 OpenCrabs trusted auth context wrapper와 일치해야 한다. `approval_channel` 예시는 `OpenCrabs-chat`을 사용한다.
+`world_stage_input`은 `input_path`와 `input_hash`를 반환한다. 이후 tool 호출은 그 파일 경로와 해시를 그대로 넘기고, `world-tool`이 다시 계산한 해시와 비교해야 한다. `authenticated_actor`는 OpenCrabs의 인증된 세션 또는 provider identity에서 가져와야 하며, prompt나 staging file에서 받아서는 안 된다. `world_create_approval_attestation`은 trusted auth context wrapper가 없으면 `AUTH_CONTEXT_MISSING`으로 실패한다. 승인 provenance는 `world_id`, allowed action/scope, issuer/audience, `reason_file`/`reason_hash`, `approval_attestation_file`/`approval_attestation_hash`, `approver_id`, `approval_channel`, `authenticated_actor`, expiry, hash 검증이 모두 맞아야 유효하다. `world_create_approval_attestation`은 `auth_context_file`/`auth_context_hash`를 world root 밖에서 생성된 입력으로 받아야 하고, create 경로의 `diff_run_id`/`draft_hash`/`target_base_hash`/`patch_hash`는 `world_diff_draft`의 출력에서 오되 `target_base_hash=null`을 approval attest/accept 직전에 CLI template 변수 `target_base_hash="none"`으로 정규화해 bind해야 하며, create 경로의 `reason_hash`는 `world_stage_input`의 출력으로만 bind해야 하고 `reason_file`은 `world_accept_draft`/`world_force_accept_draft`가 소비해야 한다. update/deprecate 경로는 sha256 `target_base_hash`를 사용한다.
+OpenCrabs는 blocked 결과를 읽을 때 `ok` → `command_status` → `data.validation_status` → `data.block_reason` → `issues` → `available_actions` → `error.code` 순서로 해석한다. `data.block_reason`이 있으면 먼저 domain blocked 사유로 다루고, 그 다음 `issues`로 세부 원인을 읽고, `available_actions`로 다음 행동을 고른다. `TRANSACTION_INCOMPLETE`는 failed/recovery-required partial transaction으로 다뤄야 하며, `PATH_*`, `LOCK_BUSY`, I/O/path/lock 문제는 failed JSON error로 분리해야 한다. 승인 provenance는 `world_id`, allowed action/scope, issuer/audience, `reason_file`/`reason_hash`, `approval_attestation_file`/`approval_attestation_hash`, `approver_id`, `approval_channel`, `authenticated_actor`, expiry, hash 검증이 모두 맞아야 유효하며, attestation 내부 actor/channel은 OpenCrabs trusted auth context wrapper와 일치해야 한다. `approval_channel` 예시는 `OpenCrabs-chat`을 사용한다.
 
 ### validation conflict
 OpenCrabs는 accept를 강행하지 않고 blocked 이유와 수정안을 사용자에게 보여준다.

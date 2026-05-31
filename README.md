@@ -49,7 +49,7 @@ world-tool draft accept
 아래는 CLI가 구현된 뒤 통과해야 하는 첫 성공 경로다.
 `approval attest` 단계는 OpenCrabs trusted wrapper/session metadata로부터 생성된 `auth_context_file`/`auth_context_hash`를 사용하며, 이 파일은 OpenCrabs trusted wrapper가 생성한다. 로컬 CLI 테스트에서는 명시적인 test fixture/mock auth context만 사용하고, 운영 provenance로는 취급하지 않는다. prompt, model output, staged files는 신뢰하지 않는다.
 `draft create`는 명시적 `--id`를 입력으로 받고, update/deprecate draft 생성은 `world-tool draft create --change-type update|deprecate --target-id ...`를 사용한다. `world-tool draft update`는 이미 생성된 active draft의 본문 수정용이다. 별도의 `world-tool draft deprecate` 명령은 없다. create에서 나온 id로 파생된 `draft_path`를 기준으로 validate, diff, approval attestation, accept가 이어진다. create diff의 JSON은 `target_exists: false`, `target_base_hash: null`이고, create 경로의 `approval attest`와 `draft accept`는 `--target-base-hash none`을 사용한다. update/deprecate만 sha256 `target_base_hash`를 사용한다.
-Quickstart는 아직 CLI 구현 후의 목표 예시다. `jq`가 필요하며, 아래 스크립트는 JSON 출력에서 값을 추출해 그대로 이어 붙이는 smoke test 형태다.
+Quickstart는 아직 CLI 구현 후의 목표 예시다. `jq`와 `python3`가 필요하며, 아래 스크립트는 JSON 출력에서 값을 추출해 그대로 이어 붙이는 smoke test 형태다.
 
 ```bash
 set -euo pipefail
@@ -59,7 +59,11 @@ WORLD_ROOT="./examples/worlds/ashen-continent"
 APPROVER_ID="oc-user-01"
 APPROVAL_CHANNEL="OpenCrabs-chat"
 AUTHENTICATED_ACTOR="oc-user-01"
+AUTH_ISSUER="opencrabs-trusted-wrapper"
+AUTH_AUDIENCE="$WORLD_ID"
 AUTH_CONTEXT_FILE="/tmp/opencrabs-auth-context.json"
+issued_at=$(python3 -c 'from datetime import datetime, timedelta, timezone; now=datetime.now(timezone.utc).replace(microsecond=0); print(now.isoformat().replace("+00:00", "Z"))')
+expires_at=$(python3 -c 'from datetime import datetime, timedelta, timezone; now=datetime.now(timezone.utc).replace(microsecond=0) + timedelta(hours=1); print(now.isoformat().replace("+00:00", "Z"))')
 
 world_init_json=$(world-tool world init --root "$WORLD_ROOT" --world-id "$WORLD_ID" --json)
 registry_json=$(world-tool registry add --world "$WORLD_ID" --root "$WORLD_ROOT" --title "잿빛 대륙" --json)
@@ -88,13 +92,17 @@ reason_json=$(printf '%s\n' '제국 설정을 처음 반영하고, 승인을 위
 reason_file=$(jq -r '.data.input_path' <<<"$reason_json")
 reason_hash=$(jq -r '.data.input_hash' <<<"$reason_json")
 
-cat > "$AUTH_CONTEXT_FILE" <<'JSON'
+cat > "$AUTH_CONTEXT_FILE" <<JSON
 {
+  "world_id": "$WORLD_ID",
+  "allowed_actions": ["world_create_approval_attestation"],
+  "issuer": "$AUTH_ISSUER",
+  "audience": "$AUTH_AUDIENCE",
   "session_id": "sess_123456",
-  "authenticated_actor": "oc-user-01",
-  "approval_channel": "OpenCrabs-chat",
-  "issued_at": "2026-05-31T00:00:00Z",
-  "expires_at": "2026-05-31T01:00:00Z",
+  "authenticated_actor": "$AUTHENTICATED_ACTOR",
+  "approval_channel": "$APPROVAL_CHANNEL",
+  "issued_at": "$issued_at",
+  "expires_at": "$expires_at",
   "fixture_mode": true
 }
 JSON

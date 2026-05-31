@@ -172,6 +172,7 @@ draft를 canon과 비교해 구조 오류와 명백한 충돌을 탐지한다.
 ### 산출물
 - `world-tool draft diff`
 - `world-tool draft accept`
+- `world-tool approval attest`
 - accept 직전 validation 재실행
 - `--force`, `--reason-file`, `--reason-hash`, `--approval-attestation-file`, `--approval-attestation-hash`, `--approver-id`, `--approval-channel`, `--authenticated-actor`
 - diff binding flags: `--diff-run-id`, `--draft-hash`, `--target-base-hash`, `--patch-hash`
@@ -189,8 +190,9 @@ draft를 canon과 비교해 구조 오류와 명백한 충돌을 탐지한다.
 - accept는 validation을 다시 실행한다.
 - accept는 diff binding이 없거나 불일치하면 blocked다.
 - conflict/error가 있으면 기본 accept가 blocked다.
-- force accept는 reason과 trusted approval attestation provenance 중 하나라도 없으면 blocked이며 missing target, missing related target, missing relationship target, missing update/deprecate target, active draft-only target, path/type/id/schema 불일치, structural error, id conflict, target path conflict, diff binding mismatch, storylet canon 승격, atomic write 실패, lock 실패는 우회할 수 없다.
-- force accept는 semantic/timeline/relationship conflict 후보 중 referenced target이 모두 canon content에 있는 경우에만 우회할 수 있다.
+- force accept는 missing target, missing related target, missing relationship target, missing update/deprecate target, active draft-only target, path/type/id/schema 불일치, structural error, id conflict, target path conflict, diff binding mismatch, storylet canon 승격, atomic write 실패, lock 실패는 우회할 수 없다. reason 누락은 `INVALID_ARGUMENT` failed로, auth context/attestation provenance 문제는 대응하는 `AUTH_CONTEXT_*` 또는 attestation/hash mismatch failed로 처리한다.
+- force accept는 semantic/timeline/relationship conflict 후보 중 referenced target이 모두 canon content에 있는 경우에만 제한적으로 우회할 수 있다.
+- `approval attest`는 `WORLD_TOOL_TEST_AUTH_CONTEXT=1` opt-in test fixture 경로와 trusted wrapper boundary를 연결하며, auth_context_file/auth_context_hash와 expiry를 함께 검증한다.
 - accept 성공 시 content 문서가 생성 또는 갱신된다.
 - accept 성공 시 draft 원본은 `archive/accepted/`로 이동한다.
 - 모든 변경은 runs artifact로 추적 가능하다.
@@ -249,29 +251,9 @@ OpenCrabs가 `world-tool`을 범용 shell이 아니라 의미 단위 tool로 호
 - 범용 `world_exec_shell` 같은 tool은 제공하지 않는다.
 - malformed JSON, timeout, non-zero exit에 대한 실패 메시지 정책이 정리되어 있다.
 
-## 11. Milestone 8: Container Runtime
+## 11. Milestone 8: Sample World E2E
 ### 목표
-OpenCrabs, `world-tool`, skill/tools bundle을 컨테이너에서 운영할 수 있게 한다.
-
-### 산출물
-- Dockerfile
-- docker-compose 예시
-- OpenCrabs config/auth volume
-- world root volume
-- per-world container 예시
-- Codex OAuth provider 기본 설정 안내
-- Codex CLI provider fallback 설정 안내
-
-### 완료 기준
-- OpenCrabs와 `world-tool`이 같은 컨테이너에서 실행될 수 있다.
-- OpenCrabs credential/config volume은 world root volume과 분리된다.
-- world root는 특정 폴더만 volume mount된다.
-- Codex OAuth provider 사용 시 컨테이너에 Codex CLI나 `~/.codex` 마운트가 필요하지 않다.
-- Codex CLI provider fallback을 사용할 때만 별도 auth volume을 사용한다.
-
-## 12. Milestone 9: Sample World E2E
-### 목표
-샘플 world root로 전체 흐름을 검증한다.
+샘플 world root로 핵심 workflow를 먼저 검증한다.
 
 ### 산출물
 - `examples/worlds/ashen-continent/content/...`
@@ -330,6 +312,26 @@ OpenCrabs, `world-tool`, skill/tools bundle을 컨테이너에서 운영할 수 
 - accepted draft는 `content/`에 반영되고 `archive/accepted/`로 이동한다.
 - `runs/` artifact만 보고 어떤 변경이 있었는지 추적할 수 있다.
 
+## 12. Milestone 9: Container Runtime
+### 목표
+OpenCrabs, `world-tool`, skill/tools bundle을 컨테이너에서 운영할 수 있게 한다.
+
+### 산출물
+- Dockerfile
+- docker-compose 예시
+- OpenCrabs config/auth volume
+- world root volume
+- per-world container 예시
+- Codex OAuth provider 기본 설정 안내
+- Codex CLI provider fallback 설정 안내
+
+### 완료 기준
+- OpenCrabs와 `world-tool`이 같은 컨테이너에서 실행될 수 있다.
+- OpenCrabs credential/config volume은 world root volume과 분리된다.
+- world root는 특정 폴더만 volume mount된다.
+- Codex OAuth provider 사용 시 컨테이너에 Codex CLI나 `~/.codex` 마운트가 필요하지 않다.
+- Codex CLI provider fallback을 사용할 때만 별도 auth volume을 사용한다.
+
 ## 13. Milestone 10: Post-MVP Hardening
 ### 목표
 MVP 이후 장기 운영과 maintenance path를 추가한다.
@@ -370,8 +372,8 @@ MVP 이후 장기 운영과 maintenance path를 추가한다.
 6. Milestone 5: Diff, Accept, Audit
 7. Milestone 6: OpenCrabs Skill
 8. Milestone 7: OpenCrabs Dynamic Tools
-9. Milestone 8: Container Runtime
-10. Milestone 9: Sample World E2E
+9. Milestone 8: Sample World E2E
+10. Milestone 9: Container Runtime
 
 Milestone 10은 MVP가 end-to-end로 동작한 뒤 진행한다.
 
