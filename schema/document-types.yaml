@@ -1,0 +1,38 @@
+types:
+  character:
+    content_dir: content/characters
+    draft_dir: drafts/characters
+    id_prefix: character_
+  nation:
+    content_dir: content/nations
+    draft_dir: drafts/nations
+    id_prefix: nation_
+  organization:
+    content_dir: content/organizations
+    draft_dir: drafts/organizations
+    id_prefix: org_
+  place:
+    content_dir: content/places
+    draft_dir: drafts/places
+    id_prefix: place_
+  event:
+    content_dir: content/events
+    draft_dir: drafts/events
+    id_prefix: event_
+  timeline:
+    content_dir: content/timeline
+    draft_dir: drafts/timeline
+    id_prefix: timeline_
+  magic:
+    content_dir: content/magic
+    draft_dir: drafts/magic
+    id_prefix: magic_
+  glossary:
+    content_dir: content/glossary
+    draft_dir: drafts/glossary
+    id_prefix: term_
+  storylet:
+    content_dir: null
+    draft_dir: drafts/storylets
+    id_prefix: storylet_
+    draft_only: true

@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://world-harness.local/schema/world-doc.schema.json",
+  "type": "object",
+  "required": ["schema_version", "id", "type", "status", "title", "created_at", "updated_at"],
+  "properties": {
+    "schema_version": { "const": "world-doc.v1" },
+    "id": { "type": "string", "pattern": "^[a-z0-9_]+$" },
+    "type": {
+      "type": "string",
+      "enum": ["character", "nation", "organization", "place", "event", "timeline", "magic", "glossary", "storylet"]
+    },
+    "status": { "type": "string", "enum": ["draft", "canon", "deprecated", "rejected"] },
+    "title": { "type": "string", "minLength": 1 },
+    "tags": { "type": "array", "items": { "type": "string" } },
+    "aliases": { "type": "array", "items": { "type": "string" } },
+    "related": { "type": "array", "items": { "type": "string" } },
+    "relationships": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["type", "target"],
+        "properties": {
+          "type": { "type": "string" },
+          "target": { "type": "string" },
+          "note": { "type": "string" }
+        }
+      }
+    },
+    "source_run_id": { "type": ["string", "null"] },
+    "change_type": { "type": ["string", "null"], "enum": ["create", "update", "deprecate", null] },
+    "target_id": { "type": ["string", "null"] },
+    "retcon_reason": { "type": ["string", "null"] }
+  },
+  "additionalProperties": true
+}

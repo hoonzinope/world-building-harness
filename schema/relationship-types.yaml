@@ -1,0 +1,49 @@
+relationships:
+  - type: member_of
+    inverse: has_member
+    domain: [character, organization]
+    range: [organization, nation]
+  - type: affiliated_with
+    inverse: has_affiliation
+    domain: [character, organization]
+    range: [organization, nation]
+  - type: located_in
+    inverse: contains
+    domain: [place, organization]
+    range: [place, nation]
+  - type: capital_of
+    inverse: has_capital
+    domain: [place]
+    range: [nation]
+  - type: headquarters_of
+    inverse: has_headquarters
+    domain: [place]
+    range: [organization]
+  - type: rules
+    inverse: ruled_by
+    domain: [character, organization]
+    range: [nation, place]
+  - type: ally_of
+    inverse: ally_of
+    symmetric: true
+    contradicts: [rival_of]
+    domain: [character, nation, organization]
+    range: [character, nation, organization]
+  - type: rival_of
+    inverse: rival_of
+    symmetric: true
+    contradicts: [ally_of]
+    domain: [character, nation, organization]
+    range: [character, nation, organization]
+  - type: participates_in
+    inverse: has_participant
+    domain: [character, organization, nation]
+    range: [event]
+  - type: occurred_at
+    inverse: hosts_event
+    domain: [event]
+    range: [place]
+  - type: uses_magic
+    inverse: used_by
+    domain: [character, organization, nation]
+    range: [magic]
