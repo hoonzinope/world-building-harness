@@ -8,5 +8,7 @@ tmp
 dist
 node_modules
 packs/*/runs
+packs/*/drafts
+packs/*/ideas/inbox
 packs/*/raw/legacy-raw
 packs/*/raw/legacy-drafts

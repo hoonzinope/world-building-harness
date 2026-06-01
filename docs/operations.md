@@ -38,10 +38,13 @@ Supported commands:
 - `/packs`
 - `/status [pack]`
 - `/search [pack] <query>`
+- `/ideas [pack]`
 - `/draft [pack] <type> <id> | <title> | <body>`
 - `/codex [pack] <request>`
 
-`/codex` runs `codex exec` inside the container with `CODEX_HOME=/home/node/.codex`. The compose file mounts the host Codex home by default through `${CODEX_HOME:-/Users/hoonzi/.codex}`.
+Plain text messages that do not start with `/` are stored under `packs/<pack-id>/ideas/inbox/` and do not run Codex. Use `/codex` only when a message should spend model tokens and create/update drafts.
+
+`/codex` runs `codex exec` inside the container with `CODEX_HOME=/home/node/.codex`. The compose file mounts the host Codex home by default through `${CODEX_HOME:-${HOME}/.codex}`.
 
 ## Pack Layout
 
@@ -51,6 +54,7 @@ Migrated packs live under:
 packs/<pack-id>/
 ├── content/
 ├── drafts/
+├── ideas/
 ├── raw/
 ├── resources/
 ├── runs/

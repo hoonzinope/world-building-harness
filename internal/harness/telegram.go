@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -30,6 +31,7 @@ type telegramUpdate struct {
 	UpdateID int `json:"update_id"`
 	Message  struct {
 		MessageID int    `json:"message_id"`
+		Date      int64  `json:"date"`
 		Text      string `json:"text"`
 		Chat      struct {
 			ID int64 `json:"id"`
@@ -142,8 +144,10 @@ func (b *telegramBot) handle(update telegramUpdate) string {
 			"/packs - pack 목록",
 			"/status [pack] - 상태 확인",
 			"/search [pack] <query> - canon 문서 검색",
+			"/ideas [pack] - 최근 Telegram idea inbox 확인",
 			"/codex [pack] <request> - Codex에게 draft/story 작업 요청",
 			"/draft [pack] <type> <id> | <title> | <body> - Codex 없이 draft 생성",
+			"일반 메시지 - Codex를 실행하지 않고 ideas/inbox에 저장",
 		}, "\n")
 	case text == "/packs":
 		return b.cmdPacks()
@@ -151,12 +155,16 @@ func (b *telegramBot) handle(update telegramUpdate) string {
 		return b.cmdStatus(strings.TrimSpace(strings.TrimPrefix(text, "/status")))
 	case strings.HasPrefix(text, "/search"):
 		return b.cmdSearch(strings.TrimSpace(strings.TrimPrefix(text, "/search")))
+	case strings.HasPrefix(text, "/ideas"):
+		return b.cmdIdeas(strings.TrimSpace(strings.TrimPrefix(text, "/ideas")))
 	case strings.HasPrefix(text, "/draft"):
 		return b.cmdDraft(strings.TrimSpace(strings.TrimPrefix(text, "/draft")))
 	case strings.HasPrefix(text, "/codex"):
 		return b.cmdCodex(update, strings.TrimSpace(strings.TrimPrefix(text, "/codex")))
-	default:
+	case strings.HasPrefix(text, "/"):
 		return "알 수 없는 명령입니다. /help 를 확인하세요."
+	default:
+		return b.cmdIdea(update, text)
 	}
 }
 
@@ -221,6 +229,66 @@ func (b *telegramBot) cmdSearch(arg string) string {
 	return strings.Join(lines, "\n")
 }
 
+func (b *telegramBot) cmdIdeas(arg string) string {
+	pack, _ := b.packFromArg(arg)
+	ctx, err := (&webServer{packsRoot: b.packsRoot}).packContext(pack)
+	if err != nil {
+		return "pack을 찾을 수 없습니다: " + pack
+	}
+	relRoot := filepath.ToSlash(filepath.Join("ideas", "inbox"))
+	absRoot, _, err := safeRel(ctx.Root, relRoot)
+	if err != nil {
+		return err.Error()
+	}
+	entries, err := os.ReadDir(absRoot)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "저장된 idea가 없습니다: " + pack
+		}
+		return err.Error()
+	}
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasSuffix(strings.ToLower(entry.Name()), ".md") {
+			names = append(names, entry.Name())
+		}
+	}
+	if len(names) == 0 {
+		return "저장된 idea가 없습니다: " + pack
+	}
+	sort.Sort(sort.Reverse(sort.StringSlice(names)))
+	if len(names) > 8 {
+		names = names[:8]
+	}
+	lines := []string{"최근 idea inbox:"}
+	for _, name := range names {
+		rel := filepath.ToSlash(filepath.Join(relRoot, name))
+		preview := ideaPreview(filepath.Join(absRoot, name))
+		if preview == "" {
+			lines = append(lines, "- "+rel)
+			continue
+		}
+		lines = append(lines, fmt.Sprintf("- %s\n  %s", rel, preview))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (b *telegramBot) cmdIdea(update telegramUpdate, text string) string {
+	pack, body := b.packFromArg(text)
+	if strings.TrimSpace(body) == "" {
+		body = text
+	}
+	ctx, err := (&webServer{packsRoot: b.packsRoot}).packContext(pack)
+	if err != nil {
+		return "pack을 찾을 수 없습니다: " + pack
+	}
+	rel, err := saveTelegramIdea(ctx, update, body)
+	if err != nil {
+		return "idea 저장 실패: " + err.Error()
+	}
+	return fmt.Sprintf("idea 저장됨: %s\n%s\nCodex는 실행하지 않았습니다. 초안화가 필요하면 여기서 정리하거나 /codex를 명시적으로 사용하세요.", pack, rel)
+}
+
 func (b *telegramBot) cmdDraft(arg string) string {
 	pack, rest := b.packFromArg(arg)
 	parts := strings.Split(rest, "|")
@@ -266,6 +334,84 @@ func stageText(ctx *WorldContext, kind, text string) (string, string, error) {
 	}
 	b := []byte(text)
 	return rel, sha256Bytes(b), writeFileAtomic(abs, b, 0o600)
+}
+
+func saveTelegramIdea(ctx *WorldContext, update telegramUpdate, text string) (string, error) {
+	receivedAt := telegramMessageTime(update)
+	id := fmt.Sprintf("%s-telegram-%d", receivedAt.UTC().Format("20060102T150405Z"), update.Message.MessageID)
+	if update.Message.MessageID == 0 {
+		id = fmt.Sprintf("%s-telegram-%s", receivedAt.UTC().Format("20060102T150405Z"), shortHash(text))
+	}
+	rel := filepath.ToSlash(filepath.Join("ideas", "inbox", id+".md"))
+	abs, clean, err := safeRel(ctx.Root, rel)
+	if err != nil {
+		return "", err
+	}
+	if _, err := os.Stat(abs); err == nil {
+		rel = filepath.ToSlash(filepath.Join("ideas", "inbox", id+"-"+shortHash(text)+".md"))
+		abs, clean, err = safeRel(ctx.Root, rel)
+		if err != nil {
+			return "", err
+		}
+	}
+	body := strings.TrimSpace(text)
+	content := strings.Join([]string{
+		"---",
+		"source: telegram",
+		"pack_id: " + ctx.ID,
+		fmt.Sprintf("message_id: %d", update.Message.MessageID),
+		"received_at: " + receivedAt.UTC().Format(time.RFC3339),
+		"stored_at: " + time.Now().UTC().Format(time.RFC3339),
+		"---",
+		"",
+		body,
+		"",
+	}, "\n")
+	return clean, writeFileAtomic(abs, []byte(content), 0o600)
+}
+
+func telegramMessageTime(update telegramUpdate) time.Time {
+	if update.Message.Date > 0 {
+		return time.Unix(update.Message.Date, 0)
+	}
+	return time.Now().UTC()
+}
+
+func shortHash(text string) string {
+	hash := strings.TrimPrefix(sha256Bytes([]byte(text)), "sha256:")
+	if len(hash) > 10 {
+		return hash[:10]
+	}
+	return hash
+}
+
+func ideaPreview(path string) string {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	inFrontmatter := false
+	for i, line := range strings.Split(string(b), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if i == 0 && trimmed == "---" {
+			inFrontmatter = true
+			continue
+		}
+		if inFrontmatter {
+			if trimmed == "---" {
+				inFrontmatter = false
+			}
+			continue
+		}
+		if trimmed == "" {
+			continue
+		}
+		if len([]rune(trimmed)) > 80 {
+			return string([]rune(trimmed)[:80]) + "..."
+		}
+		return trimmed
+	}
+	return ""
 }
 
 func (b *telegramBot) cmdCodex(update telegramUpdate, arg string) string {
