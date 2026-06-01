@@ -1,0 +1,18 @@
+schema_version: world-harness.v1
+world_id: lumen-federation
+world_root: .
+content_dir: content
+draft_dir: drafts
+run_dir: runs
+inbox_dir: runs/inbox
+graph_dir: graph
+archive_dir: archive
+approval:
+  require_accept: true
+  allow_force_accept: true
+security:
+  deny_outside_root: true
+  allow_network: false
+locking:
+  enabled: true
+  lock_file: runs/.lock

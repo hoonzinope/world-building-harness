@@ -1,0 +1,5 @@
+default: lumen-federation
+worlds:
+    lumen-federation:
+        title: 루멘 연방
+        root: packs/lumen-federation

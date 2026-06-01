@@ -1,0 +1,18 @@
+FROM node:22-slim
+
+ARG QUARTZ_REPOSITORY=https://github.com/jackyzha0/quartz.git
+ARG QUARTZ_REF=v4
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends git ca-certificates \
+  && rm -rf /var/lib/apt/lists/* \
+  && git clone --depth 1 --branch "${QUARTZ_REF}" "${QUARTZ_REPOSITORY}" /quartz
+
+WORKDIR /quartz
+
+RUN npm ci
+
+COPY quartz.config.ts /quartz/quartz.config.ts
+
+ENTRYPOINT ["npx", "quartz"]
+CMD ["build", "--directory", "content", "--output", "public"]

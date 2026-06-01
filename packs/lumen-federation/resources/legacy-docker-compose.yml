@@ -1,0 +1,64 @@
+services:
+  quartz-build:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: world-lore-quartz:local
+    container_name: world-lore-quartz-build
+    entrypoint:
+      - /bin/sh
+      - -lc
+    command:
+      - rm -rf /workspace/public && npx quartz build --directory content --output /workspace/public
+    environment:
+      QUARTZ_BASE_URL: ${QUARTZ_BASE_URL:-localhost:8088}
+    volumes:
+      - ${WORLD_LORE_CONTENTS_DIR:-./contents}:/quartz/content:ro
+      - ${WORLD_LORE_OUTPUT_ROOT:-/Users/hoonzi/Documents/docker_v/world-lore}:/workspace
+    profiles:
+      - build
+
+  quartz-site:
+    image: nginx:1.27-alpine
+    container_name: world-lore-quartz-site
+    ports:
+      - "8088:80"
+    volumes:
+      - ${WORLD_LORE_PUBLIC_DIR:-/Users/hoonzi/Documents/docker_v/world-lore/public}:/usr/share/nginx/html:ro
+      - ./nginx/quartz.conf:/etc/nginx/conf.d/default.conf:ro
+    restart: unless-stopped
+    networks:
+      - world-lore
+
+  quartz-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: world-lore-quartz:local
+    container_name: world-lore-quartz-dev
+    command:
+      - build
+      - --serve
+      - --directory
+      - content
+      - --output
+      - /workspace/public-dev
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+    environment:
+      QUARTZ_BASE_URL: ${QUARTZ_BASE_URL:-localhost:8089}
+    ports:
+      - "8089:8080"
+    volumes:
+      - ${WORLD_LORE_CONTENTS_DIR:-./contents}:/quartz/content:ro
+      - ${WORLD_LORE_OUTPUT_ROOT:-/Users/hoonzi/Documents/docker_v/world-lore}:/workspace
+    profiles:
+      - dev
+    networks:
+      - world-lore
+
+networks:
+  world-lore:
+    name: world-lore
