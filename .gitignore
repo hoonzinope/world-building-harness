@@ -25,3 +25,5 @@
 .cache/
 tmp/
 temp/
+bin/
+packs/*/runs/

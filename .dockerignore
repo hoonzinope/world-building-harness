@@ -1,0 +1,12 @@
+.git
+.DS_Store
+.env
+.env.*
+!.env.example
+world-harness
+tmp
+dist
+node_modules
+packs/*/runs
+packs/*/raw/legacy-raw
+packs/*/raw/legacy-drafts

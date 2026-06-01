@@ -1,0 +1,72 @@
+[[tools]]
+name = "world_stage_input"
+description = "Stage long input into runs/inbox and return input_path/input_hash"
+executor = "shell"
+command = "world-tool input stage --world {{world_id}} --kind {{kind}} --stdin --json"
+stdin = "{{input}}"
+
+[[tools]]
+name = "world_list"
+description = "List configured worlds"
+executor = "shell"
+command = "world-tool world list --json"
+
+[[tools]]
+name = "world_status"
+description = "Return world status"
+executor = "shell"
+command = "world-tool world status --world {{world_id}} --json"
+
+[[tools]]
+name = "world_search_docs"
+description = "Search canon and active draft documents"
+executor = "shell"
+command = "world-tool doc search --world {{world_id}} --scope active --query-file {{query_file}} --query-hash {{query_hash}} --json"
+
+[[tools]]
+name = "world_read_doc"
+description = "Read a world document"
+executor = "shell"
+command = "world-tool doc read --world {{world_id}} --path {{path}} --json"
+
+[[tools]]
+name = "world_create_draft"
+description = "Create a draft without modifying canon"
+executor = "shell"
+command = "world-tool draft create --world {{world_id}} --change-type create --type {{type}} --id {{id}} --title-file {{title_file}} --title-hash {{title_hash}} --body-file {{body_file}} --body-hash {{body_hash}} --json"
+
+[[tools]]
+name = "world_create_update_draft"
+description = "Create an update draft"
+executor = "shell"
+command = "world-tool draft create --world {{world_id}} --change-type update --target-id {{target_id}} --title-file {{title_file}} --title-hash {{title_hash}} --body-file {{body_file}} --body-hash {{body_hash}} --retcon-reason-file {{retcon_reason_file}} --retcon-reason-hash {{retcon_reason_hash}} --json"
+
+[[tools]]
+name = "world_create_deprecate_draft"
+description = "Create a deprecation draft"
+executor = "shell"
+command = "world-tool draft create --world {{world_id}} --change-type deprecate --target-id {{target_id}} --title-file {{title_file}} --title-hash {{title_hash}} --body-file {{body_file}} --body-hash {{body_hash}} --retcon-reason-file {{retcon_reason_file}} --retcon-reason-hash {{retcon_reason_hash}} --json"
+
+[[tools]]
+name = "world_validate_draft"
+description = "Validate a draft"
+executor = "shell"
+command = "world-tool draft validate --world {{world_id}} --draft {{draft_path}} --json"
+
+[[tools]]
+name = "world_diff_draft"
+description = "Return accept diff binding"
+executor = "shell"
+command = "world-tool draft diff --world {{world_id}} --draft {{draft_path}} --json"
+
+[[tools]]
+name = "world_accept_draft"
+description = "Accept a draft after approval attestation"
+executor = "shell"
+command = "world-tool draft accept --world {{world_id}} --draft {{draft_path}} --diff-run-id {{diff_run_id}} --draft-hash {{draft_hash}} --target-base-hash {{target_base_hash}} --patch-hash {{patch_hash}} --approver-id {{approver_id}} --approval-channel {{approval_channel}} --approval-attestation-file {{approval_attestation_file}} --approval-attestation-hash {{approval_attestation_hash}} --authenticated-actor {{authenticated_actor}} --reason-file {{reason_file}} --reason-hash {{reason_hash}} --json"
+
+[[tools]]
+name = "world_reject_draft"
+description = "Reject a draft with reason"
+executor = "shell"
+command = "world-tool draft reject --world {{world_id}} --draft {{draft_path}} --reason-file {{reason_file}} --reason-hash {{reason_hash}} --json"
