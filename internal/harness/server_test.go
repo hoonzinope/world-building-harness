@@ -1618,3 +1618,78 @@ func TestAdminUsersTemplateWiresCSRF(t *testing.T) {
 		}
 	}
 }
+
+func TestLoginTemplateUsesAccessibleFormStructure(t *testing.T) {
+	srv := &webServer{}
+	req := httptest.NewRequest(http.MethodGet, "/login", nil)
+	rec := httptest.NewRecorder()
+	srv.render(rec, req, "Login", loginTemplate, map[string]any{
+		"Base":      "",
+		"CSRFToken": "csrf-test",
+		"Error":     "로그인 정보를 확인할 수 없습니다.",
+	})
+	html := rec.Body.String()
+	for _, want := range []string{
+		`class="auth-shell"`,
+		`class="auth-panel"`,
+		`class="auth-form"`,
+		`for="login-username"`,
+		`id="login-username"`,
+		`autocomplete="username"`,
+		`for="login-password"`,
+		`id="login-password"`,
+		`autocomplete="current-password"`,
+		`role="alert"`,
+		`id="login-error"`,
+		`aria-invalid="true"`,
+		`aria-describedby="login-error"`,
+		`class="primary-button"`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("missing %q in login template", want)
+		}
+	}
+	if !strings.Contains(html, `name="csrf_token" value="csrf-test"`) {
+		t.Fatal("missing csrf token in login template")
+	}
+}
+
+func TestStoryLobbyTemplateKeepsRefinedCardAndFilterStructure(t *testing.T) {
+	root := t.TempDir()
+	storyRoot := filepath.Join(root, "stories")
+	packRoot := filepath.Join(root, "packs")
+	store, err := openStoryStore(storyRoot, packRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.createDemoStory("user_admin", "르네의 이야기", "생존극", "르네", "루세라의 간호사"); err != nil {
+		t.Fatal(err)
+	}
+
+	html := renderStoryLobbyHTML(t, &webServer{stories: store}, nil, "?filter=active")
+	for _, want := range []string{
+		`class="story-lobby-shell"`,
+		`class="story-lobby-header"`,
+		`class="story-lobby-note"`,
+		`story-lobby-filters`,
+		`is-selected`,
+		`story-card-head`,
+		`story-card-foot`,
+		`story-card-meta`,
+		`story-card-summary`,
+		`story-card-actions`,
+		`입장하기`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("missing %q in story lobby template", want)
+		}
+	}
+	for _, forbidden := range []string{
+		`story-lobby-table`,
+		`<table`,
+	} {
+		if strings.Contains(html, forbidden) {
+			t.Fatalf("unexpected %q in story lobby template", forbidden)
+		}
+	}
+}

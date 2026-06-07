@@ -89,40 +89,55 @@ const docTemplate = `{{define "content"}}
 {{end}}`
 
 const loginTemplate = `{{define "content"}}
-<h1>World Harness</h1>
-<p class="lede">Private story runtime</p>
-{{if .Error}}<p class="error">{{.Error}}</p>{{end}}
-  <form method="post" class="panel" style="max-width:420px">
-  <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-  <label class="muted">Username</label>
-  <input name="username" autocomplete="username" required autofocus>
-  <label class="muted">Password</label>
-  <input name="password" type="password" autocomplete="current-password" required>
-  <div class="toolbar"><button>로그인</button></div>
-</form>
+<section class="auth-shell">
+  <div class="auth-panel">
+    <div class="auth-panel-head">
+      <h1>World Harness</h1>
+      <p class="lede">Private story runtime</p>
+    </div>
+    {{if .Error}}<p class="error" role="alert" id="login-error">{{.Error}}</p>{{end}}
+    <form method="post" class="auth-form">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <div class="field">
+        <label class="field-label" for="login-username">Username</label>
+        <input id="login-username" name="username" autocomplete="username" required autofocus {{if .Error}}aria-invalid="true" aria-describedby="login-error"{{end}}>
+      </div>
+      <div class="field">
+        <label class="field-label" for="login-password">Password</label>
+        <input id="login-password" name="password" type="password" autocomplete="current-password" required {{if .Error}}aria-invalid="true" aria-describedby="login-error"{{end}}>
+      </div>
+      <div class="auth-actions"><button class="primary-button" type="submit">로그인</button></div>
+    </form>
+  </div>
+</section>
 {{end}}`
 
 const storyLobbyTemplate = `{{define "content"}}
-<h1>스토리</h1>
-<p class="lede">세계관 문서를 읽고, 실시간 스토리 룸에서 장면 단위로 진행합니다.</p>
-<div class="toolbar story-lobby-actions">
-  {{if .User}}
-  <a class="button story-lobby-primary-action" href="{{.Base}}/stories/new">새 스토리</a>
-  {{else if .AuthEnabled}}
-  <a class="button story-lobby-primary-action" href="{{.Base}}/login">로그인</a>
-  {{end}}
-  <a class="button secondary story-lobby-refresh-action" href="{{.Base}}/stories">새로고침</a>
-</div>
-{{if .IsAnonymous}}<p class="muted">로그인하지 않아도 스토리 목록과 세계관은 읽을 수 있습니다. 새 스토리 생성과 진행은 로그인 후 가능합니다.</p>{{end}}
-<div class="filter-bar" role="tablist" aria-label="스토리 필터">
-  <a class="filter-link" role="tab" aria-selected="{{if eq .Filter "all"}}true{{else}}false{{end}}" href="{{.Base}}/stories" {{if eq .Filter "all"}}aria-current="page"{{end}}>전체</a>
-  <a class="filter-link" role="tab" aria-selected="{{if eq .Filter "active"}}true{{else}}false{{end}}" href="{{.Base}}/stories?filter=active" {{if eq .Filter "active"}}aria-current="page"{{end}}>진행 중</a>
-  <a class="filter-link" role="tab" aria-selected="{{if eq .Filter "mine"}}true{{else}}false{{end}}" href="{{.Base}}/stories?filter=mine" {{if eq .Filter "mine"}}aria-current="page"{{end}}>내 스토리</a>
-  <a class="filter-link" role="tab" aria-selected="{{if eq .Filter "watch"}}true{{else}}false{{end}}" href="{{.Base}}/stories?filter=watch" {{if eq .Filter "watch"}}aria-current="page"{{end}}>관전</a>
-  <a class="filter-link" role="tab" aria-selected="{{if eq .Filter "archived"}}true{{else}}false{{end}}" href="{{.Base}}/stories?filter=archived" {{if eq .Filter "archived"}}aria-current="page"{{end}}>보관됨</a>
-  <a class="filter-link" role="tab" aria-selected="{{if eq .Filter "imported"}}true{{else}}false{{end}}" href="{{.Base}}/stories?filter=imported" {{if eq .Filter "imported"}}aria-current="page"{{end}}>가져온 스토리</a>
-</div>
-<div class="story-lobby-list" role="list" aria-label="스토리 세션 목록">
+<section class="story-lobby-shell">
+  <header class="story-lobby-header">
+    <div class="story-lobby-intro">
+      <h1>스토리</h1>
+      <p class="lede">세계관 문서를 읽고, 실시간 스토리 룸에서 장면 단위로 진행합니다.</p>
+      {{if .IsAnonymous}}<p class="story-lobby-note">로그인하지 않아도 스토리 목록과 세계관은 읽을 수 있습니다. 새 스토리 생성과 진행은 로그인 후 가능합니다.</p>{{end}}
+    </div>
+    <div class="story-lobby-actions">
+      {{if .User}}
+      <a class="button story-lobby-primary-action" href="{{.Base}}/stories/new">새 스토리</a>
+      {{else if .AuthEnabled}}
+      <a class="button story-lobby-primary-action" href="{{.Base}}/login">로그인</a>
+      {{end}}
+      <a class="button secondary story-lobby-refresh-action" href="{{.Base}}/stories">새로고침</a>
+    </div>
+  </header>
+  <nav class="filter-bar story-lobby-filters" role="tablist" aria-label="스토리 필터">
+    <a class="filter-link {{if eq .Filter "all"}}is-selected{{end}}" role="tab" aria-selected="{{if eq .Filter "all"}}true{{else}}false{{end}}" href="{{.Base}}/stories" {{if eq .Filter "all"}}aria-current="page"{{end}}>전체</a>
+    <a class="filter-link {{if eq .Filter "active"}}is-selected{{end}}" role="tab" aria-selected="{{if eq .Filter "active"}}true{{else}}false{{end}}" href="{{.Base}}/stories?filter=active" {{if eq .Filter "active"}}aria-current="page"{{end}}>진행 중</a>
+    <a class="filter-link {{if eq .Filter "mine"}}is-selected{{end}}" role="tab" aria-selected="{{if eq .Filter "mine"}}true{{else}}false{{end}}" href="{{.Base}}/stories?filter=mine" {{if eq .Filter "mine"}}aria-current="page"{{end}}>내 스토리</a>
+    <a class="filter-link {{if eq .Filter "watch"}}is-selected{{end}}" role="tab" aria-selected="{{if eq .Filter "watch"}}true{{else}}false{{end}}" href="{{.Base}}/stories?filter=watch" {{if eq .Filter "watch"}}aria-current="page"{{end}}>관전</a>
+    <a class="filter-link {{if eq .Filter "archived"}}is-selected{{end}}" role="tab" aria-selected="{{if eq .Filter "archived"}}true{{else}}false{{end}}" href="{{.Base}}/stories?filter=archived" {{if eq .Filter "archived"}}aria-current="page"{{end}}>보관됨</a>
+    <a class="filter-link {{if eq .Filter "imported"}}is-selected{{end}}" role="tab" aria-selected="{{if eq .Filter "imported"}}true{{else}}false{{end}}" href="{{.Base}}/stories?filter=imported" {{if eq .Filter "imported"}}aria-current="page"{{end}}>가져온 스토리</a>
+  </nav>
+  <div class="story-lobby-list" role="list" aria-label="스토리 세션 목록">
   {{range .Stories}}
     <article class="story-card" role="listitem">
       <div class="story-card-head">
@@ -150,6 +165,7 @@ const storyLobbyTemplate = `{{define "content"}}
     <div class="panel empty-state story-lobby-empty">아직 story room이 없습니다.</div>
   {{end}}
 </div>
+</section>
 {{end}}`
 
 const newStoryTemplate = `{{define "content"}}
