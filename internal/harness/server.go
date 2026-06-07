@@ -60,6 +60,38 @@ type failedJobView struct {
 	ActorLabel string
 }
 
+type storyProgressQuestionView struct {
+	JobID     string `json:"job_id"`
+	Status    string `json:"status"`
+	TurnID    int    `json:"turn_id"`
+	Question  string `json:"question"`
+	CreatedAt string `json:"created_at"`
+}
+
+type storyProgressView struct {
+	StoryID          string                      `json:"story_id"`
+	Status           string                      `json:"status"`
+	Phase            string                      `json:"phase"`
+	CurrentTurn      int                         `json:"current_turn"`
+	ActiveJobID      string                      `json:"active_job_id,omitempty"`
+	ActiveJobType    string                      `json:"active_job_type,omitempty"`
+	ActiveJobStatus  string                      `json:"active_job_status,omitempty"`
+	ActiveJobTurnID  int                         `json:"active_job_turn_id,omitempty"`
+	IsProcessing     bool                        `json:"is_processing"`
+	CanDrive         bool                        `json:"can_drive"`
+	CanQuestion      bool                        `json:"can_question"`
+	StatusLabel      string                      `json:"status_label"`
+	ProgressMessage  string                      `json:"progress_message"`
+	StepIndex        int                         `json:"step_index"`
+	StepLabel        string                      `json:"step_label"`
+	NextPollMS       int                         `json:"next_poll_ms"`
+	JobStartedAt     string                      `json:"job_started_at,omitempty"`
+	JobCompletedAt   string                      `json:"job_completed_at,omitempty"`
+	JobErrorCode     string                      `json:"job_error_code,omitempty"`
+	JobErrorMessage  string                      `json:"job_error_message,omitempty"`
+	PendingQuestions []storyProgressQuestionView `json:"pending_questions,omitempty"`
+}
+
 func runServe(args []string) int {
 	fs := flagSet("serve")
 	addr := fs.String("addr", envDefault("WORLD_HARNESS_ADDR", ":8097"), "listen address")
@@ -252,6 +284,60 @@ func (s *webServer) requireCSRF(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 
+func (s *webServer) requireStoryTaskCSRF(w http.ResponseWriter, r *http.Request) bool {
+	if requireCSRF(r) {
+		return true
+	}
+	if isJSONStoryTaskRequest(r) {
+		formToken := strings.TrimSpace(r.FormValue("csrf_token"))
+		if formToken != "" {
+			headerToken := strings.TrimSpace(r.Header.Get("X-CSRF-Token"))
+			if headerToken == "" || headerToken == formToken {
+				return true
+			}
+		}
+	}
+	if wantsJSONResponse(r) {
+		writeJSONResponse(w, http.StatusForbidden, map[string]any{"error": "csrf token mismatch"})
+		return false
+	}
+	http.Error(w, "forbidden", http.StatusForbidden)
+	return false
+}
+
+func isJSONStoryTaskRequest(r *http.Request) bool {
+	contentType := strings.ToLower(strings.TrimSpace(r.Header.Get("Content-Type")))
+	return strings.HasPrefix(contentType, "application/json")
+}
+
+func parseStoryTaskRequest(r *http.Request) error {
+	if isJSONStoryTaskRequest(r) {
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			return err
+		}
+		values := url.Values{}
+		for key, raw := range payload {
+			str, ok := raw.(string)
+			if !ok {
+				return fmt.Errorf("json field %q must be a string", key)
+			}
+			values.Set(key, str)
+		}
+		if r.URL != nil {
+			for key, vals := range r.URL.Query() {
+				for _, v := range vals {
+					values.Add(key, v)
+				}
+			}
+		}
+		r.PostForm = values
+		r.Form = values
+		return nil
+	}
+	return r.ParseForm()
+}
+
 func mustTurnIdempotencyKey() string {
 	token, err := randomToken(18)
 	if err != nil {
@@ -281,6 +367,15 @@ func queryCSV(v string) []string {
 	return out
 }
 
+func firstNonZero(values ...int) int {
+	for _, v := range values {
+		if v != 0 {
+			return v
+		}
+	}
+	return 0
+}
+
 func (s *webServer) handle(w http.ResponseWriter, r *http.Request) {
 	s.addSecurityHeaders(w)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -298,6 +393,10 @@ func (s *webServer) handle(w http.ResponseWriter, r *http.Request) {
 	}
 	if path == "/login" && s.auth != nil {
 		s.handleLogin(w, r)
+		return
+	}
+	if path == "/assets/story-room.js" {
+		s.handleStoryRoomAsset(w, r)
 		return
 	}
 	var u *authUser
@@ -627,6 +726,8 @@ func (s *webServer) handleStoryRoute(w http.ResponseWriter, r *http.Request, res
 		s.handleStoryInput(w, r, id)
 	case "question":
 		s.handleStoryQuestion(w, r, id)
+	case "status":
+		s.handleStoryStatus(w, r, id)
 	case "driver":
 		s.handleStoryDriver(w, r, id)
 	case "admin":
@@ -659,7 +760,8 @@ func (s *webServer) renderStoryRoom(w http.ResponseWriter, r *http.Request, id s
 		latestTurnID = displayTurns[0].TurnID
 		latestTurn = displayTurns[0]
 	}
-	isProcessing := s.stories.storyHasBlockingGMJob(m)
+	progress := s.storyRoomProgressSnapshot(id, m, u)
+	isProcessing := progress.IsProcessing
 	canDrive := canDriveStory(m, u) && !isProcessing
 	canClaim := m.ActiveDriverID == "" && m.Status == "active" && m.Phase == "waiting_for_choice" && !isProcessing
 	canRelease := (u.Role == "admin" || u.ID == m.ActiveDriverID) && m.ActiveDriverID != "" && m.Status == "active" && m.Phase == "waiting_for_choice" && !isProcessing
@@ -690,6 +792,8 @@ func (s *webServer) renderStoryRoom(w http.ResponseWriter, r *http.Request, id s
 		"HasTurns":            hasTurns,
 		"DriverLabel":         driverLabel,
 		"IsProcessing":        isProcessing,
+		"Progress":            progress,
+		"StatusURL":           s.base(r) + "/stories/" + url.PathEscape(id) + "/status",
 		"FailedJob":           failedJob,
 		"ExportedBundle":      strings.TrimSpace(r.URL.Query().Get("exported")),
 		"ExportedStatus":      strings.TrimSpace(r.URL.Query().Get("export_status")),
@@ -709,25 +813,42 @@ func (s *webServer) handleStoryInput(w http.ResponseWriter, r *http.Request, id 
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if err := r.ParseForm(); err != nil {
+	if err := parseStoryTaskRequest(r); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
-	if !s.requireCSRF(w, r) {
+	if !s.requireStoryTaskCSRF(w, r) {
 		return
 	}
 	u := currentUser(r)
 	mode := strings.TrimSpace(r.FormValue("mode"))
 	turnID := parseFormInt(r.FormValue("turn_id"))
 	idem := strings.TrimSpace(r.FormValue("idempotency_key"))
-	var err error
+	var (
+		jobID string
+		err   error
+	)
 	if mode == "question" {
-		_, err = s.stories.submitQuestionJob(id, u, turnID, idem, strings.TrimSpace(r.FormValue("custom_text")))
+		jobID, err = s.stories.submitQuestionJob(id, u, turnID, idem, strings.TrimSpace(r.FormValue("custom_text")))
 	} else {
-		_, err = s.stories.submitStoryInput(id, u, turnID, idem, r.FormValue("choice_id"), mode, strings.TrimSpace(r.FormValue("custom_text")))
+		jobID, err = s.stories.submitStoryInput(id, u, turnID, idem, r.FormValue("choice_id"), mode, strings.TrimSpace(r.FormValue("custom_text")))
 	}
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusForbidden)
+		s.writeStoryTaskError(w, r, err.Error(), http.StatusForbidden)
+		return
+	}
+	if wantsJSONResponse(r) {
+		m, readErr := s.stories.readManifest(id)
+		if readErr != nil {
+			s.writeStoryTaskError(w, r, readErr.Error(), http.StatusInternalServerError)
+			return
+		}
+		progress := s.storyRoomProgressSnapshot(id, m, u)
+		jobType := "story_turn"
+		if mode == "question" {
+			jobType = "question_answer"
+		}
+		s.writeStoryTaskAccepted(w, r, id, jobType, turnID, jobID, progress)
 		return
 	}
 	fragment := "#input-panel"
@@ -742,11 +863,11 @@ func (s *webServer) handleStoryQuestion(w http.ResponseWriter, r *http.Request, 
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if err := r.ParseForm(); err != nil {
+	if err := parseStoryTaskRequest(r); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
-	if !s.requireCSRF(w, r) {
+	if !s.requireStoryTaskCSRF(w, r) {
 		return
 	}
 	turnID := parseFormInt(r.FormValue("turn_id"))
@@ -756,12 +877,38 @@ func (s *webServer) handleStoryQuestion(w http.ResponseWriter, r *http.Request, 
 		}
 	}
 	question := firstNonEmpty(strings.TrimSpace(r.FormValue("question")), strings.TrimSpace(r.FormValue("custom_text")))
-	_, err := s.stories.submitQuestionJob(id, currentUser(r), turnID, strings.TrimSpace(r.FormValue("idempotency_key")), question)
+	jobID, err := s.stories.submitQuestionJob(id, currentUser(r), turnID, strings.TrimSpace(r.FormValue("idempotency_key")), question)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusForbidden)
+		s.writeStoryTaskError(w, r, err.Error(), http.StatusForbidden)
+		return
+	}
+	if wantsJSONResponse(r) {
+		u := currentUser(r)
+		m, readErr := s.stories.readManifest(id)
+		if readErr != nil {
+			s.writeStoryTaskError(w, r, readErr.Error(), http.StatusInternalServerError)
+			return
+		}
+		progress := s.storyRoomProgressSnapshot(id, m, u)
+		s.writeStoryTaskAccepted(w, r, id, "question_answer", turnID, jobID, progress)
 		return
 	}
 	http.Redirect(w, r, s.base(r)+"/stories/"+url.PathEscape(id)+"#qa", http.StatusSeeOther)
+}
+
+func (s *webServer) handleStoryStatus(w http.ResponseWriter, r *http.Request, id string) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	u := currentUser(r)
+	m, err := s.stories.readManifest(id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	progress := s.storyRoomProgressSnapshot(id, m, u)
+	writeJSONResponse(w, http.StatusOK, progress)
 }
 
 func (s *webServer) handleStoryDriver(w http.ResponseWriter, r *http.Request, id string) {
@@ -928,6 +1075,15 @@ func (s *webServer) handleStoryRecovery(w http.ResponseWriter, r *http.Request, 
 	}
 }
 
+func (s *webServer) handleStoryRoomAsset(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+	_, _ = w.Write([]byte(storyRoomJS))
+}
+
 func (s *webServer) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 	u := currentUser(r)
 	if u.Role != "admin" {
@@ -973,6 +1129,180 @@ func (s *webServer) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.render(w, r, "Admin Users", adminUsersTemplate, map[string]any{"Base": s.base(r), "User": u, "Users": users, "CSRFToken": mustCSRFToken(w, r)})
+}
+
+func wantsJSONResponse(r *http.Request) bool {
+	accept := strings.ToLower(r.Header.Get("Accept"))
+	if strings.Contains(accept, "application/json") {
+		return true
+	}
+	return strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Requested-With")), "XMLHttpRequest")
+}
+
+func writeJSONResponse(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+func (s *webServer) writeStoryTaskError(w http.ResponseWriter, r *http.Request, message string, status int) {
+	if wantsJSONResponse(r) {
+		writeJSONResponse(w, status, map[string]any{"error": message})
+		return
+	}
+	http.Error(w, message, status)
+}
+
+func (s *webServer) writeStoryTaskAccepted(w http.ResponseWriter, r *http.Request, storyID, jobType string, turnID int, jobID string, progress storyProgressView) {
+	if jobID == "" {
+		http.Error(w, "missing job id", http.StatusInternalServerError)
+		return
+	}
+	writeJSONResponse(w, http.StatusAccepted, map[string]any{
+		"story_id":          storyID,
+		"job_id":            jobID,
+		"job_type":          jobType,
+		"turn_id":           firstNonZero(progress.ActiveJobTurnID, turnID),
+		"status_url":        s.base(r) + "/stories/" + url.PathEscape(storyID) + "/status",
+		"next_poll_ms":      progress.NextPollMS,
+		"status_label":      progress.StatusLabel,
+		"progress_message":  progress.ProgressMessage,
+		"step_index":        progress.StepIndex,
+		"step_label":        progress.StepLabel,
+		"is_processing":     progress.IsProcessing,
+		"active_job_id":     progress.ActiveJobID,
+		"active_job_type":   progress.ActiveJobType,
+		"active_job_status": progress.ActiveJobStatus,
+		"current_turn":      progress.CurrentTurn,
+	})
+}
+
+func (s *webServer) storyRoomProgressSnapshot(id string, m storyManifest, u *authUser) storyProgressView {
+	progress := storyProgressView{
+		StoryID:     id,
+		Status:      m.Status,
+		Phase:       m.Phase,
+		CurrentTurn: m.CurrentTurn,
+		CanDrive:    canDriveStory(m, u),
+		CanQuestion: canQuestionStory(m),
+		StatusLabel: friendlyStatusLabel(m),
+		StepIndex:   3,
+		StepLabel:   "ready",
+		NextPollMS:  0,
+	}
+	progress.ProgressMessage = "대기 중입니다. 새 입력을 제출할 수 있는 상태입니다."
+	if progress.CanQuestion && !progress.CanDrive {
+		progress.ProgressMessage = "질문은 현재 턴에 대해 보낼 수 있습니다."
+	}
+	if m.Phase == "failed_waiting_retry" && m.ActiveJobID != "" {
+		if job, err := s.stories.readJob(id, m.ActiveJobID); err == nil {
+			progress.ActiveJobID = job.ID
+			progress.ActiveJobType = job.JobType
+			progress.ActiveJobStatus = job.Status
+			progress.ActiveJobTurnID = job.TurnID
+			progress.JobStartedAt = job.StartedAt
+			progress.JobCompletedAt = job.CompletedAt
+			progress.JobErrorCode = job.ErrorCode
+			progress.JobErrorMessage = job.ErrorMessage
+			progress.ProgressMessage = "GM 작업이 실패했습니다. 복구 또는 취소가 필요합니다."
+			progress.StepIndex = 4
+			progress.StepLabel = "failed"
+		}
+		return progress
+	}
+	if m.ActiveJobID != "" {
+		if job, err := s.stories.readJob(id, m.ActiveJobID); err == nil {
+			progress.ActiveJobID = job.ID
+			progress.ActiveJobType = job.JobType
+			progress.ActiveJobStatus = job.Status
+			progress.ActiveJobTurnID = job.TurnID
+			progress.JobStartedAt = job.StartedAt
+			progress.JobCompletedAt = job.CompletedAt
+			progress.JobErrorCode = job.ErrorCode
+			progress.JobErrorMessage = job.ErrorMessage
+			progress.IsProcessing = job.Status == "queued" || job.Status == "running" || job.Status == "validating" || job.Status == "applying"
+			progress.NextPollMS = 2500
+			switch job.Status {
+			case "queued":
+				progress.StepIndex = 0
+				progress.StepLabel = "queued"
+				progress.ProgressMessage = fmt.Sprintf("작업이 대기열에 들어갔습니다. active job %s · 보통 10초-2분, Codex provider는 더 걸릴 수 있음", job.ID)
+			case "running":
+				progress.StepIndex = 1
+				progress.StepLabel = "generating"
+				progress.ProgressMessage = fmt.Sprintf("GM이 장면을 생성 중입니다. active job %s · 보통 10초-2분, Codex provider는 더 걸릴 수 있음", job.ID)
+			case "validating", "applying":
+				progress.StepIndex = 2
+				progress.StepLabel = "applying"
+				progress.ProgressMessage = fmt.Sprintf("생성 결과를 반영하는 중입니다. active job %s · phase %s", job.ID, job.Status)
+			case "failed":
+				progress.StepIndex = 4
+				progress.StepLabel = "failed"
+				progress.ProgressMessage = fmt.Sprintf("GM 작업이 실패했습니다. active job %s", job.ID)
+			default:
+				progress.ProgressMessage = fmt.Sprintf("GM 작업 상태를 확인 중입니다. active job %s · phase %s", job.ID, job.Status)
+			}
+			return progress
+		}
+	}
+	pending := s.storyProgressPendingQuestions(id)
+	if len(pending) > 0 {
+		progress.PendingQuestions = pending
+		progress.ActiveJobID = pending[0].JobID
+		progress.ActiveJobType = "question_answer"
+		progress.ActiveJobStatus = pending[0].Status
+		progress.ActiveJobTurnID = pending[0].TurnID
+		progress.IsProcessing = true
+		progress.NextPollMS = 2500
+		switch pending[0].Status {
+		case "queued":
+			progress.StepIndex = 0
+			progress.StepLabel = "queued"
+		case "running":
+			progress.StepIndex = 1
+			progress.StepLabel = "generating"
+		default:
+			progress.StepIndex = 1
+			progress.StepLabel = "generating"
+		}
+		progress.ProgressMessage = fmt.Sprintf("질문 답변을 준비 중입니다. active job %s · 보통 10초-2분, Codex provider는 더 걸릴 수 있음", pending[0].JobID)
+		return progress
+	}
+	return progress
+}
+
+func (s *webServer) storyProgressPendingQuestions(id string) []storyProgressQuestionView {
+	jobs, err := s.stories.listJobs(id)
+	if err != nil {
+		return nil
+	}
+	out := make([]storyProgressQuestionView, 0, len(jobs))
+	for _, job := range jobs {
+		if job.JobType != "question_answer" || (job.Status != "queued" && job.Status != "running") {
+			continue
+		}
+		text := ""
+		if job.Question != nil {
+			text = job.Question.Question
+		}
+		out = append(out, storyProgressQuestionView{
+			JobID:     job.ID,
+			Status:    job.Status,
+			TurnID:    job.TurnID,
+			Question:  text,
+			CreatedAt: job.CreatedAt,
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].CreatedAt == out[j].CreatedAt {
+			return out[i].JobID < out[j].JobID
+		}
+		return out[i].CreatedAt < out[j].CreatedAt
+	})
+	if len(out) > 3 {
+		out = out[:3]
+	}
+	return out
 }
 
 func (s *webServer) packContext(pack string) (*WorldContext, error) {
@@ -1145,12 +1475,28 @@ button.danger { border-color:var(--accent); background:var(--accent); }
 .choice { text-align:left; justify-content:flex-start; background:var(--panel); color:var(--ink); border-color:var(--line); white-space:normal; align-items:flex-start; gap:4px; }
 .choice strong { margin-right:8px; color:var(--accent); }
 .archived-choice { border:1px solid var(--line); border-radius:6px; background:rgba(255,255,255,.25); padding:10px 12px; }
-.input-panel { scroll-margin-top:18px; }
+.input-panel { scroll-margin-top:18px; display:grid; gap:12px; }
 .mobile-action-dock { display:none; }
 .form-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px; }
 .panel { border:1px solid var(--line); border-radius:6px; background:rgba(255,255,255,.35); padding:16px; margin-bottom:14px; }
 .story-layout article > .panel, .turn-card .panel { background:rgba(255,255,255,.46); }
 .status-panel { border-left:4px solid var(--accent); background:rgba(255,250,240,.72); }
+.story-progress { display:grid; gap:10px; margin-bottom:0; }
+.story-progress-head { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+.story-progress-head strong { font:700 16px ui-sans-serif, system-ui, sans-serif; }
+.story-progress-steps { list-style:none; margin:0; padding:0; display:flex; flex-wrap:wrap; gap:6px; }
+.story-progress-steps li { min-height:28px; display:inline-flex; align-items:center; border:1px solid var(--line); border-radius:999px; padding:3px 10px; background:rgba(255,255,255,.5); font:12px ui-sans-serif, system-ui, sans-serif; color:var(--muted); text-transform:lowercase; }
+.story-progress-steps li.is-active { border-color:rgba(184,51,45,.35); color:var(--ink); background:rgba(184,51,45,.08); }
+.story-progress-message { margin:0; font:15px ui-sans-serif, system-ui, sans-serif; color:var(--ink); }
+.story-progress-meta { margin:0; word-break:break-word; }
+.story-progress-actions { margin-top:0; }
+.story-progress [data-story-refresh] { width:auto; }
+.input-panel textarea:disabled,
+.story-layout .panel textarea:disabled,
+.story-layout .panel select:disabled,
+.story-layout .panel button:disabled { opacity:.58; cursor:not-allowed; }
+.input-panel textarea:disabled { background:rgba(255,255,255,.6); color:var(--muted); }
+.story-layout [aria-busy="true"] .story-progress { border-left-color:var(--warn); }
 .panel h2, .panel h3 { margin-top:0; border:0; padding-top:0; font-family:ui-sans-serif, system-ui, sans-serif; }
 .panel ul { padding-left:20px; }
 .muted { color:var(--muted); font-family:ui-sans-serif, system-ui, sans-serif; font-size:13px; }
@@ -1299,7 +1645,7 @@ const newStoryTemplate = `{{define "content"}}
 {{end}}`
 
 const storyRoomTemplate = `{{define "content"}}
-{{if .IsProcessing}}<meta http-equiv="refresh" content="3">{{end}}
+<div id="story-room" data-story-room data-story-id="{{.Story.ID}}" data-status-url="{{.StatusURL}}" data-current-turn="{{.Story.CurrentTurn}}" data-initial-processing="{{if .IsProcessing}}true{{else}}false{{end}}">
 <div class="story-header">
   <div>
     <h1>{{.Story.Title}}</h1>
@@ -1328,29 +1674,45 @@ const storyRoomTemplate = `{{define "content"}}
         <div class="scene">{{.SceneBody}}</div>
         <div class="panel"><strong>현재 상황</strong><p>{{.CurrentSituation}}</p></div>
         {{if .RevealedFacts}}<div class="panel"><strong>확인된 정보</strong><ul>{{range .RevealedFacts}}<li>{{.}}</li>{{end}}</ul></div>{{end}}
-        {{$turnID := .TurnID}}{{if .Choices}}<div class="panel"><strong>{{if eq .TurnID $.LatestTurnID}}다음 갈림길{{else}}기록된 선택지{{end}}</strong><div class="choice-list">{{range .Choices}}{{if eq $turnID $.LatestTurnID}}<form method="post" action="{{$.Base}}/stories/{{$.Story.ID}}/input"><input type="hidden" name="csrf_token" value="{{$.CSRFToken}}"><input type="hidden" name="turn_id" value="{{$.LatestTurnID}}"><input type="hidden" name="idempotency_key" value="{{idem}}"><input type="hidden" name="choice_id" value="{{.ID}}"><button class="choice" {{if not $.CanDrive}}disabled{{end}}><strong>{{.ID}}</strong>{{.Text}}</button>{{if .RiskHint}}<div class="muted">{{.RiskHint}}</div>{{end}}</form>{{else}}<div class="archived-choice"><strong>{{.ID}}</strong> {{.Text}}{{if .RiskHint}}<div class="muted">{{.RiskHint}}</div>{{end}}</div>{{end}}{{end}}</div></div>{{end}}
+        {{$turnID := .TurnID}}{{if .Choices}}<div class="panel"><strong>{{if eq .TurnID $.LatestTurnID}}다음 갈림길{{else}}기록된 선택지{{end}}</strong><div class="choice-list">{{range .Choices}}{{if eq $turnID $.LatestTurnID}}<form method="post" action="{{$.Base}}/stories/{{$.Story.ID}}/input" data-story-submit data-story-submit-kind="choice"><input type="hidden" name="csrf_token" value="{{$.CSRFToken}}"><input type="hidden" name="turn_id" value="{{$.LatestTurnID}}"><input type="hidden" name="idempotency_key" value="{{idem}}"><input type="hidden" name="choice_id" value="{{.ID}}"><button class="choice" type="submit" {{if not $.CanDrive}}disabled{{end}}><strong>{{.ID}}</strong>{{.Text}}</button>{{if .RiskHint}}<div class="muted">{{.RiskHint}}</div>{{end}}</form>{{else}}<div class="archived-choice"><strong>{{.ID}}</strong> {{.Text}}{{if .RiskHint}}<div class="muted">{{.RiskHint}}</div>{{end}}</div>{{end}}{{end}}</div></div>{{end}}
       </details>
     {{end}}
-    <section class="turn input-panel" id="input-panel">
+    <section class="turn input-panel" id="input-panel" aria-busy="{{if .Progress.IsProcessing}}true{{else}}false{{end}}" data-story-input-panel>
       <h2>직접 입력</h2>
+      <div class="panel status-panel story-progress" id="story-progress" role="status" aria-live="polite" aria-atomic="true" data-story-progress data-status-url="{{.StatusURL}}" data-step-index="{{.Progress.StepIndex}}" data-step-label="{{.Progress.StepLabel}}" data-active-job-id="{{.Progress.ActiveJobID}}" data-active-job-status="{{.Progress.ActiveJobStatus}}" data-active-job-type="{{.Progress.ActiveJobType}}" data-next-poll-ms="{{.Progress.NextPollMS}}">
+        <div class="story-progress-head">
+          <strong data-story-progress-label>{{.Progress.StepLabel}}</strong>
+          <span class="badge" data-story-progress-status>{{.Progress.StatusLabel}}</span>
+        </div>
+        <ol class="story-progress-steps" aria-hidden="true">
+          <li data-story-step="queued">queued</li>
+          <li data-story-step="generating">generating</li>
+          <li data-story-step="applying">applying</li>
+          <li data-story-step="ready">ready</li>
+          <li data-story-step="failed">failed</li>
+        </ol>
+        <p class="story-progress-message" data-story-progress-message>{{.Progress.ProgressMessage}}</p>
+        <p class="muted story-progress-meta" data-story-progress-meta>active job: <code data-story-progress-job-id>{{.Progress.ActiveJobID}}</code>{{if .Progress.ActiveJobType}} · type: <span data-story-progress-job-type>{{.Progress.ActiveJobType}}</span>{{end}}{{if .Progress.ActiveJobStatus}} · status: <span data-story-progress-job-status>{{.Progress.ActiveJobStatus}}</span>{{end}}{{if gt .Progress.ActiveJobTurnID 0}} · turn <span data-story-progress-turn>{{.Progress.ActiveJobTurnID}}</span>{{end}}{{if .Progress.PendingQuestions}} · queued questions: <span data-story-progress-pending-count>{{len .Progress.PendingQuestions}}</span>{{end}}</p>
+        <div class="toolbar story-progress-actions"><button type="button" class="secondary" hidden data-story-refresh>새 내용 표시</button></div>
+      </div>
       {{if .CanDrive}}
-      <form method="post" action="{{.Base}}/stories/{{.Story.ID}}/input" class="panel">
+      <form method="post" action="{{.Base}}/stories/{{.Story.ID}}/input" class="panel" data-story-submit data-story-submit-kind="input">
         <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
         <input type="hidden" name="turn_id" value="{{.LatestTurnID}}">
         <input type="hidden" name="idempotency_key" value="{{idem}}">
         <div class="form-grid"><div><label class="muted">Mode</label><select name="mode"><option value="action">행동</option><option value="dialogue">대사</option><option value="narration">서술 보정</option><option value="question">질문</option></select></div></div>
-        <textarea name="custom_text" placeholder="플레이어 캐릭터가 시도하는 행동/대사/서술/질문"></textarea>
-        <div class="toolbar"><button>제출</button></div>
+        <textarea name="custom_text" data-story-custom-textarea placeholder="플레이어 캐릭터가 시도하는 행동/대사/서술/질문"></textarea>
+        <div class="toolbar"><button type="submit">제출</button></div>
       </form>
-      {{else}}{{if .IsProcessing}}<p class="muted">GM 생성 중입니다. 완료되면 새 턴이 자동으로 표시됩니다.</p>{{else}}{{if .CanClaim}}<p class="muted">현재 진행권이 open 상태입니다. 진행권을 받은 뒤 입력할 수 있습니다.</p>{{else}}<p class="muted">현재 {{.DriverLabel}}가 진행 중입니다. 진행 입력은 비활성화되어 있습니다.</p>{{end}}{{end}}{{end}}
+      {{else}}{{if .IsProcessing}}<p class="muted">GM 생성 중입니다. 완료되면 새 내용 표시 버튼으로 최신 턴을 갱신할 수 있습니다.</p>{{else}}{{if .CanClaim}}<p class="muted">현재 진행권이 open 상태입니다. 진행권을 받은 뒤 입력할 수 있습니다.</p>{{else}}<p class="muted">현재 {{.DriverLabel}}가 진행 중입니다. 진행 입력은 비활성화되어 있습니다.</p>{{end}}{{end}}{{end}}
       <h2 id="qa">질문</h2>
       {{if .CanDrive}}<p class="muted">질문은 직접 입력에서 question 모드를 선택해 제출할 수 있습니다.</p>{{else}}{{if .CanQuestion}}
-      <form method="post" action="{{.Base}}/stories/{{.Story.ID}}/question" class="panel">
+      <form method="post" action="{{.Base}}/stories/{{.Story.ID}}/question" class="panel" data-story-submit data-story-submit-kind="question">
         <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
         <input type="hidden" name="turn_id" value="{{.LatestTurnID}}">
         <input type="hidden" name="idempotency_key" value="{{idem}}">
-        <textarea name="question" placeholder="현재 상황, 인물, 단서, 설정, 선택지 의미를 묻는 비진행 질문"></textarea>
-        <div class="toolbar"><button class="secondary">질문 제출</button></div>
+        <textarea name="question" data-story-question-textarea placeholder="현재 상황, 인물, 단서, 설정, 선택지 의미를 묻는 비진행 질문"></textarea>
+        <div class="toolbar"><button class="secondary" type="submit">질문 제출</button></div>
       </form>
       {{else}}{{if .IsProcessing}}<p class="muted">GM 생성 중에는 질문 제출도 잠시 막습니다.</p>{{else}}<p class="muted">completed/archived/deleted room에서는 새 질문을 받지 않습니다.</p>{{end}}{{end}}{{end}}
       {{range .QA}}<div class="panel"><div class="muted">{{.CreatedAt}} · Turn {{.TurnID}}</div><strong>Q. {{.Question}}</strong><p>A. {{.Answer}}</p></div>{{end}}
@@ -1365,7 +1727,243 @@ const storyRoomTemplate = `{{define "content"}}
   </aside>
 </div>
 {{if .HasTurns}}<div class="mobile-action-dock"><a class="button secondary" href="#turn-{{.LatestTurnID}}">최신 턴</a><a class="button" href="#input-panel">입력</a></div>{{else}}<div class="mobile-action-dock"><a class="button" href="#input-panel">입력</a></div>{{end}}
+<script defer src="{{.Base}}/assets/story-room.js"></script>
+</div>
 {{end}}`
+
+const storyRoomJS = `(() => {
+  const root = document.querySelector('[data-story-room]');
+  if (!root) return;
+  const progress = root.querySelector('[data-story-progress]');
+  if (!progress) return;
+  const refreshButton = progress.querySelector('[data-story-refresh]');
+  const statusLabel = progress.querySelector('[data-story-progress-label]');
+  const statusBadge = progress.querySelector('[data-story-progress-status]');
+  const messageNode = progress.querySelector('[data-story-progress-message]');
+  const jobIdNode = progress.querySelector('[data-story-progress-job-id]');
+  const jobTypeNode = progress.querySelector('[data-story-progress-job-type]');
+  const jobStatusNode = progress.querySelector('[data-story-progress-job-status]');
+  const turnNode = progress.querySelector('[data-story-progress-turn]');
+  const pendingNode = progress.querySelector('[data-story-progress-pending-count]');
+  const stepNodes = Array.from(progress.querySelectorAll('[data-story-step]'));
+  const forms = Array.from(root.querySelectorAll('form[data-story-submit]'));
+  const inputPanel = root.querySelector('[data-story-input-panel]');
+  const storyTurn = Number(root.dataset.currentTurn || 0);
+  const initialControlState = new WeakMap();
+  let pollTimer = null;
+  let activeTask = null;
+
+  function captureInitialControlState(control) {
+    if (!control || control.type === 'hidden') return;
+    if (!initialControlState.has(control)) {
+      initialControlState.set(control, {
+        disabled: control.disabled,
+        ariaDisabled: control.getAttribute('aria-disabled'),
+      });
+    }
+  }
+
+  function restoreInitialControlState(control) {
+    if (!control || control.type === 'hidden') return;
+    const initial = initialControlState.get(control);
+    if (!initial) return;
+    control.disabled = initial.disabled;
+    if (initial.disabled) {
+      control.setAttribute('aria-disabled', initial.ariaDisabled ?? 'true');
+    } else if (initial.ariaDisabled === null) {
+      control.removeAttribute('aria-disabled');
+    } else {
+      control.setAttribute('aria-disabled', initial.ariaDisabled);
+    }
+    if (control.tagName === 'BUTTON' && control.dataset.storyOriginalHtml) {
+      control.innerHTML = control.dataset.storyOriginalHtml;
+      delete control.dataset.storyOriginalHtml;
+    }
+  }
+
+  forms.forEach((form) => {
+    form.querySelectorAll('button, input, select, textarea').forEach(captureInitialControlState);
+  });
+
+  function setStep(stepLabel) {
+    stepNodes.forEach((node) => {
+      const active = node.dataset.storyStep === stepLabel;
+      node.toggleAttribute('aria-current', active);
+      node.classList.toggle('is-active', active);
+    });
+  }
+
+  function setBusy(busy) {
+    root.setAttribute('aria-busy', busy ? 'true' : 'false');
+    progress.setAttribute('aria-busy', busy ? 'true' : 'false');
+    if (inputPanel) {
+      inputPanel.setAttribute('aria-busy', busy ? 'true' : 'false');
+    }
+    forms.forEach((form) => {
+      form.querySelectorAll('button, input, select, textarea').forEach((control) => {
+        if (control.type === 'hidden') return;
+        captureInitialControlState(control);
+        if (busy) {
+          control.disabled = true;
+          control.setAttribute('aria-disabled', 'true');
+          if (control.tagName === 'BUTTON' && form.dataset.storySubmitKind !== 'choice') {
+            if (!control.dataset.storyOriginalHtml) control.dataset.storyOriginalHtml = control.innerHTML;
+            control.innerHTML = '처리 중...';
+          }
+        } else {
+          restoreInitialControlState(control);
+        }
+      });
+    });
+  }
+
+  function showRefresh(visible) {
+    if (!refreshButton) return;
+    refreshButton.hidden = !visible;
+  }
+
+  async function readErrorMessage(response) {
+    const contentType = (response.headers.get('content-type') || '').toLowerCase();
+    if (contentType.includes('application/json')) {
+      const payload = await response.json().catch(() => null);
+      if (payload && payload.error) {
+        return payload.error;
+      }
+      return 'HTTP ' + response.status + ' - 제출 응답을 JSON으로 받지 못했습니다';
+    }
+    const text = await response.text().catch(() => '');
+    const snippet = text.trim().replace(/\s+/g, ' ').slice(0, 160);
+    return 'HTTP ' + response.status + ' - 제출 응답을 JSON으로 받지 못했습니다' + (snippet ? ': ' + snippet : '');
+  }
+
+  function renderStatus(payload) {
+    progress.dataset.stepIndex = String(payload.step_index ?? 3);
+    progress.dataset.stepLabel = payload.step_label || 'ready';
+    progress.dataset.activeJobId = payload.active_job_id || '';
+    progress.dataset.activeJobStatus = payload.active_job_status || '';
+    progress.dataset.activeJobType = payload.active_job_type || '';
+    progress.dataset.nextPollMs = String(payload.next_poll_ms || 0);
+    if (statusLabel) statusLabel.textContent = payload.step_label || 'ready';
+    if (statusBadge) statusBadge.textContent = payload.status_label || '';
+    if (messageNode) messageNode.textContent = payload.progress_message || '';
+    if (jobIdNode) jobIdNode.textContent = payload.active_job_id || '';
+    if (jobTypeNode) jobTypeNode.textContent = payload.active_job_type || '';
+    if (jobStatusNode) jobStatusNode.textContent = payload.active_job_status || '';
+    if (turnNode) turnNode.textContent = payload.active_job_turn_id ? String(payload.active_job_turn_id) : '';
+    if (pendingNode) pendingNode.textContent = payload.pending_questions ? String(payload.pending_questions.length) : '';
+    setStep(payload.step_label || (payload.is_processing ? 'generating' : 'ready'));
+    setBusy(Boolean(payload.is_processing));
+  }
+
+  async function pollStatus() {
+    if (!activeTask || !activeTask.status_url) return;
+    try {
+      const response = await fetch(activeTask.status_url, {
+        headers: {
+          Accept: 'application/json',
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        throw new Error(await readErrorMessage(response));
+      }
+      const payload = await response.json();
+      renderStatus(payload);
+      const nextPoll = Number(payload.next_poll_ms || activeTask.next_poll_ms || 2500);
+      if (payload.is_processing) {
+        pollTimer = window.setTimeout(pollStatus, Math.max(1000, nextPoll));
+        return;
+      }
+      activeTask = null;
+      showRefresh(true);
+      if (payload.current_turn > storyTurn || payload.active_job_status === 'completed' || payload.step_label === 'ready') {
+        if (messageNode) messageNode.textContent = payload.progress_message || '새 내용이 준비되었습니다. 새 내용 표시를 눌러 갱신하세요.';
+      }
+    } catch (error) {
+      if (messageNode) messageNode.textContent = '상태를 다시 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.';
+      pollTimer = window.setTimeout(pollStatus, 2500);
+    }
+  }
+
+  async function submitForm(form) {
+    if (pollTimer) {
+      window.clearTimeout(pollTimer);
+      pollTimer = null;
+    }
+    const data = new FormData(form);
+    const requestPayload = Object.fromEntries(data.entries());
+    const actionURL = new URL(form.action, window.location.href);
+    const requestURL = actionURL.origin === window.location.origin ? actionURL.pathname + actionURL.search : form.action;
+    setBusy(true);
+    if (messageNode) messageNode.textContent = '제출을 보냈습니다. 서버 응답을 기다립니다.';
+    showRefresh(false);
+    try {
+      const response = await fetch(requestURL, {
+        method: (form.method || 'post').toUpperCase(),
+        body: JSON.stringify(requestPayload),
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          'X-Requested-With': 'XMLHttpRequest',
+          'X-CSRF-Token': form.querySelector('input[name="csrf_token"]')?.value || '',
+        },
+      });
+      const contentType = (response.headers.get('content-type') || '').toLowerCase();
+      const rawBody = await response.text();
+      let responsePayload = null;
+      if (contentType.includes('application/json')) {
+        try {
+          responsePayload = JSON.parse(rawBody);
+        } catch (parseError) {
+          responsePayload = null;
+        }
+      }
+      if (!response.ok || !responsePayload) {
+        if (responsePayload && responsePayload.error) {
+          throw new Error(responsePayload.error);
+        }
+        const snippet = rawBody.trim().replace(/\s+/g, ' ').slice(0, 160);
+        throw new Error('HTTP ' + response.status + ' - 제출 응답을 JSON으로 받지 못했습니다' + (snippet ? ': ' + snippet : ''));
+      }
+      activeTask = {
+        status_url: responsePayload.status_url,
+        next_poll_ms: responsePayload.next_poll_ms || 2500,
+        turn_id: responsePayload.turn_id || 0,
+        job_id: responsePayload.job_id || '',
+        job_type: responsePayload.job_type || '',
+      };
+      renderStatus(responsePayload);
+      pollTimer = window.setTimeout(pollStatus, Math.max(1000, activeTask.next_poll_ms || 2500));
+    } catch (error) {
+      setBusy(false);
+      showRefresh(false);
+      if (messageNode) messageNode.textContent = error.message || '제출 처리에 실패했습니다.';
+    }
+  }
+
+  root.addEventListener('submit', (event) => {
+    const form = event.target.closest('form[data-story-submit]');
+    if (!form) return;
+    event.preventDefault();
+    submitForm(form);
+  });
+
+  if (refreshButton) {
+    refreshButton.addEventListener('click', () => window.location.reload());
+  }
+
+  setStep(progress.dataset.stepLabel || (root.dataset.initialProcessing === 'true' ? 'generating' : 'ready'));
+  setBusy(root.dataset.initialProcessing === 'true');
+  if (root.dataset.initialProcessing === 'true') {
+    activeTask = {
+      status_url: progress.dataset.statusUrl || root.dataset.statusUrl,
+      next_poll_ms: Number(progress.dataset.nextPollMs || 2500),
+    };
+    pollTimer = window.setTimeout(pollStatus, Math.max(1000, activeTask.next_poll_ms || 2500));
+  }
+})();`
 
 const adminUsersTemplate = `{{define "content"}}
 <h1>Admin Users</h1>

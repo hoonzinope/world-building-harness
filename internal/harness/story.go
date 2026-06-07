@@ -113,7 +113,54 @@ func (s *storyStore) listStories() ([]storyManifest, error) {
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].UpdatedAt > out[j].UpdatedAt })
+	out = dedupeStoryManifests(out)
+	sort.Slice(out, func(i, j int) bool { return out[i].UpdatedAt > out[j].UpdatedAt })
 	return out, nil
+}
+
+func dedupeStoryManifests(stories []storyManifest) []storyManifest {
+	bySource := map[string]int{}
+	out := make([]storyManifest, 0, len(stories))
+	for _, m := range stories {
+		sourcePath := strings.TrimSpace(m.SourceDraftPath)
+		if sourcePath == "" {
+			out = append(out, m)
+			continue
+		}
+		if idx, ok := bySource[sourcePath]; ok {
+			if betterStoryManifest(m, out[idx]) {
+				out[idx] = m
+			}
+			continue
+		}
+		bySource[sourcePath] = len(out)
+		out = append(out, m)
+	}
+	return out
+}
+
+func betterStoryManifest(candidate, current storyManifest) bool {
+	candidateDeleted := storyManifestIsDeleted(candidate)
+	currentDeleted := storyManifestIsDeleted(current)
+	if candidateDeleted != currentDeleted {
+		return !candidateDeleted && currentDeleted
+	}
+	if candidate.UpdatedAt != current.UpdatedAt {
+		return candidate.UpdatedAt > current.UpdatedAt
+	}
+	if candidate.CreatedAt != current.CreatedAt {
+		return candidate.CreatedAt > current.CreatedAt
+	}
+	return candidate.ID > current.ID
+}
+
+func storyManifestIsDeleted(m storyManifest) bool {
+	switch m.Status {
+	case "deleted", "archived", "completed":
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *storyStore) readManifest(id string) (storyManifest, error) {
@@ -475,15 +522,31 @@ func (s *storyStore) importHector(actorID string) (string, bool, error) {
 	}
 	hashBytes := sha256.Sum256(b)
 	hash := "sha256:" + hex.EncodeToString(hashBytes[:])
-	existing, _ := s.listStories()
-	for _, m := range existing {
-		if m.SourceDraftPath == filepath.ToSlash(sourceRel) && m.SourceHash == hash {
-			return m.ID, true, nil
-		}
-	}
 	parsed, err := parseHectorDraft(string(b))
 	if err != nil {
 		return "", false, err
+	}
+	existing, _ := s.listStories()
+	for _, m := range existing {
+		if m.SourceDraftPath == filepath.ToSlash(sourceRel) {
+			updated := false
+			title := firstNonEmpty(parsed.Title, "헥터: 첫 잔명 대조")
+			if m.SourceHash != hash || m.Title != title || m.CurrentTurn != parsed.TurnID || m.LatestSummary != hectorCurrentSituation() {
+				now := time.Now().UTC().Format(time.RFC3339)
+				m.Title = title
+				m.SourceHash = hash
+				m.UpdatedAt = now
+				m.CurrentTurn = parsed.TurnID
+				m.LatestSummary = hectorCurrentSituation()
+				updated = true
+			}
+			if updated {
+				if err := writeJSONAtomic(filepath.Join(s.storyDir(m.ID), "manifest.json"), m); err != nil {
+					return "", false, err
+				}
+			}
+			return m.ID, true, nil
+		}
 	}
 	id := "story_hector_first_residual_check"
 	if _, err := os.Stat(s.storyDir(id)); err == nil {
@@ -525,22 +588,30 @@ func (s *storyStore) importHector(actorID string) (string, bool, error) {
 }
 
 func (s *storyStore) refreshHectorHistory(storyID, actorID string) error {
+	sourcePath := filepath.Join(s.packsRoot, "lumen-federation", "drafts", "storylets", "hector_first_residual_check.md")
+	b, err := os.ReadFile(sourcePath)
+	if err != nil {
+		return err
+	}
+	hashBytes := sha256.Sum256(b)
+	currentHash := "sha256:" + hex.EncodeToString(hashBytes[:])
 	parsed, err := s.parseHectorHistory()
 	if err != nil || len(parsed.Turns) == 0 {
 		return err
 	}
 	existing, _ := s.readTurns(storyID)
-	if len(existing) >= len(parsed.Turns) {
-		return nil
-	}
 	m, err := s.readManifest(storyID)
 	if err != nil {
 		return err
+	}
+	if m.SourceHash == currentHash && hectorTurnsMatch(existing, parsed.Turns) {
+		return nil
 	}
 	st, _ := s.readState(storyID)
 	now := time.Now().UTC().Format(time.RFC3339)
 	m.CurrentTurn = parsed.TurnID
 	m.UpdatedAt = now
+	m.SourceHash = currentHash
 	m.LatestSummary = hectorCurrentSituation()
 	if m.ActiveDriverID == "" {
 		m.ActiveDriverID = actorID
@@ -599,6 +670,36 @@ func (s *storyStore) parseHectorHistory() (hectorParsed, error) {
 	return hectorParsed{Title: title, TurnID: latest.TurnID, SceneBody: latest.SceneBody, Facts: latest.RevealedFacts, Choices: latest.Choices, Turns: turns}, nil
 }
 
+func hectorTurnsMatch(existing, parsed []storyTurn) bool {
+	if len(existing) != len(parsed) {
+		return false
+	}
+	for i := range existing {
+		if !hectorTurnMatch(existing[i], parsed[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func hectorTurnMatch(existing, parsed storyTurn) bool {
+	if existing.TurnID != parsed.TurnID || existing.BranchID != parsed.BranchID || existing.ParentTurnID != parsed.ParentTurnID || existing.InputID != parsed.InputID || existing.Source != parsed.Source || existing.SelectedChoiceID != parsed.SelectedChoiceID || existing.CustomInputMode != parsed.CustomInputMode || existing.CustomText != parsed.CustomText || existing.SceneTitle != parsed.SceneTitle || existing.SceneBody != parsed.SceneBody || existing.CurrentSituation != parsed.CurrentSituation {
+		return false
+	}
+	if strings.Join(existing.RevealedFacts, "\n") != strings.Join(parsed.RevealedFacts, "\n") {
+		return false
+	}
+	if len(existing.Choices) != len(parsed.Choices) {
+		return false
+	}
+	for i := range existing.Choices {
+		if existing.Choices[i] != parsed.Choices[i] {
+			return false
+		}
+	}
+	return true
+}
+
 func (s *storyStore) replaceStory(m storyManifest, st storyState, turns []storyTurn) error {
 	dir := s.storyDir(m.ID)
 	for _, name := range []string{"events.jsonl", "turns.jsonl", "manifest.json", "state.json", "summary.md"} {
@@ -611,24 +712,56 @@ func (s *storyStore) createDemoStory(actorID, title, style, characterName, trait
 	now := time.Now().UTC().Format(time.RFC3339)
 	id := "story_" + randomID()
 	name := firstNonEmpty(strings.TrimSpace(characterName), "새 인물")
-	subject := name + "는"
 	style = firstNonEmpty(strings.TrimSpace(style), "조사극")
 	traits = strings.TrimSpace(traits)
+	location, scene, summary, facts, openThreads, risks, choices := luceraPrologueSeed(name, traits)
+	m := storyManifest{ID: id, Title: firstNonEmpty(strings.TrimSpace(title), name+"의 이야기"), WorldID: "lumen-federation", Status: "active", Phase: "waiting_for_choice", CurrentTurn: 1, ActiveDriverID: actorID, CreatedBy: actorID, CreatedAt: now, UpdatedAt: now, LatestSummary: summary}
+	st := storyState{Location: location, ActiveCharacters: []string{name}, Facts: facts, OpenThreads: openThreads, Risks: risks, Flags: []string{"runtime_story_created"}}
+	turn := storyTurn{TurnID: 1, BranchID: "branch_main", ActorID: actorID, InputID: "setup_" + randomID(), Source: "setup", SceneTitle: style + "의 시작", SceneBody: scene, CurrentSituation: m.LatestSummary, RevealedFacts: st.Facts, Choices: choices, CreatedAt: now, CustomText: traits}
+	return id, s.createStory(m, st, []storyTurn{turn})
+}
+
+func luceraPrologueSeed(name, traits string) (string, string, string, []string, []string, []string, []storyChoice) {
+	subject := name + "는"
 	location := "루세라 야간 진료동"
-	scene := fmt.Sprintf("루세라의 야간 진료동은 새벽이 가까워질수록 더 조용해지지 않았다. 대기실의 의자는 이미 부족했고, 처치실 문틈으로는 젖은 소독포 냄새와 낮은 신음이 번갈아 밀려나왔다.\n\n%s 간호기록판을 팔에 끼운 채 잠깐 멈춰 섰다. 손가락 사이에는 늘 챙기던 펜이 있었고, 안경 너머의 눈 밑에는 오래 씻지 못한 피로가 그대로 남아 있었다. 방금 들어온 환자 셋의 기록은 서로 다른 증상을 말하고 있었지만, 병동의 빈 침상 수는 같은 답만 내놓았다. 더 받을 수 없다.\n\n그때 접수대 쪽에서 누군가 %s의 이름을 불렀다. 새 환자 하나가 쓰러졌고, 동시에 이미 누워 있던 아이의 보호자가 약속된 처치를 왜 미루냐고 묻기 시작했다. 둘 다 기다릴 수 없지만, %s의 손은 하나뿐이다.", subject, name, name)
+	scene := fmt.Sprintf("루멘 연방의 의료 도시 루세라에서는 불빛이 생명을 살리지만, 같은 빛이 괴물의 길을 그어 버리기도 한다. 그래서 이 병동은 늘 저안개 차단막을 낮추고, 낮은 절차로 움직이며, 공공 수선과 회복 공공재 배분을 함께 계산해야 한다.\n\n%s 간호기록판을 팔에 끼운 채 잠깐 멈춰 섰다. 접수대 위에는 오늘의 환자 목록과 공공 수선 요청서, 그리고 행정 장부의 빈 칸이 겹쳐 놓여 있었다. 방금 들어온 환자 셋의 기록은 서로 다른 증상을 말하고 있었지만, 병동의 빈 침상 수는 같은 답만 내놓았다. 더 받을 수 없다.\n\n그때 접수대 쪽에서 누군가 %s의 이름을 불렀다. 새 환자 하나가 쓰러졌고, 동시에 이미 누워 있던 아이의 보호자가 약속된 처치를 왜 미루냐고 묻기 시작했다. 둘 다 기다릴 수 없지만, %s의 손은 하나뿐이다.\n\n병동 안에는 배분표를 다시 맞추는 사람도, 공공 수선 반에게 문의하는 사람도, 장부상 허가를 확인하는 사람도 있었다. 루세라에서 회복은 늘 누군가의 자원을 다시 계산하는 일과 붙어 다녔다.", subject, name, name)
 	if traits != "" {
 		scene += "\n\n초기 설정 메모: " + traits
 	}
-	summary := fmt.Sprintf("%s에서 %s 동시에 밀려든 두 긴급 상황 앞에 섰다.", location, subject)
-	m := storyManifest{ID: id, Title: firstNonEmpty(strings.TrimSpace(title), name+"의 이야기"), WorldID: "lumen-federation", Status: "active", Phase: "waiting_for_choice", CurrentTurn: 1, ActiveDriverID: actorID, CreatedBy: actorID, CreatedAt: now, UpdatedAt: now, LatestSummary: summary}
-	facts := []string{fmt.Sprintf("주인공은 %s이다.", name), fmt.Sprintf("%s 루세라의 간호사다.", subject), fmt.Sprintf("초기 배경은 %s이다.", location), "아직 canon이 아닌 runtime story 상태다."}
+	summary := fmt.Sprintf("루멘 연방의 루세라 야간 진료동에서 공공 수선과 회복 공공재, 그리고 행정 장부가 서로를 밀어내고 있다.")
+	facts := []string{
+		"루멘 연방의 루세라는 병원, 약, 수면을 맡는 의료 도시다.",
+		"병동 불빛은 회복 공공재이지만 저안개 차단과 낮은 절차로 다뤄야 한다.",
+		"공공 수선과 자원 배분은 보험과 행정 장부의 허가를 거친다.",
+		fmt.Sprintf("주인공은 %s이다.", name),
+		fmt.Sprintf("%s 루세라의 간호사다.", subject),
+		fmt.Sprintf("초기 배경은 %s이다.", location),
+		"아직 canon이 아닌 runtime story 상태다.",
+	}
 	if traits != "" {
 		facts = append(facts, "초기 설정: "+traits)
 	}
-	st := storyState{Location: location, ActiveCharacters: []string{name}, Facts: facts, OpenThreads: []string{"새 환자와 기존 환자 중 누구를 먼저 살릴지 결정", "병동의 부족한 자원을 어떻게 배분할지 판단"}, Risks: []string{"어느 쪽을 선택해도 다른 쪽의 상태가 악화될 수 있다.", "과로와 환경 압박으로 판단 여력이 흔들릴 수 있다."}, Flags: []string{"runtime_story_created"}}
-	choices := []storyChoice{{ID: "A", Text: "새로 쓰러진 환자의 상태를 직접 확인한다.", RiskHint: "즉시 위험을 볼 수 있지만 기존 처치가 더 밀린다."}, {ID: "B", Text: "기존 아이 환자의 처치를 먼저 이어간다.", RiskHint: "약속된 처치를 지키지만 새 환자를 놓칠 수 있다."}, {ID: "C", Text: "보호자에게 짧게 설명하고 동료를 호출한다.", RiskHint: "시간을 벌 수 있지만 항의가 커질 수 있다."}, {ID: "D", Text: "기록판과 펜으로 우선순위를 빠르게 다시 계산한다.", RiskHint: "근거는 남지만 현장 반응이 늦어진다."}}
-	turn := storyTurn{TurnID: 1, BranchID: "branch_main", ActorID: actorID, InputID: "setup_" + randomID(), Source: "setup", SceneTitle: style + "의 시작", SceneBody: scene, CurrentSituation: m.LatestSummary, RevealedFacts: st.Facts, Choices: choices, CreatedAt: now, CustomText: traits}
-	return id, s.createStory(m, st, []storyTurn{turn})
+	openThreads := []string{
+		"새 환자와 기존 환자 중 누구를 먼저 살릴지 결정",
+		"병동의 부족한 자원을 어떻게 배분할지 판단",
+		"공공 수선과 행정 장부를 어떻게 맞출지 정리",
+	}
+	risks := []string{
+		"어느 쪽을 선택해도 다른 쪽의 상태가 악화될 수 있다.",
+		"과로와 저안개 절차 때문에 판단 여력이 흔들릴 수 있다.",
+		"장부상 허가가 늦어지면 회복 공공재 배분이 밀릴 수 있다.",
+	}
+	choices := []storyChoice{
+		{ID: "A", Text: "새로 쓰러진 환자의 상태를 직접 확인한다.", RiskHint: "즉시 위험을 볼 수 있지만 기존 처치가 더 밀린다."},
+		{ID: "B", Text: "기존 아이 환자의 처치를 먼저 이어간다.", RiskHint: "약속된 처치를 지키지만 새 환자를 놓칠 수 있다."},
+		{ID: "C", Text: "보호자에게 짧게 설명하고 동료를 호출한다.", RiskHint: "시간을 벌 수 있지만 항의가 커질 수 있다."},
+		{ID: "D", Text: "기록판과 펜으로 우선순위를 빠르게 다시 계산한다.", RiskHint: "근거는 남지만 현장 반응이 늦어진다."},
+	}
+	return location, scene, summary, facts, openThreads, risks, choices
+}
+
+func luceraWorldContextSeed() string {
+	return "루멘 연방의 루세라는 병원·약·수면의 도시다. 병동 불빛은 회복 공공재이지만 저안개 차단, 낮은 절차, 공공 수선, 자원 배분, 그리고 보험과 행정 장부의 마찰 속에서만 유지된다."
 }
 
 func (s *storyStore) createStory(m storyManifest, st storyState, turns []storyTurn) error {

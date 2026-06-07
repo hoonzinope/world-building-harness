@@ -62,7 +62,7 @@ D. choice D
 	}
 }
 
-func TestImportHectorDeduplicatesSameSourceHash(t *testing.T) {
+func TestImportHectorUpdatesExistingStoryForSameSourcePath(t *testing.T) {
 	root := t.TempDir()
 	packs := filepath.Join(root, "packs")
 	sourceDir := filepath.Join(packs, "lumen-federation", "drafts", "storylets")
@@ -110,6 +110,124 @@ D. choice D
 	}
 	if first != second {
 		t.Fatalf("expected same story id, got %q and %q", first, second)
+	}
+	firstManifest, err := store.readManifest(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstHash := firstManifest.SourceHash
+	updatedBody := `---
+title: '헥터: 첫 잔명 대조 / 개정'
+---
+
+## Turn 19
+
+### 판정
+scene updated
+
+### 확인된 정보
+- fact
+
+### 다음 갈림길
+A. choice A
+B. choice B
+C. choice C
+D. choice D
+`
+	if err := os.WriteFile(filepath.Join(sourceDir, "hector_first_residual_check.md"), []byte(updatedBody), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	third, existed, err := store.importHector("user_admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !existed {
+		t.Fatal("reimport after source change should report existing story")
+	}
+	if third != first {
+		t.Fatalf("expected same story id after source change, got %q and %q", first, third)
+	}
+	secondManifest, err := store.readManifest(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if secondManifest.SourceHash == firstHash {
+		t.Fatalf("expected refreshed source hash, got %q", secondManifest.SourceHash)
+	}
+	if secondManifest.Title != "헥터: 첫 잔명 대조 / 개정" {
+		t.Fatalf("title was not refreshed: %#v", secondManifest)
+	}
+	if err := store.ensureSeedStories("user_admin"); err != nil {
+		t.Fatal(err)
+	}
+	turns, err := store.readTurns(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(turns) == 0 || !strings.Contains(turns[len(turns)-1].SceneBody, "scene updated") {
+		t.Fatalf("seed refresh did not update turns: %#v", turns)
+	}
+	stories, err := store.listStories()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stories) != 1 || stories[0].ID != first {
+		t.Fatalf("listStories should stay deduped, got %#v", stories)
+	}
+}
+
+func TestListStoriesCollapsesDuplicateSourceDraftPath(t *testing.T) {
+	root := t.TempDir()
+	storyRoot := filepath.Join(root, "stories")
+	store, err := openStoryStore(storyRoot, filepath.Join(root, "packs"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourcePath := filepath.ToSlash(filepath.Join("lumen-federation", "drafts", "storylets", "hector_first_residual_check.md"))
+	older := storyManifest{
+		ID:              "story_older_active",
+		Title:           "older active",
+		WorldID:         "lumen-federation",
+		Status:          "active",
+		Phase:           "waiting_for_choice",
+		CreatedBy:       "user_admin",
+		CreatedAt:       "2026-06-07T00:00:00Z",
+		UpdatedAt:       "2026-06-07T00:10:00Z",
+		SourceDraftPath: sourcePath,
+		SourceHash:      "sha256:old",
+		LatestSummary:   "older active summary",
+	}
+	newerDeleted := storyManifest{
+		ID:              "story_newer_deleted",
+		Title:           "newer deleted",
+		WorldID:         "lumen-federation",
+		Status:          "deleted",
+		Phase:           "waiting_for_choice",
+		CreatedBy:       "user_admin",
+		CreatedAt:       "2026-06-07T00:30:00Z",
+		UpdatedAt:       "2026-06-07T00:40:00Z",
+		SourceDraftPath: sourcePath,
+		SourceHash:      "sha256:new",
+		LatestSummary:   "newer deleted summary",
+	}
+	for _, m := range []storyManifest{older, newerDeleted} {
+		dir := filepath.Join(storyRoot, m.ID)
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := writeJSONAtomic(filepath.Join(dir, "manifest.json"), m); err != nil {
+			t.Fatal(err)
+		}
+	}
+	stories, err := store.listStories()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stories) != 1 {
+		t.Fatalf("expected one visible story, got %#v", stories)
+	}
+	if stories[0].ID != older.ID {
+		t.Fatalf("expected non-deleted story to win, got %#v", stories[0])
 	}
 }
 
@@ -195,8 +313,29 @@ func TestNewStoryProgressionUsesItsOwnState(t *testing.T) {
 	if !strings.Contains(turns[0].SceneBody, "르네") || !strings.Contains(turns[0].SceneBody, "루세라") {
 		t.Fatalf("initial scene does not preserve setup: %q", turns[0].SceneBody)
 	}
-	if !strings.Contains(turns[1].SceneBody, "르네") || !strings.Contains(turns[1].SceneBody, "루세라") {
+	for _, want := range []string{"루멘 연방", "회복 공공재", "공공 수선", "저안개"} {
+		if !strings.Contains(turns[0].SceneBody, want) {
+			t.Fatalf("initial scene missing world term %q: %q", want, turns[0].SceneBody)
+		}
+	}
+	if !strings.Contains(turns[1].SceneBody, "르네") || !strings.Contains(turns[1].SceneBody, "루멘 연방") {
 		t.Fatalf("progression does not use story state: %q", turns[1].SceneBody)
+	}
+	st, err := store.readState(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"루멘 연방", "회복 공공재", "공공 수선"} {
+		found := false
+		for _, fact := range st.Facts {
+			if strings.Contains(fact, want) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("state facts missing world seed %q: %#v", want, st.Facts)
+		}
 	}
 	for _, leaked := range []string{"헥터", "라우", "아델", "감리단"} {
 		if strings.Contains(turns[0].SceneBody, leaked) {
@@ -915,6 +1054,37 @@ func TestQuestionUsesGMJobWithoutAdvancingTurn(t *testing.T) {
 	}
 	if len(qa) != 1 || qa[0].Answer == "답변 생성 중" || !strings.Contains(qa[0].Answer, "Turn 기준") {
 		t.Fatalf("answered qa = %#v", qa)
+	}
+}
+
+func TestMockPrologueUsesWorldSeed(t *testing.T) {
+	req := gmRequest{
+		Job: gmJob{
+			ID:        "job_mock_prologue",
+			StoryID:   "story_mock_prologue",
+			JobType:   "prologue",
+			Setup:     &storySetup{Title: "르네의 이야기", Style: "생존극", CharacterName: "르네", Traits: "루세라의 간호사"},
+			TurnID:    1,
+			CreatedAt: "2026-06-07T00:00:00Z",
+		},
+		Manifest: storyManifest{WorldID: "lumen-federation"},
+		State:    storyState{Location: "미정", ActiveCharacters: []string{"르네"}},
+	}
+	req.WorldContext = storyWorldContextSeedForRequest(req.Manifest, req.State, req.Job)
+	out, _, _, _, err := mockPrologueOutput(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"루멘 연방", "회복 공공재", "공공 수선", "저안개", "낮은 절차"} {
+		if !strings.Contains(out.SceneBody, want) {
+			t.Fatalf("scene body missing world term %q: %q", want, out.SceneBody)
+		}
+	}
+	joinedFacts := strings.Join(out.StatePatch.FactsAdd, "\n")
+	for _, want := range []string{"루멘 연방", "회복 공공재", "공공 수선"} {
+		if !strings.Contains(joinedFacts, want) {
+			t.Fatalf("state patch missing world seed %q: %#v", want, out.StatePatch.FactsAdd)
+		}
 	}
 }
 

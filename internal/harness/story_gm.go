@@ -56,10 +56,11 @@ type storySetup struct {
 }
 
 type gmRequest struct {
-	Job      gmJob         `json:"job"`
-	Manifest storyManifest `json:"manifest"`
-	State    storyState    `json:"state"`
-	Turns    []storyTurn   `json:"recent_turns"`
+	Job          gmJob         `json:"job"`
+	Manifest     storyManifest `json:"manifest"`
+	State        storyState    `json:"state"`
+	Turns        []storyTurn   `json:"recent_turns"`
+	WorldContext string        `json:"world_context,omitempty"`
 }
 
 type gmOutput struct {
@@ -199,13 +200,14 @@ func (s *storyStore) createStoryWithPrologueJob(actorID, title, style, character
 	style = firstNonEmpty(strings.TrimSpace(style), "조사극")
 	traits = strings.TrimSpace(traits)
 	setup := storySetup{Title: firstNonEmpty(strings.TrimSpace(title), name+"의 이야기"), Style: style, CharacterName: name, Traits: traits}
+	location, _, _, facts, openThreads, risks, _ := luceraPrologueSeed(name, traits)
 	job := gmJob{
 		ID: "job_" + randomID(), StoryID: id, JobType: "prologue", Status: "queued", Attempt: 1,
 		ActorID: actorID, ActorRole: "admin", Setup: &setup, TurnID: 1, ParentTurnID: 0,
 		ContextHash: "sha256:setup", CreatedAt: now, ExclusiveProgression: true,
 	}
 	m := storyManifest{ID: id, Title: setup.Title, WorldID: "lumen-federation", Status: "active", Phase: "gm_generating", CurrentTurn: 0, ActiveDriverID: actorID, ActiveJobID: job.ID, CreatedBy: actorID, CreatedAt: now, UpdatedAt: now, LatestSummary: "프롤로그 생성 중"}
-	st := storyState{Location: "미정", ActiveCharacters: []string{name}, Facts: []string{"주인공은 " + name + "이다.", "아직 canon이 아닌 runtime story 상태다."}, OpenThreads: []string{"프롤로그 생성"}, Risks: []string{"GM 생성 결과 검증 전까지 장면은 확정되지 않았다."}, Flags: []string{"runtime_story_created"}}
+	st := storyState{Location: location, ActiveCharacters: []string{name}, Facts: facts, OpenThreads: openThreads, Risks: risks, Flags: []string{"runtime_story_created"}}
 	dir := s.storyDir(id)
 	if err := os.MkdirAll(filepath.Join(dir, "jobs"), 0o700); err != nil {
 		return "", err
@@ -530,7 +532,7 @@ func (s *storyStore) buildGMRequest(job gmJob) (gmRequest, error) {
 	if len(turns) > 5 {
 		turns = turns[len(turns)-5:]
 	}
-	return gmRequest{Job: job, Manifest: m, State: st, Turns: turns}, nil
+	return gmRequest{Job: job, Manifest: m, State: st, Turns: turns, WorldContext: storyWorldContextSeedForRequest(m, st, job)}, nil
 }
 
 func (s *storyStore) readJob(storyID, jobID string) (gmJob, error) {
@@ -604,18 +606,8 @@ func mockPrologueOutput(req gmRequest) (gmOutput, string, string, string, error)
 		return gmOutput{}, "", "mock", "mock-story-gm", errors.New("missing setup")
 	}
 	name := firstNonEmpty(setup.CharacterName, "새 인물")
-	subject := name + "는"
-	location := "루세라 야간 진료동"
-	scene := fmt.Sprintf("루세라의 야간 진료동은 새벽이 가까워질수록 더 조용해지지 않았다. 대기실의 의자는 이미 부족했고, 처치실 문틈으로는 젖은 소독포 냄새와 낮은 신음이 번갈아 밀려나왔다.\n\n%s 간호기록판을 팔에 끼운 채 잠깐 멈춰 섰다. 손가락 사이에는 늘 챙기던 펜이 있었고, 안경 너머의 눈 밑에는 오래 씻지 못한 피로가 그대로 남아 있었다. 방금 들어온 환자 셋의 기록은 서로 다른 증상을 말하고 있었지만, 병동의 빈 침상 수는 같은 답만 내놓았다. 더 받을 수 없다.\n\n그때 접수대 쪽에서 누군가 %s의 이름을 불렀다. 새 환자 하나가 쓰러졌고, 동시에 이미 누워 있던 아이의 보호자가 약속된 처치를 왜 미루냐고 묻기 시작했다. 둘 다 기다릴 수 없지만, %s의 손은 하나뿐이다.", subject, name, name)
-	if setup.Traits != "" {
-		scene += "\n\n초기 설정 메모: " + setup.Traits
-	}
-	summary := fmt.Sprintf("%s에서 %s 동시에 밀려든 두 긴급 상황 앞에 섰다.", location, subject)
-	facts := []string{"주인공은 " + name + "이다.", subject + " 루세라의 간호사다.", "초기 배경은 " + location + "이다.", "아직 canon이 아닌 runtime story 상태다."}
-	if setup.Traits != "" {
-		facts = append(facts, "초기 설정: "+setup.Traits)
-	}
-	choices := []storyChoice{{ID: "A", Text: "새로 쓰러진 환자의 상태를 직접 확인한다.", RiskHint: "즉시 위험을 볼 수 있지만 기존 처치가 더 밀린다."}, {ID: "B", Text: "기존 아이 환자의 처치를 먼저 이어간다.", RiskHint: "약속된 처치를 지키지만 새 환자를 놓칠 수 있다."}, {ID: "C", Text: "보호자에게 짧게 설명하고 동료를 호출한다.", RiskHint: "시간을 벌 수 있지만 항의가 커질 수 있다."}, {ID: "D", Text: "기록판과 펜으로 우선순위를 빠르게 다시 계산한다.", RiskHint: "근거는 남지만 현장 반응이 늦어진다."}}
+	traits := strings.TrimSpace(setup.Traits)
+	location, scene, summary, facts, _, _, choices := luceraPrologueSeed(name, traits)
 	out := gmOutput{
 		SchemaVersion: "story-gm-output.v1", StoryID: req.Job.StoryID,
 		Turn:             gmOutputTurn{BranchID: "branch_main", TurnID: 1, ParentTurnID: 0, InputID: "setup_" + req.Job.ID, JobID: req.Job.ID, Source: "setup"},
@@ -623,7 +615,7 @@ func mockPrologueOutput(req gmRequest) (gmOutput, string, string, string, error)
 		SceneBody:        scene,
 		CurrentSituation: summary,
 		RevealedFacts:    facts,
-		StatePatch:       gmStatePatch{LocationSet: location, ActiveCharactersSet: []string{name}, FactsAdd: facts, OpenThreadsAdd: []string{"새 환자와 기존 환자 중 누구를 먼저 살릴지 결정", "병동의 부족한 자원을 어떻게 배분할지 판단"}, RisksAdd: []string{"어느 쪽을 선택해도 다른 쪽의 상태가 악화될 수 있다.", "과로와 환경 압박으로 판단 여력이 흔들릴 수 있다."}, SummaryPatch: summary},
+		StatePatch:       gmStatePatch{LocationSet: location, ActiveCharactersSet: []string{name}, FactsAdd: facts, OpenThreadsAdd: []string{"새 환자와 기존 환자 중 누구를 먼저 살릴지 결정", "병동의 부족한 자원을 어떻게 배분할지 판단", "공공 수선과 행정 장부를 어떻게 맞출지 정리"}, RisksAdd: []string{"어느 쪽을 선택해도 다른 쪽의 상태가 악화될 수 있다.", "과로와 저안개 절차 때문에 판단 여력이 흔들릴 수 있다.", "장부상 허가가 늦어지면 회복 공공재 배분이 밀릴 수 있다."}, SummaryPatch: summary},
 		Resolution:       "accepted",
 		Choices:          choices,
 	}
@@ -677,12 +669,17 @@ func buildCodexGMPrompt(req gmRequest, contextPath string) string {
 	if req.Job.JobType == "question_answer" {
 		return fmt.Sprintf(`You are the question-answer GM worker for world-harness Story Web UI.
 
-Use the embedded context below as authoritative. A copy also exists at %s. Answer the user's non-progressing story question using only current story state, recent turns, and read-only world documents under the added pack directory if needed.
+Use the embedded context below as authoritative. A copy also exists at %s. Answer the user's non-progressing story question using only current story state, recent turns, the world context seed, and read-only world documents under the added pack directory if needed.
+
+World context seed:
+%s
 
 Embedded context JSON:
 %s
 
 Do not advance the story. Do not change choices, state, summary, canon, or files.
+
+Keep Lucera / Lumen Federation specifics visible when they are already established in the world seed: public recovery, civic repair, low-intensity procedures, resource allocation, and admin/ledger friction.
 
 Return exactly one JSON object. Do not use Markdown fences. Do not include explanations outside JSON.
 
@@ -691,7 +688,7 @@ Required schema:
   "schema_version": "story-question-answer.v1",
   "story_id": %q,
   "answer": "Korean answer, concise but useful"
-}`, contextPath, string(contextJSON), req.Job.StoryID)
+}`, contextPath, req.WorldContext, string(contextJSON), req.Job.StoryID)
 	}
 	inputID := ""
 	source := outputSourceForJob(req.Job)
@@ -704,6 +701,11 @@ Required schema:
 	return fmt.Sprintf(`You are the GM worker for world-harness Story Web UI.
 
 Use the embedded context below as authoritative. A copy also exists at %s, but do not say context is missing when the embedded context is present.
+
+World context seed:
+%s
+
+Use the world context seed as a required story anchor, not optional flavor. For prologues and subsequent turns, keep Lucera / Lumen Federation specifics visible when the story lives there: public recovery, civic repair, low-intensity procedures, low-fog operations, resource allocation, and admin/ledger friction.
 
 Current player input:
 %s
@@ -758,7 +760,7 @@ Rules:
 - Never write that prior context is unavailable if recent_turns is non-empty.
 - Do not expose job_id, input_id, schema details, or implementation metadata as revealed facts.
 - Validate your final answer as complete JSON before returning it.
-- The output should be interactive literary Korean prose, 1500-3000 Korean characters when possible. Do not change canon or files.`, contextPath, inputSummary, string(contextJSON), req.Job.StoryID, req.Job.TurnID, req.Job.ParentTurnID, inputID, req.Job.ID, source)
+- The output should be interactive literary Korean prose, 1500-3000 Korean characters when possible. Do not change canon or files.`, contextPath, req.WorldContext, inputSummary, string(contextJSON), req.Job.StoryID, req.Job.TurnID, req.Job.ParentTurnID, inputID, req.Job.ID, source)
 }
 
 func outputSourceForJob(job gmJob) string {
@@ -769,6 +771,13 @@ func outputSourceForJob(job gmJob) string {
 		return "choice"
 	}
 	return "custom"
+}
+
+func storyWorldContextSeedForRequest(m storyManifest, st storyState, job gmJob) string {
+	if m.WorldID == "lumen-federation" || job.JobType == "prologue" || strings.Contains(strings.ToLower(st.Location), "루세라") {
+		return luceraWorldContextSeed()
+	}
+	return ""
 }
 
 func summarizeGMInput(req gmRequest) string {
