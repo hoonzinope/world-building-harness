@@ -3,9 +3,11 @@ package harness
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -61,6 +63,172 @@ func renderStoryRoomHTML(t *testing.T, s *webServer, id string, u *authUser, que
 	return rec.Body.String()
 }
 
+func renderStoryLobbyHTML(t *testing.T, s *webServer, u *authUser, query string) string {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, "/stories"+query, nil)
+	if u != nil {
+		req = withUser(req, u)
+	}
+	rec := httptest.NewRecorder()
+	s.renderStoryLobby(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unexpected status %d: %s", rec.Code, rec.Body.String())
+	}
+	return rec.Body.String()
+}
+
+func TestFriendlyStoryLabels(t *testing.T) {
+	for step, want := range map[string]string{
+		"queued":     "대기열",
+		"generating": "생성 중",
+		"applying":   "반영 중",
+		"ready":      "입력 가능",
+		"failed":     "실패",
+		"unknown":    "unknown",
+	} {
+		if got := friendlyStoryProgressStepLabel(step); got != want {
+			t.Fatalf("step %q => %q, want %q", step, got, want)
+		}
+	}
+	for kind, want := range map[string]string{
+		"setup":    "설정",
+		"choice":   "선택",
+		"custom":   "입력",
+		"question": "질문",
+		"other":    "other",
+	} {
+		if got := friendlyStoryEventKindLabel(kind); got != want {
+			t.Fatalf("kind %q => %q, want %q", kind, got, want)
+		}
+	}
+}
+
+func TestStoryLobbyUsesKoreanFilterLabelsAndFriendlyStatusBadges(t *testing.T) {
+	root := t.TempDir()
+	storyRoot := filepath.Join(root, "stories")
+	packRoot := filepath.Join(root, "packs")
+	store, err := openStoryStore(storyRoot, packRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := store.createDemoStory("user_admin", "르네의 이야기", "생존극", "르네", "루세라의 간호사")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	html := renderStoryLobbyHTML(t, &webServer{stories: store}, &authUser{ID: "user_admin", Role: "admin"}, "?filter=active")
+	for _, want := range []string{
+		`href="/stories"`,
+		`>전체<`,
+		`href="/stories?filter=active"`,
+		`>진행 중<`,
+		`href="/stories?filter=mine"`,
+		`>내 스토리<`,
+		`href="/stories?filter=watch"`,
+		`>관전<`,
+		`href="/stories?filter=archived"`,
+		`>보관됨<`,
+		`href="/stories?filter=imported"`,
+		`>가져온 스토리<`,
+		`입력 대기 · 진행 중`,
+		`진행 중`,
+		`입력 대기`,
+		`입장`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("missing %q in rendered story lobby", want)
+		}
+	}
+	for _, forbidden := range []string{
+		`>active<`,
+		`>waiting_for_choice<`,
+		`activewaiting_for_choice`,
+		`waiting_for_choice · active`,
+		`open으로`,
+	} {
+		if strings.Contains(html, forbidden) {
+			t.Fatalf("unexpected raw status token %q in rendered story lobby", forbidden)
+		}
+	}
+	if !strings.Contains(html, id) {
+		t.Fatalf("missing created story row in rendered story lobby")
+	}
+}
+
+func TestStoryLobbyAndNewStoryUseLocalizedLabels(t *testing.T) {
+	root := t.TempDir()
+	storyRoot := filepath.Join(root, "stories")
+	packRoot := filepath.Join(root, "packs")
+	store, err := openStoryStore(storyRoot, packRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.createDemoStory("user_admin", "르네의 이야기", "생존극", "르네", "루세라의 간호사"); err != nil {
+		t.Fatal(err)
+	}
+
+	srv := &webServer{stories: store}
+	lobbyHTML := renderStoryLobbyHTML(t, srv, &authUser{ID: "user_admin", Role: "admin"}, "")
+	for _, want := range []string{
+		`<h1>스토리</h1>`,
+		`헥터 가져오기`,
+		`<th class="story-lobby-turn">턴</th>`,
+		`가져온 스토리`,
+	} {
+		if !strings.Contains(lobbyHTML, want) {
+			t.Fatalf("missing %q in story lobby", want)
+		}
+	}
+	for _, forbidden := range []string{
+		`>Stories<`,
+		`>New Story<`,
+		`>World<`,
+		`>Title<`,
+		`>Style<`,
+		`>Character Name<`,
+		`open으로`,
+	} {
+		if strings.Contains(lobbyHTML, forbidden) {
+			t.Fatalf("unexpected English/raw label %q in story lobby", forbidden)
+		}
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/stories/new", nil)
+	req = withUser(req, &authUser{ID: "user_admin", Role: "admin"})
+	rec := httptest.NewRecorder()
+	srv.render(rec, req, "새 스토리", newStoryTemplate, map[string]any{
+		"Base":      "",
+		"User":      &authUser{ID: "user_admin", Role: "admin"},
+		"CSRFToken": "csrf-test",
+	})
+	newStoryHTML := rec.Body.String()
+	for _, want := range []string{
+		`<h1>새 스토리</h1>`,
+		`<label class="muted">세계관</label>`,
+		`<label class="muted">제목</label>`,
+		`<label class="muted">스타일</label>`,
+		`<label class="muted">캐릭터 이름</label>`,
+		`<option value="조사극">조사극</option>`,
+	} {
+		if !strings.Contains(newStoryHTML, want) {
+			t.Fatalf("missing %q in new story page", want)
+		}
+	}
+	for _, forbidden := range []string{
+		`>Stories<`,
+		`>New Story<`,
+		`>World<`,
+		`>Title<`,
+		`>Style<`,
+		`>Character Name<`,
+		`open으로`,
+	} {
+		if strings.Contains(newStoryHTML, forbidden) {
+			t.Fatalf("unexpected English/raw label %q in new story page", forbidden)
+		}
+	}
+}
+
 func TestStoryRoomFormsWireCSRFAndUniqueIdempotencyKeys(t *testing.T) {
 	root := t.TempDir()
 	storyRoot := filepath.Join(root, "stories")
@@ -93,6 +261,16 @@ func TestStoryRoomFormsWireCSRFAndUniqueIdempotencyKeys(t *testing.T) {
 
 	for _, want := range []string{
 		`data-story-room`,
+		`story-room-shell`,
+		`session-rail`,
+		`session-index`,
+		`journal-page`,
+		`choice-card`,
+		`dossier-stack`,
+		`dossier-panel`,
+		`story-composer`,
+		`mode-tabs`,
+		`progress-loader`,
 		`data-story-progress`,
 		`data-story-submit`,
 		`data-story-refresh`,
@@ -104,9 +282,54 @@ func TestStoryRoomFormsWireCSRFAndUniqueIdempotencyKeys(t *testing.T) {
 		`name="action" value="edit_turn"`,
 		`name="action" value="rollback_turn"`,
 		`name="action" value="export_bundle"`,
+		`data-story-progress-meta hidden`,
+		`[hidden] { display:none !important; }`,
+		`<strong data-story-progress-label>입력 가능</strong>`,
+		`<li data-story-step="queued">대기열</li>`,
+		`<li data-story-step="generating">생성 중</li>`,
+		`<li data-story-step="applying">반영 중</li>`,
+		`<li data-story-step="ready">입력 가능</li>`,
+		`<li data-story-step="failed">실패</li>`,
+		`data-step-label="ready"`,
 	} {
 		if !strings.Contains(htmlOpen, want) {
 			t.Fatalf("missing %q in rendered story room", want)
+		}
+	}
+	for _, forbidden := range []string{
+		`>ready<`,
+		`>queued<`,
+		`>generating<`,
+		`>applying<`,
+		`>failed<`,
+		`>custom<`,
+		`>setup<`,
+		`open으로`,
+	} {
+		if strings.Contains(htmlOpen, forbidden) {
+			t.Fatalf("unexpected raw visible token %q in rendered story room", forbidden)
+		}
+	}
+	for _, want := range []string{
+		`.story-room-shell,`,
+		`.story-room-header > *,`,
+		`.story-room-grid > *,`,
+		`.journal-column > *,`,
+		`.dossier-stack,`,
+		`.dossier-panel,`,
+		`.story-composer,`,
+		`.story-composer-panel,`,
+		`.story-progress,`,
+		`.session-rail-item,`,
+		`.choice-card,`,
+		`.choice-card-archived { min-width:0; }`,
+		`.session-index { display:flex; gap:8px; flex-wrap:nowrap; overflow-x:auto; overflow-y:hidden; max-width:100%; min-width:0;`,
+		`overflow-wrap:anywhere;`,
+		`.session-rail-value { font:700 16px ui-sans-serif, system-ui, sans-serif; color:var(--ink); word-break:keep-all; overflow-wrap:anywhere; }`,
+		`.story-progress-message { margin:0; font:15px ui-sans-serif, system-ui, sans-serif; color:var(--ink); word-break:keep-all; overflow-wrap:anywhere; }`,
+	} {
+		if !strings.Contains(htmlOpen, want) {
+			t.Fatalf("missing css safeguard %q in rendered story room", want)
 		}
 	}
 	for _, forbidden := range []string{
@@ -121,7 +344,10 @@ func TestStoryRoomFormsWireCSRFAndUniqueIdempotencyKeys(t *testing.T) {
 	for _, want := range []string{
 		`data-story-submit-kind="input"`,
 		`data-story-custom-textarea`,
-		`name="mode"`,
+		`name="mode" value="action"`,
+		`name="mode" value="dialogue"`,
+		`name="mode" value="question"`,
+		`name="mode" value="narration"`,
 	} {
 		if !strings.Contains(htmlAssigned, want) {
 			t.Fatalf("missing %q in assigned-driver story room", want)
@@ -139,6 +365,85 @@ func TestStoryRoomFormsWireCSRFAndUniqueIdempotencyKeys(t *testing.T) {
 	if !strings.Contains(htmlAssigned, `name="action" value="release"`) {
 		t.Fatalf("missing release action in assigned-driver story room")
 	}
+	if strings.Contains(htmlOpen, `:has(`) {
+		t.Fatalf("unexpected :has() selector in rendered story room")
+	}
+	for _, want := range []string{
+		`위치`,
+		`등장 인물`,
+		`확인된 정보`,
+		`열린 실마리`,
+		`위험`,
+		`턴`,
+		`상태`,
+		`진행자`,
+		`권한/진행`,
+	} {
+		if !strings.Contains(htmlOpen, want) {
+			t.Fatalf("missing localized label %q in rendered story room", want)
+		}
+	}
+	for _, want := range []string{
+		`입력 대기 · 진행 중`,
+		`진행 중`,
+		`입력 대기`,
+	} {
+		if !strings.Contains(htmlOpen, want) {
+			t.Fatalf("missing friendly story-room label %q in rendered story room", want)
+		}
+	}
+	if strings.Contains(htmlOpen, `waiting_for_choice · active`) {
+		t.Fatalf("unexpected raw story-room status rail label in rendered story room")
+	}
+	for _, want := range []string{
+		`관리`,
+		`상태`,
+		`진행자 ID`,
+		fmt.Sprintf("현재 턴 %d 편집", m.CurrentTurn),
+		`장면 본문`,
+		`현재 상황`,
+		`편집 저장`,
+		`되돌릴 턴`,
+		`되돌리기`,
+		`보관`,
+		`삭제`,
+		`번들 내보내기`,
+		`저장소 복구`,
+		`턴 `,
+		`<option value="active">진행 중</option>`,
+		`<option value="paused">일시 정지</option>`,
+		`<option value="completed">완료</option>`,
+		`<option value="archived">보관됨</option>`,
+		`진행자 비우기`,
+	} {
+		if !strings.Contains(htmlAssigned, want) {
+			t.Fatalf("missing localized admin label %q in rendered story room", want)
+		}
+	}
+	for _, forbidden := range []string{
+		`Edit current turn 19Scene body`,
+		`<h3>Admin</h3>`,
+		`>Status<`,
+		`>Active driver user id<`,
+		`>Scene body<`,
+		`>Current situation<`,
+		`>save turn edit<`,
+		`>Rollback to turn<`,
+		`>rollback<`,
+		`>archive<`,
+		`>delete<`,
+		`>export bundle<`,
+		`>recover store<`,
+		`open으로`,
+		`>active<`,
+		`>paused<`,
+		`>completed<`,
+		`>archived<`,
+	} {
+		if strings.Contains(htmlAssigned, forbidden) {
+			t.Fatalf("unexpected old admin label %q in rendered story room", forbidden)
+		}
+	}
 
 	re := regexp.MustCompile(`name="idempotency_key" value="([^"]+)"`)
 	matches := re.FindAllStringSubmatch(htmlOpen, -1)
@@ -151,6 +456,48 @@ func TestStoryRoomFormsWireCSRFAndUniqueIdempotencyKeys(t *testing.T) {
 	}
 	if len(seen) != len(matches) {
 		t.Fatalf("expected unique idempotency keys, got %d matches with %d unique values", len(matches), len(seen))
+	}
+}
+
+func TestStoryRoomHectorImportOmitsDuplicatedTurnTitles(t *testing.T) {
+	root := t.TempDir()
+	storyRoot := filepath.Join(root, "stories")
+	packRoot := filepath.Join(root, "packs")
+	sourceRel := filepath.Join("lumen-federation", "drafts", "storylets", "hector_first_residual_check.md")
+	sourcePath := filepath.Join("..", "..", "packs", sourceRel)
+	b, err := os.ReadFile(sourcePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	destPath := filepath.Join(packRoot, sourceRel)
+	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(destPath, b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	store, err := openStoryStore(storyRoot, packRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, existed, err := store.importHector("user_admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if existed {
+		t.Fatalf("expected fresh hector import")
+	}
+	html := renderStoryRoomHTML(t, &webServer{stories: store}, id, &authUser{ID: "user_admin", Role: "admin"}, "")
+	if !strings.Contains(html, `세션 기록`) {
+		t.Fatalf("missing fallback session title for duplicated Hector turn")
+	}
+	for _, want := range []string{
+		`session-index-title">Turn 19`,
+		`journal-page-title">Turn 19`,
+	} {
+		if strings.Contains(html, want) {
+			t.Fatalf("unexpected duplicated Hector title fragment %q", want)
+		}
 	}
 }
 
@@ -211,6 +558,9 @@ func TestStoryRoomAssetRouteServed(t *testing.T) {
 		`ariaDisabled`,
 		`pollStatus`,
 		`inputPanel.setAttribute('aria-busy'`,
+		`data-story-progress-meta`,
+		`const metaNode = progress.querySelector('[data-story-progress-meta]');`,
+		`metaNode.hidden = !visible;`,
 		`const actionURL = new URL(form.action, window.location.href);`,
 		`const requestURL = actionURL.origin === window.location.origin ? actionURL.pathname + actionURL.search : form.action;`,
 		`Object.fromEntries(data.entries())`,
@@ -220,6 +570,10 @@ func TestStoryRoomAssetRouteServed(t *testing.T) {
 		`JSON.stringify(requestPayload)`,
 		`credentials: 'include'`,
 		`'X-CSRF-Token': form.querySelector('input[name="csrf_token"]')?.value || '',`,
+		`progress.dataset.stepIndex = '0';`,
+		`progress.dataset.stepLabel = 'queued';`,
+		`statusLabel.textContent = friendlyStepLabel('queued');`,
+		`setStep('queued');`,
 		`제출 응답을 JSON으로 받지 못했습니다`,
 		`fetch(activeTask.status_url`,
 		`새 내용 표시`,
@@ -606,6 +960,10 @@ func TestStoryRoomAdminLifecycleButtonsFollowStoryStatus(t *testing.T) {
 	for _, want := range []string{
 		`name="action" value="archive"`,
 		`name="action" value="delete"`,
+		`보관`,
+		`삭제`,
+		`번들 내보내기`,
+		`저장소 복구`,
 	} {
 		if !strings.Contains(activeHTML, want) {
 			t.Fatalf("missing %q in active admin panel", want)
@@ -627,6 +985,9 @@ func TestStoryRoomAdminLifecycleButtonsFollowStoryStatus(t *testing.T) {
 	if !strings.Contains(archivedHTML, `name="action" value="restore"`) {
 		t.Fatalf("missing restore action in archived admin panel")
 	}
+	if !strings.Contains(archivedHTML, `복구`) {
+		t.Fatalf("missing restore label in archived admin panel")
+	}
 	if strings.Contains(archivedHTML, `name="action" value="archive"`) {
 		t.Fatalf("archive should not be shown for archived story")
 	}
@@ -641,6 +1002,9 @@ func TestStoryRoomAdminLifecycleButtonsFollowStoryStatus(t *testing.T) {
 	deletedHTML := renderStoryRoomHTML(t, srv, id, &authUser{ID: "user_admin", Role: "admin"}, "")
 	if !strings.Contains(deletedHTML, `name="action" value="restore"`) {
 		t.Fatalf("missing restore action in deleted admin panel")
+	}
+	if !strings.Contains(deletedHTML, `복구`) {
+		t.Fatalf("missing restore label in deleted admin panel")
 	}
 	if strings.Contains(deletedHTML, `name="action" value="delete"`) {
 		t.Fatalf("delete should be hidden for deleted story")
@@ -749,15 +1113,15 @@ func TestStoryRoomShowsLatestTurnFirst(t *testing.T) {
 	srv := &webServer{stories: store}
 	html := renderStoryRoomHTML(t, srv, id, &authUser{ID: "user_admin", Role: "admin"}, "")
 
-	firstLatest := strings.Index(html, `details class="turn-card" id="turn-2"`)
-	firstOlder := strings.Index(html, `details class="turn-card" id="turn-1"`)
+	firstLatest := strings.Index(html, `details class="journal-page" id="turn-2"`)
+	firstOlder := strings.Index(html, `details class="journal-page" id="turn-1"`)
 	if firstLatest == -1 || firstOlder == -1 {
 		t.Fatalf("missing turn cards in story room: turn-2=%d turn-1=%d", firstLatest, firstOlder)
 	}
 	if firstLatest > firstOlder {
 		t.Fatalf("expected latest turn first, got turn-2 at %d after turn-1 at %d", firstLatest, firstOlder)
 	}
-	if !strings.Contains(html, `details class="turn-card" id="turn-2" open`) {
+	if !strings.Contains(html, `details class="journal-page" id="turn-2" open`) {
 		t.Fatalf("latest turn is not rendered open")
 	}
 }
