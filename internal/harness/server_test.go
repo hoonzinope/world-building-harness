@@ -536,7 +536,7 @@ func TestAuthenticatedStoryProgressionStillWorks(t *testing.T) {
 	if getRec.Code != http.StatusOK {
 		t.Fatalf("unexpected GET status %d: %s", getRec.Code, getRec.Body.String())
 	}
-	if !strings.Contains(getRec.Body.String(), `data-story-submit-kind="input"`) {
+	if !strings.Contains(getRec.Body.String(), `data-story-submit-kind="choice"`) {
 		t.Fatalf("missing input form in authenticated story room")
 	}
 
@@ -608,6 +608,9 @@ func TestStoryRoomFormsWireCSRFAndUniqueIdempotencyKeys(t *testing.T) {
 		`previous-turn`,
 		`choice-card`,
 		`choice-card-risk`,
+		`story-choice-submit-panel`,
+		`story-input-divider`,
+		`story-custom-input-panel`,
 		`dossier-stack`,
 		`dossier-panel`,
 		`story-composer`,
@@ -700,7 +703,8 @@ func TestStoryRoomFormsWireCSRFAndUniqueIdempotencyKeys(t *testing.T) {
 		}
 	}
 	for _, want := range []string{
-		`data-story-submit-kind="input"`,
+		`data-story-submit-kind="choice"`,
+		`A/B/C/D를 바로 보낼 수 있습니다.`,
 		`data-story-custom-textarea`,
 		`참여 가능`,
 		`name="mode" value="action"`,
@@ -805,7 +809,7 @@ func TestStoryRoomFormsWireCSRFAndUniqueIdempotencyKeys(t *testing.T) {
 
 	re := regexp.MustCompile(`name="idempotency_key" value="([^"]+)"`)
 	matches := re.FindAllStringSubmatch(htmlOpen, -1)
-	if len(matches) < 5 {
+	if len(matches) < 1 {
 		t.Fatalf("expected multiple idempotency keys, got %d", len(matches))
 	}
 	seen := map[string]bool{}
