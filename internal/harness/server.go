@@ -41,6 +41,7 @@ type lobbyStoryRow struct {
 	Status      string
 	Phase       string
 	Turn        int
+	MetaLine    string
 	Summary     string
 	Updated     string
 	MetaLabels  []string
@@ -232,7 +233,7 @@ func friendlyPermissionLabel(m storyManifest, u *authUser) string {
 	case m.Status == "completed" || m.Status == "archived" || m.Status == "deleted":
 		return "종료"
 	case canDriveStory(m, u):
-		return "진행 가능"
+		return "참여 가능"
 	case u != nil && canQuestionStory(m):
 		return "질문 가능"
 	default:
@@ -252,6 +253,32 @@ func storyLobbyMetaLabels(m storyManifest, u *authUser) []string {
 		labels = append(labels, "관전")
 	}
 	return labels
+}
+
+func storyLobbyMetaLine(m storyManifest, u *authUser) string {
+	parts := append([]string{}, storyLobbyMetaLabels(m, u)...)
+	parts = append(parts, fmt.Sprintf("턴 %d", m.CurrentTurn))
+	parts = append(parts, "진행자 "+friendlyDriverLabel(m, u))
+	return strings.Join(parts, " · ")
+}
+
+func storyLobbyPhaseLabel(phase string) string {
+	if phase == "waiting_for_choice" {
+		return "응답 대기"
+	}
+	return friendlyStoryPhaseLabel(phase)
+}
+
+func storyLobbyUpdatedAt(updatedAt string) string {
+	updatedAt = strings.TrimSpace(updatedAt)
+	if updatedAt == "" {
+		return "업데이트 시각 확인 불가"
+	}
+	parsed, err := time.Parse(time.RFC3339, updatedAt)
+	if err != nil {
+		return "업데이트 시각 확인 불가"
+	}
+	return parsed.In(time.FixedZone("KST", 9*60*60)).Format("2006.01.02 15:04")
 }
 
 func friendlyStoryStatusLabel(status string) string {
@@ -790,8 +817,9 @@ func (s *webServer) renderStoryLobby(w http.ResponseWriter, r *http.Request) {
 			Status:      m.Status,
 			Phase:       m.Phase,
 			Turn:        m.CurrentTurn,
+			MetaLine:    storyLobbyMetaLine(m, u),
 			Summary:     m.LatestSummary,
-			Updated:     m.UpdatedAt,
+			Updated:     storyLobbyUpdatedAt(m.UpdatedAt),
 			MetaLabels:  storyLobbyMetaLabels(m, u),
 			Imported:    m.SourceDraftPath != "",
 			IsMine:      u != nil && (m.CreatedBy == u.ID || m.ActiveDriverID == u.ID),
@@ -1560,6 +1588,7 @@ func (s *webServer) render(w http.ResponseWriter, r *http.Request, title, body s
 		},
 		"friendlyStoryStatusLabel":       friendlyStoryStatusLabel,
 		"friendlyStoryPhaseLabel":        friendlyStoryPhaseLabel,
+		"storyLobbyPhaseLabel":           storyLobbyPhaseLabel,
 		"friendlyStoryProgressStepLabel": friendlyStoryProgressStepLabel,
 		"friendlyStoryEventKindLabel":    friendlyStoryEventKindLabel,
 		"idem": func() string {
@@ -1852,9 +1881,9 @@ const loginTemplate = `{{define "content"}}
 const storyLobbyTemplate = `{{define "content"}}
 <h1>스토리</h1>
 <p class="lede">세계관 문서를 읽고, 실시간 스토리 룸에서 장면 단위로 진행합니다.</p>
-<div class="toolbar">
-  {{if .User}}<a class="button" href="{{.Base}}/stories/new">새 스토리</a>{{else if .AuthEnabled}}<a class="button" href="{{.Base}}/login">로그인</a>{{end}}
-  <a class="button secondary" href="{{.Base}}/stories">새로고침</a>
+<div class="toolbar story-lobby-actions">
+  {{if .User}}<a class="button story-lobby-primary-action" href="{{.Base}}/stories/new">새 스토리</a>{{else if .AuthEnabled}}<a class="button story-lobby-primary-action" href="{{.Base}}/login">로그인</a>{{end}}
+  <a class="button secondary story-lobby-refresh-action" href="{{.Base}}/stories">새로고침</a>
 </div>
 {{if .IsAnonymous}}<p class="muted">로그인하지 않아도 스토리 목록과 세계관은 읽을 수 있습니다. 새 스토리 생성과 진행은 로그인 후 가능합니다.</p>{{end}}
 <div class="filter-bar" role="tablist" aria-label="스토리 필터">
@@ -1872,21 +1901,19 @@ const storyLobbyTemplate = `{{define "content"}}
         <div class="story-card-heading">
           <h2 class="story-card-title">{{.Title}}</h2>
           <div class="story-card-meta">
-            {{range .MetaLabels}}<span class="meta">{{.}}</span>{{end}}
-            <span class="meta">턴 {{.Turn}}</span>
-            <span class="meta">진행자 {{.DriverLabel}}</span>
+            <span class="meta">{{.MetaLine}}</span>
           </div>
         </div>
         <div class="story-card-badges">
           <span class="badge">{{friendlyStoryStatusLabel .Status}}</span>
-          <span class="badge">{{friendlyStoryPhaseLabel .Phase}}</span>
+          <span class="badge">{{storyLobbyPhaseLabel .Phase}}</span>
           <span class="badge">{{.Permission}}</span>
         </div>
       </div>
       <div class="story-card-summary">{{.Summary}}</div>
       <div class="story-card-foot">
         <div class="story-card-updated muted">업데이트 {{.Updated}}</div>
-        <div class="story-card-actions"><a class="button secondary" href="{{storyURL $.Base .ID}}">입장</a></div>
+        <div class="story-card-actions"><a class="button" href="{{storyURL $.Base .ID}}">입장하기</a></div>
       </div>
     </article>
   {{else}}
@@ -1933,7 +1960,7 @@ const storyRoomTemplate = `{{define "content"}}
     <div class="session-rail-item"><span class="session-rail-label">턴</span><span class="session-rail-value">{{.Story.CurrentTurn}}</span></div>
     <div class="session-rail-item"><span class="session-rail-label">상태</span><span class="session-rail-value">{{friendlyStoryPhaseLabel .Story.Phase}} · {{friendlyStoryStatusLabel .Story.Status}}</span></div>
     <div class="session-rail-item"><span class="session-rail-label">진행자</span><span class="session-rail-value">{{.DriverLabel}}</span></div>
-    <div class="session-rail-item"><span class="session-rail-label">권한/진행</span><span class="session-rail-value">{{if .CanDrive}}진행 가능{{else if .CanQuestion}}질문 가능{{else}}읽기 전용{{end}} · {{friendlyStoryProgressStepLabel .Progress.StepLabel}}</span></div>
+    <div class="session-rail-item"><span class="session-rail-label">권한/진행</span><span class="session-rail-value">{{if .CanDrive}}참여 가능{{else if .CanQuestion}}질문 가능{{else}}읽기 전용{{end}} · {{friendlyStoryProgressStepLabel .Progress.StepLabel}}</span></div>
   </div>
   {{if .IsProcessing}}<div class="panel status-panel"><strong>GM 생성 중</strong><p>요청 이벤트가 접수되었습니다. Codex/GM worker가 장면을 생성하는 동안 추가 진행 입력은 잠시 막힙니다.</p><p class="muted">active job: {{.Story.ActiveJobID}} · phase: {{.Story.Phase}}</p></div>{{end}}
   {{if .FailedJob}}{{if .FailedJob.CanRecover}}<div class="panel status-panel"><strong>GM 생성 실패</strong><p>현재 job이 실패 상태입니다. 복구를 진행하거나 취소할 수 있습니다.</p><p class="muted">active job: {{.Story.ActiveJobID}} · actor: {{.FailedJob.ActorLabel}}</p><div class="toolbar"><form method="post" action="{{.Base}}/stories/{{.Story.ID}}/recover"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><input type="hidden" name="action" value="resume"><button>resume</button></form><form method="post" action="{{.Base}}/stories/{{.Story.ID}}/recover"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><input type="hidden" name="action" value="cancel"><button class="secondary">cancel</button></form></div></div>{{else}}<div class="panel status-panel"><strong>GM 생성 실패</strong><p>현재 job이 실패 상태입니다. 새 진행 입력은 실패 job 처리 후 가능합니다.</p><p class="muted">active job: {{.Story.ActiveJobID}}</p></div>{{end}}{{end}}

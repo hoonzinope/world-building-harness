@@ -96,6 +96,42 @@ func assertNoStoryIDInLobbyMeta(t *testing.T, html, id string) {
 	}
 }
 
+func assertLobbyMetaLineFormatting(t *testing.T, html string) {
+	t.Helper()
+	metaRe := regexp.MustCompile(`(?s)<div class="story-card-meta">(.*?)</div>`)
+	matches := metaRe.FindAllStringSubmatch(html, -1)
+	if len(matches) == 0 {
+		t.Fatal("missing story-card-meta block in rendered story lobby")
+	}
+	for _, match := range matches {
+		if len(match) < 2 {
+			continue
+		}
+		meta := match[1]
+		if !strings.Contains(meta, " · ") {
+			t.Fatalf("expected dot-separated lobby meta line, got %q", meta)
+		}
+		if strings.Contains(meta, "story_") {
+			t.Fatalf("unexpected raw story id in lobby meta line %q", meta)
+		}
+		if strings.Contains(meta, "가져온 스토리관전") || strings.Contains(meta, "내 스토리턴") || strings.Contains(meta, "관전턴") {
+			t.Fatalf("unexpected adjacent lobby meta labels in %q", meta)
+		}
+	}
+}
+
+func assertNoRawLobbyTimestamp(t *testing.T, html string) {
+	t.Helper()
+	rawTimestampRe := regexp.MustCompile(`\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}`)
+	if rawTimestampRe.FindString(html) != "" {
+		t.Fatal("unexpected raw ISO timestamp in rendered story lobby")
+	}
+	formattedTimestampRe := regexp.MustCompile(`업데이트 \d{4}\.\d{2}\.\d{2} \d{2}:\d{2}`)
+	if !formattedTimestampRe.MatchString(html) {
+		t.Fatal("missing localized lobby update timestamp")
+	}
+}
+
 func newTestAuthStore(t *testing.T) *authStore {
 	t.Helper()
 	root := t.TempDir()
@@ -149,6 +185,15 @@ func TestFriendlyStoryLabels(t *testing.T) {
 	}
 }
 
+func TestStoryLobbyUpdatedAtFormatting(t *testing.T) {
+	if got := storyLobbyUpdatedAt("2026-06-07T06:20:43Z"); got != "2026.06.07 15:20" {
+		t.Fatalf("unexpected localized timestamp %q", got)
+	}
+	if got := storyLobbyUpdatedAt("not-a-timestamp"); got != "업데이트 시각 확인 불가" {
+		t.Fatalf("unexpected fallback timestamp %q", got)
+	}
+}
+
 func TestStoryLobbyUsesKoreanFilterLabelsAndFriendlyStatusBadges(t *testing.T) {
 	root := t.TempDir()
 	storyRoot := filepath.Join(root, "stories")
@@ -183,8 +228,9 @@ func TestStoryLobbyUsesKoreanFilterLabelsAndFriendlyStatusBadges(t *testing.T) {
 		`story-card-meta`,
 		`story-card-summary`,
 		`진행 중`,
-		`입력 대기`,
-		`입장`,
+		`응답 대기`,
+		`참여 가능`,
+		`입장하기`,
 	} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("missing %q in rendered story lobby", want)
@@ -199,6 +245,9 @@ func TestStoryLobbyUsesKoreanFilterLabelsAndFriendlyStatusBadges(t *testing.T) {
 		`activewaiting_for_choice`,
 		`waiting_for_choice · active`,
 		`입력 대기 · 진행 중`,
+		`>입장<`,
+		`진행 가능`,
+		`입력 대기`,
 		`open으로`,
 	} {
 		if strings.Contains(html, forbidden) {
@@ -209,6 +258,8 @@ func TestStoryLobbyUsesKoreanFilterLabelsAndFriendlyStatusBadges(t *testing.T) {
 		t.Fatalf("missing created story row in rendered story lobby")
 	}
 	assertNoStoryIDInLobbyMeta(t, html, "story_")
+	assertLobbyMetaLineFormatting(t, html)
+	assertNoRawLobbyTimestamp(t, html)
 }
 
 func TestStoryLobbyAndNewStoryUseLocalizedLabels(t *testing.T) {
@@ -254,6 +305,8 @@ func TestStoryLobbyAndNewStoryUseLocalizedLabels(t *testing.T) {
 		}
 	}
 	assertNoStoryIDInLobbyMeta(t, lobbyHTML, "story_")
+	assertLobbyMetaLineFormatting(t, lobbyHTML)
+	assertNoRawLobbyTimestamp(t, lobbyHTML)
 
 	req := httptest.NewRequest(http.MethodGet, "/stories/new", nil)
 	req = withUser(req, &authUser{ID: "user_admin", Role: "admin"})
@@ -344,6 +397,8 @@ func TestPublicStoryLobbyAccessibleWithoutLogin(t *testing.T) {
 		}
 	}
 	assertNoStoryIDInLobbyMeta(t, html, "story_")
+	assertLobbyMetaLineFormatting(t, html)
+	assertNoRawLobbyTimestamp(t, html)
 }
 
 func TestPublicStoryRoomAccessibleWithoutLogin(t *testing.T) {
