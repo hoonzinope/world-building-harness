@@ -934,6 +934,7 @@ func TestStoryRoomAssetRouteServed(t *testing.T) {
 		`새 내용이 준비되었습니다. 자동으로 최신 화면을 불러옵니다.`,
 		`payload.last_completed_job_type`,
 		`payload.last_completed_job_turn_id`,
+		`Number(payload.last_completed_job_turn_id || 0) > storyTurn`,
 		`completedType === 'story_turn'`,
 	} {
 		if !strings.Contains(body, want) {

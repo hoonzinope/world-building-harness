@@ -701,12 +701,18 @@ const storyRoomAssetJS = `(() => {
       }
       showRefresh(true);
       const completedType = payload.last_completed_job_type || activeTask.job_type || payload.active_job_type || '';
-      const completedStoryTurn = completedType === 'story_turn' && Number(payload.current_turn || 0) > storyTurn;
+      const completedStoryTurn = completedType === 'story_turn' && (
+        Number(payload.current_turn || 0) > storyTurn ||
+        Number(payload.last_completed_job_turn_id || 0) > storyTurn
+      );
       const completedQuestion = completedType === 'question_answer';
       activeTask = null;
       if (payload.active_job_status !== 'failed' && (completedStoryTurn || completedQuestion || Number(payload.current_turn || 0) > storyTurn)) {
         if (messageNode) messageNode.textContent = payload.progress_message || '새 내용이 준비되었습니다. 자동으로 최신 화면을 불러옵니다.';
-        scheduleStoryReload(payload, { job_type: completedType, turn_id: completedStoryTurn ? Number(payload.current_turn || 0) : Number(payload.last_completed_job_turn_id || 0) });
+        scheduleStoryReload(payload, {
+          job_type: completedType,
+          turn_id: completedStoryTurn ? Number(payload.last_completed_job_turn_id || payload.current_turn || 0) : Number(payload.last_completed_job_turn_id || 0),
+        });
       }
     } catch (error) {
       if (messageNode) messageNode.textContent = '상태를 다시 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.';
