@@ -531,13 +531,18 @@ func (s *storyStore) importHector(actorID string) (string, bool, error) {
 		if m.SourceDraftPath == filepath.ToSlash(sourceRel) {
 			updated := false
 			title := firstNonEmpty(parsed.Title, "헥터: 첫 잔명 대조")
-			if m.SourceHash != hash || m.Title != title || m.CurrentTurn != parsed.TurnID || m.LatestSummary != hectorCurrentSituation() {
+			nextTurn := maxInt(m.CurrentTurn, parsed.TurnID)
+			nextSummary := m.LatestSummary
+			if nextTurn <= parsed.TurnID {
+				nextSummary = hectorCurrentSituation()
+			}
+			if m.SourceHash != hash || m.Title != title || m.CurrentTurn != nextTurn || m.LatestSummary != nextSummary {
 				now := time.Now().UTC().Format(time.RFC3339)
 				m.Title = title
 				m.SourceHash = hash
 				m.UpdatedAt = now
-				m.CurrentTurn = parsed.TurnID
-				m.LatestSummary = hectorCurrentSituation()
+				m.CurrentTurn = nextTurn
+				m.LatestSummary = nextSummary
 				updated = true
 			}
 			if updated {
@@ -607,20 +612,47 @@ func (s *storyStore) refreshHectorHistory(storyID, actorID string) error {
 	if m.SourceHash == currentHash && hectorTurnsMatch(existing, parsed.Turns) {
 		return nil
 	}
-	st, _ := s.readState(storyID)
 	now := time.Now().UTC().Format(time.RFC3339)
-	m.CurrentTurn = parsed.TurnID
+	existingTurn := maxStoryTurn(existing)
+	nextTurn := maxInt(m.CurrentTurn, maxInt(existingTurn, parsed.TurnID))
+	m.CurrentTurn = nextTurn
 	m.UpdatedAt = now
 	m.SourceHash = currentHash
-	m.LatestSummary = hectorCurrentSituation()
+	if nextTurn <= parsed.TurnID {
+		m.LatestSummary = hectorCurrentSituation()
+	}
 	if m.ActiveDriverID == "" {
 		m.ActiveDriverID = actorID
 	}
+	if existingTurn > parsed.TurnID || m.CurrentTurn > parsed.TurnID {
+		return writeJSONAtomic(filepath.Join(s.storyDir(storyID), "manifest.json"), m)
+	}
+	st, _ := s.readState(storyID)
 	for i := range parsed.Turns {
 		parsed.Turns[i].ActorID = actorID
 		parsed.Turns[i].CreatedAt = now
 	}
 	return s.replaceStory(m, st, parsed.Turns)
+}
+
+func maxInt(values ...int) int {
+	max := 0
+	for _, v := range values {
+		if v > max {
+			max = v
+		}
+	}
+	return max
+}
+
+func maxStoryTurn(turns []storyTurn) int {
+	max := 0
+	for _, turn := range turns {
+		if turn.TurnID > max {
+			max = turn.TurnID
+		}
+	}
+	return max
 }
 
 func (s *storyStore) parseHectorHistory() (hectorParsed, error) {

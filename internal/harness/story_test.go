@@ -157,6 +157,30 @@ D. choice D
 	if secondManifest.Title != "헥터: 첫 잔명 대조 / 개정" {
 		t.Fatalf("title was not refreshed: %#v", secondManifest)
 	}
+	turn20 := storyTurn{
+		TurnID:           20,
+		BranchID:         "branch_main",
+		ParentTurnID:     19,
+		ActorID:          "user_admin",
+		InputID:          "runtime_turn_20",
+		Source:           "story_turn",
+		SelectedChoiceID:  "A",
+		CustomInputMode:   "action",
+		CustomText:       "runtime progress",
+		SceneTitle:       "runtime 20",
+		SceneBody:        "runtime scene 20",
+		CurrentSituation: "runtime summary 20",
+		CreatedAt:        "2026-06-07T00:50:00Z",
+	}
+	if err := appendJSONL(filepath.Join(root, "data", "stories", first, "turns.jsonl"), turn20); err != nil {
+		t.Fatal(err)
+	}
+	secondManifest.CurrentTurn = 20
+	secondManifest.LatestSummary = "runtime summary 20"
+	secondManifest.UpdatedAt = "2026-06-07T00:50:00Z"
+	if err := writeJSONAtomic(filepath.Join(root, "data", "stories", first, "manifest.json"), secondManifest); err != nil {
+		t.Fatal(err)
+	}
 	if err := store.ensureSeedStories("user_admin"); err != nil {
 		t.Fatal(err)
 	}
@@ -164,8 +188,15 @@ D. choice D
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(turns) == 0 || !strings.Contains(turns[len(turns)-1].SceneBody, "scene updated") {
-		t.Fatalf("seed refresh did not update turns: %#v", turns)
+	if len(turns) == 0 || turns[len(turns)-1].TurnID != 20 || !strings.Contains(turns[len(turns)-1].SceneBody, "runtime scene 20") {
+		t.Fatalf("runtime turn was not preserved: %#v", turns)
+	}
+	finalManifest, err := store.readManifest(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if finalManifest.CurrentTurn != 20 {
+		t.Fatalf("current turn regressed: %#v", finalManifest)
 	}
 	stories, err := store.listStories()
 	if err != nil {
