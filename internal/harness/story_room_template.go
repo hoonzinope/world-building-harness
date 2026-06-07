@@ -58,16 +58,13 @@ const storyRoomTemplate = `{{define "content"}}
           <div class="toolbar story-progress-actions"><button type="button" class="secondary" hidden data-story-refresh>새 내용 표시</button></div>
         </div>
         {{if .CanDrive}}
-        <form method="post" action="{{.Base}}/stories/{{.Story.ID}}/input" class="panel story-composer-panel" data-story-submit data-story-submit-kind="input">
-          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-          <input type="hidden" name="turn_id" value="{{.LatestTurnID}}">
-          <input type="hidden" name="idempotency_key" value="{{idem}}">
+        <div class="panel story-composer-panel">
           <div class="story-choice-submit-panel">
             <div class="story-choice-submit-head">
               <strong>선택 제출</strong>
               <span class="muted">A/B/C/D를 바로 보낼 수 있습니다.</span>
             </div>
-            <div class="choice-list">{{with .LatestTurn}}{{range .Choices}}{{if .}}<button class="choice-card" type="submit" data-story-choice-button name="choice_id" value="{{.ID}}" {{if $.Progress.IsProcessing}}disabled{{end}}><span class="choice-card-letter">{{.ID}}</span><span class="choice-card-copy"><strong>{{.Text}}</strong>{{if .RiskHint}}<span class="choice-card-risk">위험: {{.RiskHint}}</span>{{end}}</span></button>{{end}}{{end}}{{end}}</div>
+            <div class="choice-list">{{with .LatestTurn}}{{range .Choices}}{{if .}}<form method="post" action="{{$.Base}}/stories/{{$.Story.ID}}/input" class="story-choice-form" data-story-submit data-story-submit-kind="choice"><input type="hidden" name="csrf_token" value="{{$.CSRFToken}}"><input type="hidden" name="turn_id" value="{{$.LatestTurnID}}"><input type="hidden" name="idempotency_key" value="{{idem}}"><input type="hidden" name="choice_id" value="{{.ID}}"><button class="choice-card" type="submit" data-story-choice-button {{if $.Progress.IsProcessing}}disabled{{end}}><span class="choice-card-letter">{{.ID}}</span><span class="choice-card-copy"><strong>{{.Text}}</strong>{{if .RiskHint}}<span class="choice-card-risk">위험: {{.RiskHint}}</span>{{end}}</span></button></form>{{end}}{{end}}{{end}}</div>
           </div>
           <div class="story-input-divider" aria-hidden="true"></div>
           <div class="story-custom-input-panel">
@@ -75,6 +72,10 @@ const storyRoomTemplate = `{{define "content"}}
               <strong>직접 입력</strong>
               <span class="muted">모드 선택 후 내용을 제출합니다.</span>
             </div>
+            <form method="post" action="{{.Base}}/stories/{{.Story.ID}}/input" class="story-input-form" data-story-submit data-story-submit-kind="input">
+              <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+              <input type="hidden" name="turn_id" value="{{.LatestTurnID}}">
+              <input type="hidden" name="idempotency_key" value="{{idem}}">
             <div class="form-grid">
               <div>
                 <label class="muted">모드</label>
@@ -90,8 +91,9 @@ const storyRoomTemplate = `{{define "content"}}
             <div class="toolbar story-composer-actions">
               <button type="submit" {{if $.Progress.IsProcessing}}disabled{{end}}>선택 또는 직접 입력 제출</button>
             </div>
+            </form>
           </div>
-        </form>
+        </div>
         {{else}}{{if .IsAnonymous}}<p class="muted">로그인하면 진행권을 받고 직접 입력할 수 있습니다.</p>{{else}}{{if .IsProcessing}}<p class="muted">GM 생성 중입니다. 완료되면 새 내용 표시 버튼으로 최신 턴을 갱신할 수 있습니다.</p>{{else}}{{if .CanClaim}}<p class="muted">현재 진행권이 비어 있습니다. 진행권을 받은 뒤 입력할 수 있습니다.</p>{{else}}<p class="muted">현재 {{.DriverLabel}}가 진행 중입니다. 진행 입력은 비활성화되어 있습니다.</p>{{end}}{{end}}{{end}}{{end}}
         <h2 id="qa">질문</h2>
         {{if .CanDrive}}<p class="muted">질문은 직접 입력에서 question 모드를 선택해 제출할 수 있습니다.</p>{{else}}{{if .CanQuestion}}
@@ -356,13 +358,6 @@ const storyRoomAssetJS = `(() => {
       pollTimer = null;
     }
     const data = new FormData(form);
-    if (submitter && submitter.name) {
-      data.set(submitter.name, submitter.value);
-    }
-    if (submitter && submitter.hasAttribute && submitter.hasAttribute('data-story-choice-button')) {
-      data.delete('custom_text');
-      data.delete('mode');
-    }
     const requestPayload = Object.fromEntries(data.entries());
     const actionURL = new URL(form.action, window.location.href);
     const requestURL = actionURL.origin === window.location.origin ? actionURL.pathname + actionURL.search : form.action;

@@ -609,6 +609,7 @@ func TestStoryRoomFormsWireCSRFAndUniqueIdempotencyKeys(t *testing.T) {
 		`choice-card`,
 		`choice-card-risk`,
 		`story-choice-submit-panel`,
+		`story-choice-form`,
 		`story-input-divider`,
 		`story-custom-input-panel`,
 		`story-composer-panel-head`,
@@ -671,6 +672,8 @@ func TestStoryRoomFormsWireCSRFAndUniqueIdempotencyKeys(t *testing.T) {
 		`.story-composer,`,
 		`.story-composer-panel,`,
 		`.story-choice-submit-panel { display:grid; gap:12px; }`,
+		`.story-choice-form { margin:0; }`,
+		`.story-input-form { display:grid; gap:12px; margin:0; }`,
 		`.story-custom-input-panel,`,
 		`.story-input-divider { height:1px; background:rgba(17,27,24,.08); }`,
 		`.story-composer-panel-head { display:flex; gap:8px; flex-wrap:wrap; align-items:baseline; justify-content:space-between; }`,
@@ -692,6 +695,7 @@ func TestStoryRoomFormsWireCSRFAndUniqueIdempotencyKeys(t *testing.T) {
 		`.story-custom-input-panel { display:grid; gap:12px; }`,
 		`.story-input-divider { height:1px; background:rgba(17,27,24,.08); }`,
 		`.story-choice-submit-panel .choice-list { gap:8px; }`,
+		`.story-choice-form .choice-card { background:rgba(255,255,255,.72); border-color:var(--line); }`,
 		`.story-custom-input-panel textarea { min-height:120px; }`,
 		`@media (max-width:820px){`,
 		`.story-choice-submit-head,`,
@@ -699,7 +703,7 @@ func TestStoryRoomFormsWireCSRFAndUniqueIdempotencyKeys(t *testing.T) {
 		`.story-choice-submit-panel .choice-list,`,
 		`.story-custom-input-panel,`,
 		`.story-composer-actions{width:100%;}`,
-		`.story-choice-submit-panel .choice-card,`,
+		`.story-choice-form .choice-card,`,
 		`.story-custom-input-panel textarea,`,
 		`.story-composer-actions > *{width:100%;}`,
 		`.current-turn-body{display:flex; flex-direction:column;}`,
@@ -716,9 +720,10 @@ func TestStoryRoomFormsWireCSRFAndUniqueIdempotencyKeys(t *testing.T) {
 	for _, forbidden := range []string{
 		`async function submitForm(form)`,
 		`submitForm(form, event.submitter || null);`,
-		`new FormData(form);`,
-		`const actionURL = new URL(form.action, window.location.href);`,
-		`fetch(activeTask.status_url`,
+		`if (submitter && submitter.name) {`,
+		`data.set(submitter.name, submitter.value);`,
+		`data.delete('custom_text');`,
+		`data.delete('mode');`,
 	} {
 		if strings.Contains(htmlOpen, forbidden) {
 			t.Fatalf("unexpected inline story-room JS %q in rendered story room", forbidden)
@@ -726,6 +731,9 @@ func TestStoryRoomFormsWireCSRFAndUniqueIdempotencyKeys(t *testing.T) {
 	}
 	for _, want := range []string{
 		`data-story-submit-kind="input"`,
+		`data-story-submit-kind="choice"`,
+		`name="choice_id" value="A"`,
+		`story-choice-form`,
 		`data-story-choice-button`,
 		`A/B/C/D를 바로 보낼 수 있습니다.`,
 		`data-story-custom-textarea`,
@@ -832,7 +840,7 @@ func TestStoryRoomFormsWireCSRFAndUniqueIdempotencyKeys(t *testing.T) {
 
 	re := regexp.MustCompile(`name="idempotency_key" value="([^"]+)"`)
 	matches := re.FindAllStringSubmatch(htmlOpen, -1)
-	if len(matches) < 1 {
+	if len(matches) < 5 {
 		t.Fatalf("expected multiple idempotency keys, got %d", len(matches))
 	}
 	seen := map[string]bool{}
@@ -942,10 +950,6 @@ func TestStoryRoomAssetRouteServed(t *testing.T) {
 	for _, want := range []string{
 		`async function submitForm(form, submitter)`,
 		`submitForm(form, event.submitter || null);`,
-		`if (submitter && submitter.name) {`,
-		`data.set(submitter.name, submitter.value);`,
-		`data.delete('custom_text');`,
-		`data.delete('mode');`,
 		`data-story-submit`,
 		`WeakMap`,
 		`captureInitialControlState`,
