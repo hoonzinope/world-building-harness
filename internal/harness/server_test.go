@@ -109,6 +109,15 @@ func TestStoryRoomFormsWireCSRFAndUniqueIdempotencyKeys(t *testing.T) {
 			t.Fatalf("missing %q in rendered story room", want)
 		}
 	}
+	for _, forbidden := range []string{
+		`async function submitForm(form)`,
+		`const actionURL = new URL(form.action, window.location.href);`,
+		`fetch(activeTask.status_url`,
+	} {
+		if strings.Contains(htmlOpen, forbidden) {
+			t.Fatalf("unexpected inline story-room JS %q in rendered story room", forbidden)
+		}
+	}
 	for _, want := range []string{
 		`data-story-submit-kind="input"`,
 		`data-story-custom-textarea`,
@@ -192,6 +201,7 @@ func TestStoryRoomAssetRouteServed(t *testing.T) {
 	}
 	body := rec.Body.String()
 	for _, want := range []string{
+		`async function submitForm(form)`,
 		`data-story-submit`,
 		`WeakMap`,
 		`captureInitialControlState`,
@@ -199,6 +209,7 @@ func TestStoryRoomAssetRouteServed(t *testing.T) {
 		`initialControlState`,
 		`control.disabled = initial.disabled`,
 		`ariaDisabled`,
+		`pollStatus`,
 		`inputPanel.setAttribute('aria-busy'`,
 		`const actionURL = new URL(form.action, window.location.href);`,
 		`const requestURL = actionURL.origin === window.location.origin ? actionURL.pathname + actionURL.search : form.action;`,

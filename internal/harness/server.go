@@ -1081,7 +1081,7 @@ func (s *webServer) handleStoryRoomAsset(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
-	_, _ = w.Write([]byte(storyRoomJS))
+	_, _ = w.Write([]byte(storyRoomAssetJS))
 }
 
 func (s *webServer) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
@@ -1731,7 +1731,9 @@ const storyRoomTemplate = `{{define "content"}}
 </div>
 {{end}}`
 
-const storyRoomJS = `(() => {
+// storyRoomAssetJS is the only story-room client implementation.
+// It is served from /assets/story-room.js and loaded by the template via a same-origin script tag.
+const storyRoomAssetJS = `(() => {
   const root = document.querySelector('[data-story-room]');
   if (!root) return;
   const progress = root.querySelector('[data-story-progress]');
