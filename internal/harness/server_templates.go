@@ -13,16 +13,22 @@ const layoutTemplate = `<!doctype html>
   <div class="top">
     <a class="brand" href="{{.Base}}/">World Harness</a>
     <div class="nav">
-      {{if .StoryEnabled}}<a href="{{.Base}}/stories">스토리</a>{{end}}
+      {{if .StoryEnabled}}
+      <a href="{{.Base}}/stories">스토리</a>
+      {{end}}
       <a href="{{.Base}}/packs/lumen-federation/">세계관</a>
       {{with .User}}
-        {{if eq .Role "admin"}}<a href="{{$.Base}}/admin/users">Admin</a>{{end}}
+        {{if eq .Role "admin"}}
+        <a href="{{$.Base}}/admin/users">Admin</a>
+        {{end}}
         <form class="nav-form" method="post" action="{{$.Base}}/logout">
           <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
           <button class="link-button" type="submit">Logout</button>
         </form>
       {{else}}
-        {{if .AuthEnabled}}<a href="{{.Base}}/login">로그인</a>{{end}}
+        {{if .AuthEnabled}}
+        <a href="{{.Base}}/login">로그인</a>
+        {{end}}
         <span>{{$.PageTitle}}</span>
       {{end}}
     </div>
@@ -40,7 +46,9 @@ const indexTemplate = `{{define "content"}}
     <a class="card" href="{{packURL $.Base .id}}">
       <strong>{{.title}}</strong>
       <span class="meta">{{.id}}</span><br>
-      <span class="meta">{{index .summary "content_documents"}} canon docs · {{index .summary "active_drafts"}} drafts</span>
+      <span class="meta">
+        {{index .summary "content_documents"}} canon docs · {{index .summary "active_drafts"}} drafts
+      </span>
     </a>
   {{else}}
     <div class="card"><strong>No packs</strong><span class="meta">Create packs/&lt;id&gt;/harness.yaml first.</span></div>
@@ -51,12 +59,18 @@ const indexTemplate = `{{define "content"}}
 const packTemplate = `{{define "content"}}
 <h1>{{.Title}}</h1>
 <p class="lede">{{index .Summary "content_documents"}} canon documents, {{index .Summary "active_drafts"}} active drafts.</p>
-<form class="search" method="get"><input name="q" value="{{.Query}}" placeholder="문서 검색"><button>Search</button></form>
+  <form class="search" method="get">
+    <input name="q" value="{{.Query}}" placeholder="문서 검색">
+    <button>Search</button>
+  </form>
 {{range .Types}}
   <h2>{{.}}</h2>
   <div class="doc-list">
   {{range index $.Groups .}}
-    <a class="doc-link" href="{{docURL $.Base $.Pack .path}}">{{.title}}<span>{{.path}}</span></a>
+    <a class="doc-link" href="{{docURL $.Base $.Pack .path}}">
+      {{.title}}
+      <span>{{.path}}</span>
+    </a>
   {{end}}
   </div>
 {{end}}
@@ -78,7 +92,7 @@ const loginTemplate = `{{define "content"}}
 <h1>World Harness</h1>
 <p class="lede">Private story runtime</p>
 {{if .Error}}<p class="error">{{.Error}}</p>{{end}}
-<form method="post" class="panel" style="max-width:420px">
+  <form method="post" class="panel" style="max-width:420px">
   <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
   <label class="muted">Username</label>
   <input name="username" autocomplete="username" required autofocus>
@@ -92,7 +106,11 @@ const storyLobbyTemplate = `{{define "content"}}
 <h1>스토리</h1>
 <p class="lede">세계관 문서를 읽고, 실시간 스토리 룸에서 장면 단위로 진행합니다.</p>
 <div class="toolbar story-lobby-actions">
-  {{if .User}}<a class="button story-lobby-primary-action" href="{{.Base}}/stories/new">새 스토리</a>{{else if .AuthEnabled}}<a class="button story-lobby-primary-action" href="{{.Base}}/login">로그인</a>{{end}}
+  {{if .User}}
+  <a class="button story-lobby-primary-action" href="{{.Base}}/stories/new">새 스토리</a>
+  {{else if .AuthEnabled}}
+  <a class="button story-lobby-primary-action" href="{{.Base}}/login">로그인</a>
+  {{end}}
   <a class="button secondary story-lobby-refresh-action" href="{{.Base}}/stories">새로고침</a>
 </div>
 {{if .IsAnonymous}}<p class="muted">로그인하지 않아도 스토리 목록과 세계관은 읽을 수 있습니다. 새 스토리 생성과 진행은 로그인 후 가능합니다.</p>{{end}}
@@ -123,7 +141,9 @@ const storyLobbyTemplate = `{{define "content"}}
       <div class="story-card-summary">{{.Summary}}</div>
       <div class="story-card-foot">
         <div class="story-card-updated muted">업데이트 {{.Updated}}</div>
-        <div class="story-card-actions"><a class="button" href="{{storyURL $.Base .ID}}">입장하기</a></div>
+        <div class="story-card-actions">
+          <a class="button" href="{{storyURL $.Base .ID}}">입장하기</a>
+        </div>
       </div>
     </article>
   {{else}}
@@ -139,7 +159,16 @@ const newStoryTemplate = `{{define "content"}}
   <div class="form-grid">
     <div><label class="muted">세계관</label><input value="lumen-federation" disabled></div>
     <div><label class="muted">제목</label><input name="title" placeholder="새 스토리"></div>
-    <div><label class="muted">스타일</label><select name="style"><option value="조사극">조사극</option><option value="생존극">생존극</option><option value="행정/법정극">행정/법정극</option><option value="앙상블">앙상블</option><option value="자유">자유</option></select></div>
+    <div>
+      <label class="muted">스타일</label>
+      <select name="style">
+        <option value="조사극">조사극</option>
+        <option value="생존극">생존극</option>
+        <option value="행정/법정극">행정/법정극</option>
+        <option value="앙상블">앙상블</option>
+        <option value="자유">자유</option>
+      </select>
+    </div>
     <div><label class="muted">캐릭터 이름</label><input name="character_name" placeholder="캐릭터 이름"></div>
   </div>
   <label class="muted">특징 / 취향</label>
@@ -179,9 +208,13 @@ const adminUsersTemplate = `{{define "content"}}
   <tbody>
     {{range .Users}}
     <tr>
-      <td>{{.username}}<br><span class="muted">{{.id}}</span></td>
+      <td>
+        {{.username}}<br><span class="muted">{{.id}}</span>
+      </td>
       <td>{{.display_name}}</td>
-      <td><span class="badge">{{.role}}</span> <span class="badge">{{.status}}</span></td>
+      <td>
+        <span class="badge">{{.role}}</span> <span class="badge">{{.status}}</span>
+      </td>
       <td class="muted">{{.last_login_at}}</td>
       <td>{{.active_sessions}}</td>
       <td>

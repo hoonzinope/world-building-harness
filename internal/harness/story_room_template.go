@@ -2,8 +2,21 @@ package harness
 
 const storyRoomTemplate = `{{define "content"}}
 <style>{{.BaseStyles}}</style>
-<div id="story-room" class="story-room-shell" data-story-room data-story-id="{{.Story.ID}}" data-status-url="{{.StatusURL}}" data-current-turn="{{.Story.CurrentTurn}}" data-initial-processing="{{if .IsProcessing}}true{{else}}false{{end}}">
-  {{if .IsAnonymous}}<div class="panel status-panel"><strong>읽기 전용</strong><p>로그인하면 진행, 질문, 진행권, 관리 기능을 사용할 수 있습니다.</p></div>{{end}}
+<div
+  id="story-room"
+  class="story-room-shell"
+  data-story-room
+  data-story-id="{{.Story.ID}}"
+  data-status-url="{{.StatusURL}}"
+  data-current-turn="{{.Story.CurrentTurn}}"
+  data-initial-processing="{{if .IsProcessing}}true{{else}}false{{end}}"
+>
+  {{if .IsAnonymous}}
+  <div class="panel status-panel">
+    <strong>읽기 전용</strong>
+    <p>로그인하면 진행, 질문, 진행권, 관리 기능을 사용할 수 있습니다.</p>
+  </div>
+  {{end}}
   <div class="story-room-header">
     <div class="story-room-headline">
       <h1>{{.Story.Title}}</h1>
@@ -16,14 +29,86 @@ const storyRoomTemplate = `{{define "content"}}
       </div>
     </div>
     <div class="driver-actions">
-      {{if .CanClaim}}<form method="post" action="{{.Base}}/stories/{{.Story.ID}}/driver"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><input type="hidden" name="action" value="claim"><button>진행권 받기</button></form>{{end}}
-      {{if .CanRelease}}<form method="post" action="{{.Base}}/stories/{{.Story.ID}}/driver"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><input type="hidden" name="action" value="release"><button class="secondary">진행권 내려놓기</button></form>{{end}}
+      {{if .CanClaim}}
+      <form method="post" action="{{.Base}}/stories/{{.Story.ID}}/driver">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <input type="hidden" name="action" value="claim">
+        <button>진행권 받기</button>
+      </form>
+      {{end}}
+      {{if .CanRelease}}
+      <form method="post" action="{{.Base}}/stories/{{.Story.ID}}/driver">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <input type="hidden" name="action" value="release">
+        <button class="secondary">진행권 내려놓기</button>
+      </form>
+      {{end}}
     </div>
   </div>
-  {{if .IsProcessing}}<div class="panel status-panel"><strong>GM 생성 중</strong><p>요청이 접수되었습니다. 생성이 끝나면 최신 턴이 갱신됩니다.</p></div>{{end}}
-  {{if .FailedJob}}{{if .FailedJob.CanRecover}}<div class="panel status-panel"><strong>GM 생성 실패</strong><p>현재 작업이 실패 상태입니다. 복구를 진행하거나 취소할 수 있습니다.</p><div class="toolbar"><form method="post" action="{{.Base}}/stories/{{.Story.ID}}/recover"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><input type="hidden" name="action" value="resume"><button>resume</button></form><form method="post" action="{{.Base}}/stories/{{.Story.ID}}/recover"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><input type="hidden" name="action" value="cancel"><button class="secondary">cancel</button></form></div></div>{{else}}<div class="panel status-panel"><strong>GM 생성 실패</strong><p>현재 작업이 실패 상태입니다. 새 진행 입력은 실패 작업 처리 후 가능합니다.</p></div>{{end}}{{end}}
-  {{if .ExportedBundle}}<div class="panel status-panel"><strong>Export handoff</strong><p>Bundle exported to <code>{{.ExportedBundle}}</code>.</p><p class="muted">Draft creation is pending/manual via the admin writer path. An admin can now create the draft with story export-draft through the writer path.</p><p class="muted">Target draft: <code>{{.ExportDraftTarget}}</code> · status: <span class="badge">{{if .ExportedStatus}}{{.ExportedStatus}}{{else}}draft_pending{{end}}</span></p></div>{{end}}
-  {{if .RecoveryStatus}}<div class="panel status-panel"><strong>Store recovery</strong><p>Recovery status: <span class="badge">{{.RecoveryStatus}}</span></p>{{if .RecoveryMessage}}<p>{{.RecoveryMessage}}</p>{{end}}<p class="muted">Checked files: {{range $i, $v := .RecoveryChecked}}{{if $i}}, {{end}}<code>{{$v}}</code>{{end}}</p>{{if .RecoveryRepaired}}<p class="muted">Repaired items: {{range $i, $v := .RecoveryRepaired}}{{if $i}}, {{end}}<code>{{$v}}</code>{{end}}</p>{{else}}<p class="muted">No file tails needed repair.</p>{{end}}{{if .RecoveryLockRemoved}}<p class="muted">Stale lock.json was removed.</p>{{end}}</div>{{end}}
+  {{if .IsProcessing}}
+  <div class="panel status-panel">
+    <strong>GM 생성 중</strong>
+    <p>요청이 접수되었습니다. 생성이 끝나면 최신 턴이 갱신됩니다.</p>
+  </div>
+  {{end}}
+  {{if .FailedJob}}
+    {{if .FailedJob.CanRecover}}
+    <div class="panel status-panel">
+      <strong>GM 생성 실패</strong>
+      <p>현재 작업이 실패 상태입니다. 복구를 진행하거나 취소할 수 있습니다.</p>
+      <div class="toolbar">
+        <form method="post" action="{{.Base}}/stories/{{.Story.ID}}/recover">
+          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          <input type="hidden" name="action" value="resume">
+          <button>resume</button>
+        </form>
+        <form method="post" action="{{.Base}}/stories/{{.Story.ID}}/recover">
+          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          <input type="hidden" name="action" value="cancel">
+          <button class="secondary">cancel</button>
+        </form>
+      </div>
+    </div>
+    {{else}}
+    <div class="panel status-panel">
+      <strong>GM 생성 실패</strong>
+      <p>현재 작업이 실패 상태입니다. 새 진행 입력은 실패 작업 처리 후 가능합니다.</p>
+    </div>
+    {{end}}
+  {{end}}
+  {{if .ExportedBundle}}
+  <div class="panel status-panel">
+    <strong>Export handoff</strong>
+    <p>Bundle exported to <code>{{.ExportedBundle}}</code>.</p>
+    <p class="muted">
+      Draft creation is pending/manual via the admin writer path. An admin can now create the draft with story export-draft through the writer path.
+    </p>
+    <p class="muted">
+      Target draft: <code>{{.ExportDraftTarget}}</code> · status:
+      <span class="badge">{{if .ExportedStatus}}{{.ExportedStatus}}{{else}}draft_pending{{end}}</span>
+    </p>
+  </div>
+  {{end}}
+  {{if .RecoveryStatus}}
+  <div class="panel status-panel">
+    <strong>Store recovery</strong>
+    <p>Recovery status: <span class="badge">{{.RecoveryStatus}}</span></p>
+    {{if .RecoveryMessage}}<p>{{.RecoveryMessage}}</p>{{end}}
+    <p class="muted">
+      Checked files:
+      {{range $i, $v := .RecoveryChecked}}{{if $i}}, {{end}}<code>{{$v}}</code>{{end}}
+    </p>
+    {{if .RecoveryRepaired}}
+    <p class="muted">
+      Repaired items:
+      {{range $i, $v := .RecoveryRepaired}}{{if $i}}, {{end}}<code>{{$v}}</code>{{end}}
+    </p>
+    {{else}}
+    <p class="muted">No file tails needed repair.</p>
+    {{end}}
+    {{if .RecoveryLockRemoved}}<p class="muted">Stale lock.json was removed.</p>{{end}}
+  </div>
+  {{end}}
   <div class="story-room-grid">
     <section class="current-turn-column">
       {{with .LatestTurn}}
@@ -33,19 +118,60 @@ const storyRoomTemplate = `{{define "content"}}
             <span class="current-turn-turn">현재 턴 {{.TurnID}}</span>
             <span class="current-turn-title">{{sceneJournalTitle .TurnID .SceneTitle}}</span>
           </div>
-          <div class="current-turn-meta"><span>{{storyTurnTimestamp .CreatedAt}}</span><span>·</span><span>{{friendlyStoryEventKindLabel .Source}}</span></div>
+          <div class="current-turn-meta">
+            <span>{{storyTurnTimestamp .CreatedAt}}</span>
+            <span>·</span>
+            <span>{{friendlyStoryEventKindLabel .Source}}</span>
+          </div>
         </div>
         <div class="current-turn-body">
           <div class="scene">{{.SceneBody}}</div>
           <div class="current-turn-flow">
-            <div class="turn-section"><strong>현재 상황</strong><p>{{.CurrentSituation}}</p></div>
-            {{if .RevealedFacts}}<div class="turn-section"><strong>이번 턴에서 확인된 정보</strong><ul>{{range .RevealedFacts}}<li>{{.}}</li>{{end}}</ul></div>{{end}}
-            {{if .Choices}}<div class="turn-section"><strong>다음 갈림길</strong>{{if $.IsAnonymous}}<div class="choice-list">{{range .Choices}}<div class="choice-card choice-card-archived"><span class="choice-card-letter">{{.ID}}</span><span class="choice-card-copy"><strong>{{.Text}}</strong>{{if .RiskHint}}<span class="choice-card-risk">위험: {{.RiskHint}}</span>{{end}}</span></div>{{end}}</div>{{else}}<p class="muted">아래 입력 패널에서 선택지 제출 또는 직접 입력을 할 수 있습니다.</p>{{end}}</div>{{end}}
+            <div class="turn-section">
+              <strong>현재 상황</strong>
+              <p>{{.CurrentSituation}}</p>
+            </div>
+            {{if .RevealedFacts}}
+            <div class="turn-section">
+              <strong>이번 턴에서 확인된 정보</strong>
+              <ul>{{range .RevealedFacts}}<li>{{.}}</li>{{end}}</ul>
+            </div>
+            {{end}}
+            {{if .Choices}}
+            <div class="turn-section">
+              <strong>다음 갈림길</strong>
+              {{if $.IsAnonymous}}
+              <div class="choice-list">
+                {{range .Choices}}
+                <div class="choice-card choice-card-archived">
+                  <span class="choice-card-letter">{{.ID}}</span>
+                  <span class="choice-card-copy">
+                    <strong>{{.Text}}</strong>
+                    {{if .RiskHint}}<span class="choice-card-risk">위험: {{.RiskHint}}</span>{{end}}
+                  </span>
+                </div>
+                {{end}}
+              </div>
+              {{else}}
+              <p class="muted">아래 입력 패널에서 선택지 제출 또는 직접 입력을 할 수 있습니다.</p>
+              {{end}}
+            </div>
+            {{end}}
           </div>
         </div>
       </section>
-      {{else}}<div class="panel current-turn-panel" id="turn-0"><strong>아직 턴이 없습니다.</strong><p class="muted">최초 턴이 생성되면 여기에서 본문과 선택지가 표시됩니다.</p></div>{{end}}
-      <section class="story-composer" id="input-panel" aria-busy="{{if .Progress.IsProcessing}}true{{else}}false{{end}}" data-story-input-panel>
+      {{else}}
+      <div class="panel current-turn-panel" id="turn-0">
+        <strong>아직 턴이 없습니다.</strong>
+        <p class="muted">최초 턴이 생성되면 여기에서 본문과 선택지가 표시됩니다.</p>
+      </div>
+      {{end}}
+      <section
+        class="story-composer"
+        id="input-panel"
+        aria-busy="{{if .Progress.IsProcessing}}true{{else}}false{{end}}"
+        data-story-input-panel
+      >
         <div class="panel status-panel story-progress" id="story-progress" role="status" aria-live="polite" aria-atomic="true" aria-busy="{{if .Progress.IsProcessing}}true{{else}}false{{end}}" data-story-progress data-status-url="{{.StatusURL}}" data-step-index="{{.Progress.StepIndex}}" data-step-label="{{.Progress.StepLabel}}" data-active-job-id="{{.Progress.ActiveJobID}}" data-active-job-status="{{.Progress.ActiveJobStatus}}" data-active-job-type="{{.Progress.ActiveJobType}}" data-next-poll-ms="{{.Progress.NextPollMS}}">
           <div class="progress-loader">
             <span class="progress-loader-dot" aria-hidden="true"></span>
@@ -55,8 +181,16 @@ const storyRoomTemplate = `{{define "content"}}
             </div>
           </div>
           <p class="story-progress-message" data-story-progress-message>{{.Progress.ProgressMessage}}</p>
-          <p class="muted story-progress-meta" data-story-progress-meta hidden><code data-story-progress-job-id>{{.Progress.ActiveJobID}}</code>{{if .Progress.ActiveJobType}}<span data-story-progress-job-type>{{.Progress.ActiveJobType}}</span>{{end}}{{if .Progress.ActiveJobStatus}}<span data-story-progress-job-status>{{.Progress.ActiveJobStatus}}</span>{{end}}{{if gt .Progress.ActiveJobTurnID 0}}<span data-story-progress-turn>{{.Progress.ActiveJobTurnID}}</span>{{end}}{{if .Progress.PendingQuestions}}<span data-story-progress-pending-count>{{len .Progress.PendingQuestions}}</span>{{end}}</p>
-          <div class="toolbar story-progress-actions"><button type="button" class="secondary" hidden data-story-refresh>새 내용 표시</button></div>
+          <p class="muted story-progress-meta" data-story-progress-meta hidden>
+            <code data-story-progress-job-id>{{.Progress.ActiveJobID}}</code>
+            {{if .Progress.ActiveJobType}}<span data-story-progress-job-type>{{.Progress.ActiveJobType}}</span>{{end}}
+            {{if .Progress.ActiveJobStatus}}<span data-story-progress-job-status>{{.Progress.ActiveJobStatus}}</span>{{end}}
+            {{if gt .Progress.ActiveJobTurnID 0}}<span data-story-progress-turn>{{.Progress.ActiveJobTurnID}}</span>{{end}}
+            {{if .Progress.PendingQuestions}}<span data-story-progress-pending-count>{{len .Progress.PendingQuestions}}</span>{{end}}
+          </p>
+          <div class="toolbar story-progress-actions">
+            <button type="button" class="secondary" hidden data-story-refresh>새 내용 표시</button>
+          </div>
         </div>
         {{if .CanDrive}}
         <div class="panel story-composer-panel">
@@ -65,7 +199,33 @@ const storyRoomTemplate = `{{define "content"}}
               <strong>선택 제출</strong>
               <span class="muted">A/B/C/D를 바로 보낼 수 있습니다.</span>
             </div>
-            <div class="choice-list">{{with .LatestTurn}}{{range .Choices}}{{if .}}<form method="post" action="{{$.Base}}/stories/{{$.Story.ID}}/input" class="story-choice-form" data-story-submit data-story-submit-kind="choice"><input type="hidden" name="csrf_token" value="{{$.CSRFToken}}"><input type="hidden" name="turn_id" value="{{$.LatestTurnID}}"><input type="hidden" name="idempotency_key" value="{{idem}}"><input type="hidden" name="choice_id" value="{{.ID}}"><button class="choice-card" type="submit" data-story-choice-button {{if $.Progress.IsProcessing}}disabled{{end}}><span class="choice-card-letter">{{.ID}}</span><span class="choice-card-copy"><strong>{{.Text}}</strong>{{if .RiskHint}}<span class="choice-card-risk">위험: {{.RiskHint}}</span>{{end}}</span></button></form>{{end}}{{end}}{{end}}</div>
+            <div class="choice-list">
+              {{with .LatestTurn}}
+                {{range .Choices}}
+                  {{if .}}
+                  <form
+                    method="post"
+                    action="{{$.Base}}/stories/{{$.Story.ID}}/input"
+                    class="story-choice-form"
+                    data-story-submit
+                    data-story-submit-kind="choice"
+                  >
+                    <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+                    <input type="hidden" name="turn_id" value="{{$.LatestTurnID}}">
+                    <input type="hidden" name="idempotency_key" value="{{idem}}">
+                    <input type="hidden" name="choice_id" value="{{.ID}}">
+                    <button class="choice-card" type="submit" data-story-choice-button {{if $.Progress.IsProcessing}}disabled{{end}}>
+                      <span class="choice-card-letter">{{.ID}}</span>
+                      <span class="choice-card-copy">
+                        <strong>{{.Text}}</strong>
+                        {{if .RiskHint}}<span class="choice-card-risk">위험: {{.RiskHint}}</span>{{end}}
+                      </span>
+                    </button>
+                  </form>
+                  {{end}}
+                {{end}}
+              {{end}}
+            </div>
           </div>
           <div class="story-input-divider" aria-hidden="true"></div>
           <div class="story-custom-input-panel">
@@ -73,31 +233,54 @@ const storyRoomTemplate = `{{define "content"}}
               <strong>직접 입력</strong>
               <span class="muted">모드 선택 후 내용을 제출합니다.</span>
             </div>
-            <form method="post" action="{{.Base}}/stories/{{.Story.ID}}/input" class="story-input-form" data-story-submit data-story-submit-kind="input">
+            <form
+              method="post"
+              action="{{.Base}}/stories/{{.Story.ID}}/input"
+              class="story-input-form"
+              data-story-submit
+              data-story-submit-kind="input"
+            >
               <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
               <input type="hidden" name="turn_id" value="{{.LatestTurnID}}">
               <input type="hidden" name="idempotency_key" value="{{idem}}">
-            <div class="form-grid">
-              <div>
-                <label class="muted">모드</label>
-                <div class="mode-tabs" role="radiogroup" aria-label="입력 모드">
-                  <label><input type="radio" name="mode" value="action" checked {{if $.Progress.IsProcessing}}disabled{{end}}><span>행동</span></label>
-                  <label><input type="radio" name="mode" value="dialogue" {{if $.Progress.IsProcessing}}disabled{{end}}><span>대사</span></label>
-                  <label><input type="radio" name="mode" value="question" {{if $.Progress.IsProcessing}}disabled{{end}}><span>질문</span></label>
-                  <label><input type="radio" name="mode" value="narration" {{if $.Progress.IsProcessing}}disabled{{end}}><span>서술 보정</span></label>
+              <div class="form-grid">
+                <div>
+                  <label class="muted">모드</label>
+                  <div class="mode-tabs" role="radiogroup" aria-label="입력 모드">
+                    <label><input type="radio" name="mode" value="action" checked {{if $.Progress.IsProcessing}}disabled{{end}}><span>행동</span></label>
+                    <label><input type="radio" name="mode" value="dialogue" {{if $.Progress.IsProcessing}}disabled{{end}}><span>대사</span></label>
+                    <label><input type="radio" name="mode" value="question" {{if $.Progress.IsProcessing}}disabled{{end}}><span>질문</span></label>
+                    <label><input type="radio" name="mode" value="narration" {{if $.Progress.IsProcessing}}disabled{{end}}><span>서술 보정</span></label>
+                  </div>
                 </div>
               </div>
-            </div>
-            <textarea name="custom_text" data-story-custom-textarea placeholder="플레이어 캐릭터가 시도하는 행동/대사/서술/질문" {{if $.Progress.IsProcessing}}disabled{{end}}></textarea>
-            <div class="toolbar story-composer-actions">
-              <button type="submit" {{if $.Progress.IsProcessing}}disabled{{end}}>선택 또는 직접 입력 제출</button>
-            </div>
+              <textarea
+                name="custom_text"
+                data-story-custom-textarea
+                placeholder="플레이어 캐릭터가 시도하는 행동/대사/서술/질문"
+                {{if $.Progress.IsProcessing}}disabled{{end}}
+              ></textarea>
+              <div class="toolbar story-composer-actions">
+                <button type="submit" {{if $.Progress.IsProcessing}}disabled{{end}}>선택 또는 직접 입력 제출</button>
+              </div>
             </form>
           </div>
         </div>
-        {{else}}{{if .IsAnonymous}}<p class="muted">로그인하면 진행권을 받고 직접 입력할 수 있습니다.</p>{{else}}{{if .IsProcessing}}<p class="muted">GM 생성 중입니다. 완료되면 자동으로 최신 턴이 갱신됩니다.</p>{{else}}{{if .CanClaim}}<p class="muted">현재 진행권이 비어 있습니다. 진행권을 받은 뒤 입력할 수 있습니다.</p>{{else}}<p class="muted">현재 {{.DriverLabel}}가 진행 중입니다. 진행 입력은 비활성화되어 있습니다.</p>{{end}}{{end}}{{end}}{{end}}
+        {{else}}
+          {{if .IsAnonymous}}
+          <p class="muted">로그인하면 진행권을 받고 직접 입력할 수 있습니다.</p>
+          {{else if .IsProcessing}}
+          <p class="muted">GM 생성 중입니다. 완료되면 자동으로 최신 턴이 갱신됩니다.</p>
+          {{else if .CanClaim}}
+          <p class="muted">현재 진행권이 비어 있습니다. 진행권을 받은 뒤 입력할 수 있습니다.</p>
+          {{else}}
+          <p class="muted">현재 {{.DriverLabel}}가 진행 중입니다. 진행 입력은 비활성화되어 있습니다.</p>
+          {{end}}
+        {{end}}
         <h2 id="qa">질문</h2>
-        {{if .CanDrive}}<p class="muted">질문은 직접 입력에서 question 모드를 선택해 제출할 수 있습니다.</p>{{else}}{{if .CanQuestion}}
+        {{if .CanDrive}}
+        <p class="muted">질문은 직접 입력에서 question 모드를 선택해 제출할 수 있습니다.</p>
+        {{else if .CanQuestion}}
         <form method="post" action="{{.Base}}/stories/{{.Story.ID}}/question" class="panel story-composer-panel" data-story-submit data-story-submit-kind="question">
           <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
           <input type="hidden" name="turn_id" value="{{.LatestTurnID}}">
@@ -105,35 +288,92 @@ const storyRoomTemplate = `{{define "content"}}
           <textarea name="question" data-story-question-textarea placeholder="현재 상황, 인물, 단서, 설정, 선택지 의미를 묻는 비진행 질문"></textarea>
           <div class="toolbar"><button class="secondary" type="submit">질문 제출</button></div>
         </form>
-        {{else}}{{if .IsAnonymous}}<p class="muted">로그인하면 질문을 보낼 수 있습니다.</p>{{else}}{{if .IsProcessing}}<p class="muted">GM 생성 중에는 질문 제출도 잠시 막습니다.</p>{{else}}<p class="muted">completed/archived/deleted room에서는 새 질문을 받지 않습니다.</p>{{end}}{{end}}{{end}}{{end}}
-        {{range .QA}}<div class="panel"><div class="muted">{{storyTurnTimestamp .CreatedAt}} · 턴 {{.TurnID}}</div><strong>Q. {{.Question}}</strong><p>A. {{.Answer}}</p></div>{{end}}
+        {{else if .IsAnonymous}}
+        <p class="muted">로그인하면 질문을 보낼 수 있습니다.</p>
+        {{else if .IsProcessing}}
+        <p class="muted">GM 생성 중에는 질문 제출도 잠시 막습니다.</p>
+        {{else}}
+        <p class="muted">completed/archived/deleted room에서는 새 질문을 받지 않습니다.</p>
+        {{end}}
+        {{range .QA}}
+        <div class="panel">
+          <div class="muted">{{storyTurnTimestamp .CreatedAt}} · 턴 {{.TurnID}}</div>
+          <strong>Q. {{.Question}}</strong>
+          <p>A. {{.Answer}}</p>
+        </div>
+        {{end}}
       </section>
     </section>
     <aside class="turn-sidebar">
       <section class="turn-timeline-panel panel">
         <h2>턴 타임라인</h2>
-        {{if .Turns}}<nav class="turn-timeline" aria-label="turn timeline">
-          {{range .Turns}}<a class="turn-timeline-link" href="#turn-{{.TurnID}}"{{if eq .TurnID $.LatestTurnID}} aria-current="true"{{end}}><span class="turn-timeline-turn">턴 {{.TurnID}}</span><span class="turn-timeline-title">{{sceneIndexTitle .TurnID .SceneTitle}}</span></a>{{end}}
-        </nav>{{else}}<p class="muted">아직 턴이 없습니다.</p>{{end}}
+        {{if .Turns}}
+        <nav class="turn-timeline" aria-label="turn timeline">
+          {{range .Turns}}
+          <a class="turn-timeline-link" href="#turn-{{.TurnID}}"{{if eq .TurnID $.LatestTurnID}} aria-current="true"{{end}}>
+            <span class="turn-timeline-turn">턴 {{.TurnID}}</span>
+            <span class="turn-timeline-title">{{sceneIndexTitle .TurnID .SceneTitle}}</span>
+          </a>
+          {{end}}
+        </nav>
+        {{else}}
+        <p class="muted">아직 턴이 없습니다.</p>
+        {{end}}
       </section>
       <section class="previous-turns-panel panel">
         <h2>이전 턴</h2>
-        {{if .PreviousTurns}}<div class="previous-turns">
-          {{range .PreviousTurns}}<details class="previous-turn" id="turn-{{.TurnID}}">
+        {{if .PreviousTurns}}
+        <div class="previous-turns">
+          {{range .PreviousTurns}}
+          <details class="previous-turn" id="turn-{{.TurnID}}">
             <summary>
               <span class="previous-turn-head">
-                <span class="previous-turn-label"><span class="previous-turn-turn">턴 {{.TurnID}}</span><span class="previous-turn-title">{{sceneJournalTitle .TurnID .SceneTitle}}</span></span>
-                <span class="previous-turn-meta"><span>{{storyTurnTimestamp .CreatedAt}}</span><span>·</span><span>{{friendlyStoryEventKindLabel .Source}}</span></span>
+                <span class="previous-turn-label">
+                  <span class="previous-turn-turn">턴 {{.TurnID}}</span>
+                  <span class="previous-turn-title">{{sceneJournalTitle .TurnID .SceneTitle}}</span>
+                </span>
+                <span class="previous-turn-meta">
+                  <span>{{storyTurnTimestamp .CreatedAt}}</span>
+                  <span>·</span>
+                  <span>{{friendlyStoryEventKindLabel .Source}}</span>
+                </span>
               </span>
             </summary>
             <div class="previous-turn-body">
               <div class="scene">{{.SceneBody}}</div>
-              <div class="turn-section"><strong>현재 상황</strong><p>{{.CurrentSituation}}</p></div>
-              {{if .RevealedFacts}}<div class="turn-section"><strong>이번 턴에서 확인된 정보</strong><ul>{{range .RevealedFacts}}<li>{{.}}</li>{{end}}</ul></div>{{end}}
-              {{if .Choices}}<div class="turn-section"><strong>기록된 선택지</strong><div class="choice-list">{{range .Choices}}<div class="choice-card choice-card-archived"><span class="choice-card-letter">{{.ID}}</span><span class="choice-card-copy"><strong>{{.Text}}</strong>{{if .RiskHint}}<span class="choice-card-risk">위험: {{.RiskHint}}</span>{{end}}</span></div>{{end}}</div></div>{{end}}
+              <div class="turn-section">
+                <strong>현재 상황</strong>
+                <p>{{.CurrentSituation}}</p>
+              </div>
+              {{if .RevealedFacts}}
+              <div class="turn-section">
+                <strong>이번 턴에서 확인된 정보</strong>
+                <ul>{{range .RevealedFacts}}<li>{{.}}</li>{{end}}</ul>
+              </div>
+              {{end}}
+              {{if .Choices}}
+              <div class="turn-section">
+                <strong>기록된 선택지</strong>
+                <div class="choice-list">
+                  {{range .Choices}}
+                  <div class="choice-card choice-card-archived">
+                    <span class="choice-card-letter">{{.ID}}</span>
+                    <span class="choice-card-copy">
+                      <strong>{{.Text}}</strong>
+                      {{if .RiskHint}}<span class="choice-card-risk">위험: {{.RiskHint}}</span>{{end}}
+                    </span>
+                  </div>
+                  {{end}}
+                </div>
+              </div>
+              {{end}}
             </div>
-          </details>{{end}}
-        </div>{{else}}<p class="muted">아직 이전 턴이 없습니다.</p>{{end}}
+          </details>
+          {{end}}
+        </div>
+        {{else}}
+        <p class="muted">아직 이전 턴이 없습니다.</p>
+        {{end}}
       </section>
     </aside>
     <aside class="dossier-stack" aria-label="dossier">
@@ -157,10 +397,101 @@ const storyRoomTemplate = `{{define "content"}}
         <h3>위험</h3>
         <ul>{{range .State.Risks}}<li>{{.}}</li>{{end}}</ul>
       </section>
-      {{if .IsAdmin}}<section class="dossier-panel panel"><h3>관리</h3><form method="post" action="{{.Base}}/stories/{{.Story.ID}}/admin"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><input type="hidden" name="action" value="update"><label class="muted">상태</label><select name="status"><option value="">변경 없음</option><option value="active">진행 중</option><option value="paused">일시 정지</option><option value="completed">완료</option><option value="archived">보관됨</option></select><label class="muted">진행자 ID</label><input name="active_driver_id" placeholder="{{.DriverLabel}}"><div class="toolbar"><button>적용</button></div></form><form method="post" action="{{.Base}}/stories/{{.Story.ID}}/admin"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><input type="hidden" name="action" value="update"><input type="hidden" name="active_driver_id" value="__open__"><button class="secondary">진행자 비우기</button></form>{{if .CanAdminMutate}}{{with .LatestTurn}}<form method="post" action="{{$.Base}}/stories/{{$.Story.ID}}/admin"><input type="hidden" name="csrf_token" value="{{$.CSRFToken}}"><input type="hidden" name="action" value="edit_turn"><label class="muted">현재 턴 {{$.LatestTurnID}} 편집</label><label class="muted">장면 본문</label><textarea name="scene_body">{{.SceneBody}}</textarea><label class="muted">현재 상황</label><textarea name="current_situation">{{.CurrentSituation}}</textarea><div class="toolbar"><button class="secondary">편집 저장</button></div></form>{{end}}<form method="post" action="{{.Base}}/stories/{{.Story.ID}}/admin"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><input type="hidden" name="action" value="rollback_turn"><label class="muted">되돌릴 턴</label><select name="turn_id">{{range .Turns}}<option value="{{.TurnID}}" {{if eq .TurnID $.LatestTurnID}}selected{{end}}>턴 {{.TurnID}}</option>{{end}}</select><div class="toolbar"><button class="secondary">되돌리기</button></div></form>{{else if .IsProcessing}}<p class="muted">GM 생성 중에는 편집과 롤백을 막습니다.</p>{{end}}<div class="toolbar admin-action-grid">{{if or (eq .Story.Status "archived") (eq .Story.Status "deleted")}}<form method="post" action="{{.Base}}/stories/{{.Story.ID}}/admin"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><input type="hidden" name="action" value="restore"><button>복구</button></form>{{else}}<form method="post" action="{{.Base}}/stories/{{.Story.ID}}/admin"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><input type="hidden" name="action" value="archive"><button>보관</button></form>{{end}}{{if ne .Story.Status "deleted"}}<form method="post" action="{{.Base}}/stories/{{.Story.ID}}/admin"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><input type="hidden" name="action" value="delete"><button class="secondary">삭제</button></form>{{end}}<form method="post" action="{{.Base}}/stories/{{.Story.ID}}/admin"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><input type="hidden" name="action" value="export_bundle"><button class="secondary">번들 내보내기</button></form><form method="post" action="{{.Base}}/stories/{{.Story.ID}}/admin"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><input type="hidden" name="action" value="recover_store"><button class="secondary">저장소 복구</button></form></div></section>{{end}}
+      {{if .IsAdmin}}
+      <section class="dossier-panel panel">
+        <h3>관리</h3>
+        <form method="post" action="{{.Base}}/stories/{{.Story.ID}}/admin">
+          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          <input type="hidden" name="action" value="update">
+          <label class="muted">상태</label>
+          <select name="status">
+            <option value="">변경 없음</option>
+            <option value="active">진행 중</option>
+            <option value="paused">일시 정지</option>
+            <option value="completed">완료</option>
+            <option value="archived">보관됨</option>
+          </select>
+          <label class="muted">진행자 ID</label>
+          <input name="active_driver_id" placeholder="{{.DriverLabel}}">
+          <div class="toolbar"><button>적용</button></div>
+        </form>
+        <form method="post" action="{{.Base}}/stories/{{.Story.ID}}/admin">
+          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          <input type="hidden" name="action" value="update">
+          <input type="hidden" name="active_driver_id" value="__open__">
+          <button class="secondary">진행자 비우기</button>
+        </form>
+        {{if .CanAdminMutate}}
+          {{with .LatestTurn}}
+          <form method="post" action="{{$.Base}}/stories/{{$.Story.ID}}/admin">
+            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+            <input type="hidden" name="action" value="edit_turn">
+            <label class="muted">현재 턴 {{$.LatestTurnID}} 편집</label>
+            <label class="muted">장면 본문</label>
+            <textarea name="scene_body">{{.SceneBody}}</textarea>
+            <label class="muted">현재 상황</label>
+            <textarea name="current_situation">{{.CurrentSituation}}</textarea>
+            <div class="toolbar"><button class="secondary">편집 저장</button></div>
+          </form>
+          {{end}}
+          <form method="post" action="{{.Base}}/stories/{{.Story.ID}}/admin">
+            <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+            <input type="hidden" name="action" value="rollback_turn">
+            <label class="muted">되돌릴 턴</label>
+            <select name="turn_id">
+              {{range .Turns}}<option value="{{.TurnID}}" {{if eq .TurnID $.LatestTurnID}}selected{{end}}>턴 {{.TurnID}}</option>{{end}}
+            </select>
+            <div class="toolbar"><button class="secondary">되돌리기</button></div>
+          </form>
+        {{else if .IsProcessing}}
+        <p class="muted">GM 생성 중에는 편집과 롤백을 막습니다.</p>
+        {{end}}
+        <div class="toolbar admin-action-grid">
+          {{if or (eq .Story.Status "archived") (eq .Story.Status "deleted")}}
+          <form method="post" action="{{.Base}}/stories/{{.Story.ID}}/admin">
+            <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+            <input type="hidden" name="action" value="restore">
+            <button>복구</button>
+          </form>
+          {{else}}
+          <form method="post" action="{{.Base}}/stories/{{.Story.ID}}/admin">
+            <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+            <input type="hidden" name="action" value="archive">
+            <button>보관</button>
+          </form>
+          {{end}}
+          {{if ne .Story.Status "deleted"}}
+          <form method="post" action="{{.Base}}/stories/{{.Story.ID}}/admin">
+            <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+            <input type="hidden" name="action" value="delete">
+            <button class="secondary">삭제</button>
+          </form>
+          {{end}}
+          <form method="post" action="{{.Base}}/stories/{{.Story.ID}}/admin">
+            <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+            <input type="hidden" name="action" value="export_bundle">
+            <button class="secondary">번들 내보내기</button>
+          </form>
+          <form method="post" action="{{.Base}}/stories/{{.Story.ID}}/admin">
+            <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+            <input type="hidden" name="action" value="recover_store">
+            <button class="secondary">저장소 복구</button>
+          </form>
+        </div>
+      </section>
+      {{end}}
     </aside>
   </div>
-  {{if .HasTurns}}<div class="mobile-action-dock"><a class="button secondary" href="#turn-{{.LatestTurnID}}">현재 턴</a><a class="button" href="#input-panel">입력/질문</a></div>{{else}}<div class="mobile-action-dock"><a class="button" href="#input-panel">입력/질문</a></div>{{end}}
+  {{if .HasTurns}}
+  <div class="mobile-action-dock">
+    <a class="button secondary" href="#turn-{{.LatestTurnID}}">현재 턴</a>
+    <a class="button" href="#input-panel">입력/질문</a>
+  </div>
+  {{else}}
+  <div class="mobile-action-dock">
+    <a class="button" href="#input-panel">입력/질문</a>
+  </div>
+  {{end}}
   <script defer src="{{.Base}}/assets/story-room.js"></script>
 </div>
 {{end}}`
