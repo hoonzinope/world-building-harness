@@ -79,6 +79,23 @@ func renderStoryLobbyHTML(t *testing.T, s *webServer, u *authUser, query string)
 	return rec.Body.String()
 }
 
+func assertNoStoryIDInLobbyMeta(t *testing.T, html, id string) {
+	t.Helper()
+	metaRe := regexp.MustCompile(`(?s)<div class="story-card-meta">(.*?)</div>`)
+	matches := metaRe.FindAllStringSubmatch(html, -1)
+	if len(matches) == 0 {
+		t.Fatal("missing story-card-meta block in rendered story lobby")
+	}
+	for _, match := range matches {
+		if len(match) < 2 {
+			continue
+		}
+		if strings.Contains(match[1], id) {
+			t.Fatalf("unexpected raw story id %q in story card meta", id)
+		}
+	}
+}
+
 func newTestAuthStore(t *testing.T) *authStore {
 	t.Helper()
 	root := t.TempDir()
@@ -151,6 +168,8 @@ func TestStoryLobbyUsesKoreanFilterLabelsAndFriendlyStatusBadges(t *testing.T) {
 		`>전체<`,
 		`href="/stories?filter=active"`,
 		`>진행 중<`,
+		`aria-selected="true"`,
+		`role="tab"`,
 		`href="/stories?filter=mine"`,
 		`>내 스토리<`,
 		`href="/stories?filter=watch"`,
@@ -159,7 +178,10 @@ func TestStoryLobbyUsesKoreanFilterLabelsAndFriendlyStatusBadges(t *testing.T) {
 		`>보관됨<`,
 		`href="/stories?filter=imported"`,
 		`>가져온 스토리<`,
-		`입력 대기 · 진행 중`,
+		`story-lobby-list`,
+		`story-card`,
+		`story-card-meta`,
+		`story-card-summary`,
 		`진행 중`,
 		`입력 대기`,
 		`입장`,
@@ -169,10 +191,14 @@ func TestStoryLobbyUsesKoreanFilterLabelsAndFriendlyStatusBadges(t *testing.T) {
 		}
 	}
 	for _, forbidden := range []string{
+		`story-lobby-table`,
+		`story-lobby-status`,
+		`story-lobby-turn`,
 		`>active<`,
 		`>waiting_for_choice<`,
 		`activewaiting_for_choice`,
 		`waiting_for_choice · active`,
+		`입력 대기 · 진행 중`,
 		`open으로`,
 	} {
 		if strings.Contains(html, forbidden) {
@@ -182,6 +208,7 @@ func TestStoryLobbyUsesKoreanFilterLabelsAndFriendlyStatusBadges(t *testing.T) {
 	if !strings.Contains(html, id) {
 		t.Fatalf("missing created story row in rendered story lobby")
 	}
+	assertNoStoryIDInLobbyMeta(t, html, "story_")
 }
 
 func TestStoryLobbyAndNewStoryUseLocalizedLabels(t *testing.T) {
@@ -200,7 +227,9 @@ func TestStoryLobbyAndNewStoryUseLocalizedLabels(t *testing.T) {
 	lobbyHTML := renderStoryLobbyHTML(t, srv, &authUser{ID: "user_admin", Role: "admin"}, "")
 	for _, want := range []string{
 		`<h1>스토리</h1>`,
-		`<th class="story-lobby-turn">턴</th>`,
+		`story-lobby-list`,
+		`story-card-title`,
+		`story-card-meta`,
 		`가져온 스토리`,
 	} {
 		if !strings.Contains(lobbyHTML, want) {
@@ -208,6 +237,8 @@ func TestStoryLobbyAndNewStoryUseLocalizedLabels(t *testing.T) {
 		}
 	}
 	for _, forbidden := range []string{
+		`story-lobby-table`,
+		`<th class="story-lobby-turn">턴</th>`,
 		`헥터 가져오기`,
 		`/stories/import/hector`,
 		`>Stories<`,
@@ -222,6 +253,7 @@ func TestStoryLobbyAndNewStoryUseLocalizedLabels(t *testing.T) {
 			t.Fatalf("unexpected English/raw label %q in story lobby", forbidden)
 		}
 	}
+	assertNoStoryIDInLobbyMeta(t, lobbyHTML, "story_")
 
 	req := httptest.NewRequest(http.MethodGet, "/stories/new", nil)
 	req = withUser(req, &authUser{ID: "user_admin", Role: "admin"})
@@ -294,12 +326,16 @@ func TestPublicStoryLobbyAccessibleWithoutLogin(t *testing.T) {
 	for _, want := range []string{
 		`<h1>스토리</h1>`,
 		`로그인`,
+		`story-lobby-list`,
+		`story-card-meta`,
+		`관전`,
 	} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("missing %q in public story lobby", want)
 		}
 	}
 	for _, forbidden := range []string{
+		`story-lobby-table`,
 		`/stories/new`,
 		`name="action" value="create"`,
 	} {
@@ -307,6 +343,7 @@ func TestPublicStoryLobbyAccessibleWithoutLogin(t *testing.T) {
 			t.Fatalf("unexpected %q in public story lobby", forbidden)
 		}
 	}
+	assertNoStoryIDInLobbyMeta(t, html, "story_")
 }
 
 func TestPublicStoryRoomAccessibleWithoutLogin(t *testing.T) {

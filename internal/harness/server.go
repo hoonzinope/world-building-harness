@@ -43,6 +43,7 @@ type lobbyStoryRow struct {
 	Turn        int
 	Summary     string
 	Updated     string
+	MetaLabels  []string
 	Imported    bool
 	IsMine      bool
 	IsWatch     bool
@@ -51,7 +52,6 @@ type lobbyStoryRow struct {
 	CanDrive    bool
 	DriverLabel string
 	Permission  string
-	StatusLabel string
 }
 
 type failedJobView struct {
@@ -235,11 +235,23 @@ func friendlyPermissionLabel(m storyManifest, u *authUser) string {
 		return "진행 가능"
 	case u != nil && canQuestionStory(m):
 		return "질문 가능"
-	case m.Status == "active" || m.Status == "paused":
-		return "관전 가능"
 	default:
 		return "읽기 전용"
 	}
+}
+
+func storyLobbyMetaLabels(m storyManifest, u *authUser) []string {
+	labels := make([]string, 0, 3)
+	if m.SourceDraftPath != "" {
+		labels = append(labels, "가져온 스토리")
+	}
+	if u != nil && (m.CreatedBy == u.ID || m.ActiveDriverID == u.ID) {
+		labels = append(labels, "내 스토리")
+	}
+	if (m.Status == "active" || m.Status == "paused") && !canDriveStory(m, u) {
+		labels = append(labels, "관전")
+	}
+	return labels
 }
 
 func friendlyStoryStatusLabel(status string) string {
@@ -780,6 +792,7 @@ func (s *webServer) renderStoryLobby(w http.ResponseWriter, r *http.Request) {
 			Turn:        m.CurrentTurn,
 			Summary:     m.LatestSummary,
 			Updated:     m.UpdatedAt,
+			MetaLabels:  storyLobbyMetaLabels(m, u),
 			Imported:    m.SourceDraftPath != "",
 			IsMine:      u != nil && (m.CreatedBy == u.ID || m.ActiveDriverID == u.ID),
 			IsWatch:     (m.Status == "active" || m.Status == "paused") && !canDriveStory(m, u),
@@ -788,7 +801,6 @@ func (s *webServer) renderStoryLobby(w http.ResponseWriter, r *http.Request) {
 			CanDrive:    canDriveStory(m, u),
 			DriverLabel: friendlyDriverLabel(m, u),
 			Permission:  friendlyPermissionLabel(m, u),
-			StatusLabel: friendlyStatusLabel(m),
 		}
 		if !storyMatchesLobbyFilter(row, filter) {
 			continue
@@ -1613,22 +1625,25 @@ button.secondary, .button.secondary { background:transparent; color:var(--deep);
 button.danger { border-color:var(--accent); background:var(--accent); }
 .filter-bar { display:flex; gap:8px; flex-wrap:wrap; margin:12px 0 18px; }
 .filter-link { display:inline-flex; align-items:center; border:1px solid var(--line); border-radius:999px; padding:6px 12px; background:rgba(255,255,255,.38); text-decoration:none; color:var(--deep); font:600 13px ui-sans-serif, system-ui, sans-serif; min-height:36px; }
-.filter-link[aria-current="page"] { background:var(--deep); color:#fff; border-color:var(--deep); }
+.filter-link[aria-current="page"], .filter-link[aria-selected="true"] { background:var(--deep); color:#fff; border-color:var(--deep); }
 .status-line { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
 .story-summary { max-width:44ch; }
 .toolbar { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin:18px 0 22px; }
 .table { width:100%; border-collapse:collapse; font-family:ui-sans-serif, system-ui, sans-serif; font-size:14px; }
 .table th, .table td { text-align:left; border-bottom:1px solid var(--line); padding:10px 8px; vertical-align:top; }
-.story-lobby-table { table-layout:auto; }
-.story-lobby-table th, .story-lobby-table td { word-break:keep-all; }
-.story-lobby-table .story-lobby-status,
-.story-lobby-table .story-lobby-turn,
-.story-lobby-table .story-lobby-driver,
-.story-lobby-table .story-lobby-updated,
-.story-lobby-table .story-lobby-permission,
-.story-lobby-table .story-lobby-action { white-space:nowrap; }
-.story-lobby-table .story-lobby-summary { min-width:18ch; }
-.story-lobby-table .story-lobby-action { width:1%; }
+.story-lobby-list { display:grid; gap:12px; margin-top:4px; }
+.story-card { display:grid; gap:14px; border:1px solid var(--line); border-radius:6px; background:rgba(255,255,255,.46); padding:16px; box-shadow:0 10px 22px rgba(17,27,24,.04); }
+.story-card-head { display:grid; gap:12px; }
+.story-card-heading { display:grid; gap:8px; min-width:0; }
+.story-card-title { margin:0; font-size:22px; line-height:1.2; word-break:keep-all; overflow-wrap:anywhere; }
+.story-card-meta { display:flex; gap:8px; flex-wrap:wrap; align-items:center; font-family:ui-sans-serif, system-ui, sans-serif; color:var(--muted); font-size:13px; }
+.story-card-meta .meta { font-size:13px; }
+.story-card-badges { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+.story-card-summary { border-left:3px solid var(--accent); background:rgba(255,255,255,.55); border-radius:4px; padding:14px 14px 14px 13px; font-size:16px; line-height:1.75; color:var(--ink); word-break:keep-all; overflow-wrap:anywhere; }
+.story-card-foot { display:flex; gap:12px; flex-wrap:wrap; align-items:center; justify-content:space-between; }
+.story-card-updated { font-size:12px; }
+.story-card-actions { display:flex; justify-content:flex-end; flex:0 0 auto; min-width:120px; }
+.story-card-actions .button { min-width:120px; }
 .badge { display:inline-flex; border:1px solid var(--line); border-radius:999px; padding:2px 8px; font:12px ui-sans-serif, system-ui, sans-serif; color:var(--muted); background:rgba(255,255,255,.35); }
 .story-room-shell { display:grid; gap:18px; }
 .story-room-shell,
@@ -1761,8 +1776,13 @@ button.danger { border-color:var(--accent); background:var(--accent); }
   .table thead{display:none;}
   .table tr{border:1px solid var(--line); border-radius:6px; background:rgba(255,255,255,.35); margin:0 0 12px; padding:10px;}
   .table td{border:0; padding:6px 4px;}
-  .story-lobby-table th, .story-lobby-table td{white-space:normal; word-break:keep-all;}
-  .story-lobby-table .story-lobby-action{width:auto;}
+  .story-lobby-list{gap:10px;}
+  .story-card{padding:14px;}
+  .story-card-title{font-size:19px;}
+  .story-card-summary{font-size:15px; line-height:1.7;}
+  .story-card-foot{align-items:stretch;}
+  .story-card-actions{width:100%; justify-content:stretch;}
+  .story-card-actions .button{width:100%;}
   .mobile-action-dock{position:fixed; left:0; right:0; bottom:0; z-index:10; display:grid; grid-template-columns:1fr 1fr; gap:8px; padding:10px 12px calc(14px + env(safe-area-inset-bottom)); background:rgba(255,255,255,.94); border-top:1px solid var(--line); box-shadow:var(--shadow); backdrop-filter:blur(12px);}
   .mobile-action-dock a{min-height:48px;}
 }
@@ -1838,32 +1858,41 @@ const storyLobbyTemplate = `{{define "content"}}
 </div>
 {{if .IsAnonymous}}<p class="muted">로그인하지 않아도 스토리 목록과 세계관은 읽을 수 있습니다. 새 스토리 생성과 진행은 로그인 후 가능합니다.</p>{{end}}
 <div class="filter-bar" role="tablist" aria-label="스토리 필터">
-  <a class="filter-link" href="{{.Base}}/stories" {{if eq .Filter "all"}}aria-current="page"{{end}}>전체</a>
-  <a class="filter-link" href="{{.Base}}/stories?filter=active" {{if eq .Filter "active"}}aria-current="page"{{end}}>진행 중</a>
-  <a class="filter-link" href="{{.Base}}/stories?filter=mine" {{if eq .Filter "mine"}}aria-current="page"{{end}}>내 스토리</a>
-  <a class="filter-link" href="{{.Base}}/stories?filter=watch" {{if eq .Filter "watch"}}aria-current="page"{{end}}>관전</a>
-  <a class="filter-link" href="{{.Base}}/stories?filter=archived" {{if eq .Filter "archived"}}aria-current="page"{{end}}>보관됨</a>
-  <a class="filter-link" href="{{.Base}}/stories?filter=imported" {{if eq .Filter "imported"}}aria-current="page"{{end}}>가져온 스토리</a>
+  <a class="filter-link" role="tab" aria-selected="{{if eq .Filter "all"}}true{{else}}false{{end}}" href="{{.Base}}/stories" {{if eq .Filter "all"}}aria-current="page"{{end}}>전체</a>
+  <a class="filter-link" role="tab" aria-selected="{{if eq .Filter "active"}}true{{else}}false{{end}}" href="{{.Base}}/stories?filter=active" {{if eq .Filter "active"}}aria-current="page"{{end}}>진행 중</a>
+  <a class="filter-link" role="tab" aria-selected="{{if eq .Filter "mine"}}true{{else}}false{{end}}" href="{{.Base}}/stories?filter=mine" {{if eq .Filter "mine"}}aria-current="page"{{end}}>내 스토리</a>
+  <a class="filter-link" role="tab" aria-selected="{{if eq .Filter "watch"}}true{{else}}false{{end}}" href="{{.Base}}/stories?filter=watch" {{if eq .Filter "watch"}}aria-current="page"{{end}}>관전</a>
+  <a class="filter-link" role="tab" aria-selected="{{if eq .Filter "archived"}}true{{else}}false{{end}}" href="{{.Base}}/stories?filter=archived" {{if eq .Filter "archived"}}aria-current="page"{{end}}>보관됨</a>
+  <a class="filter-link" role="tab" aria-selected="{{if eq .Filter "imported"}}true{{else}}false{{end}}" href="{{.Base}}/stories?filter=imported" {{if eq .Filter "imported"}}aria-current="page"{{end}}>가져온 스토리</a>
 </div>
-<table class="table story-lobby-table">
-  <thead><tr><th class="story-lobby-title">제목</th><th class="story-lobby-status">상태</th><th class="story-lobby-turn">턴</th><th class="story-lobby-driver">진행자</th><th class="story-lobby-summary">현재 상황</th><th class="story-lobby-updated">업데이트</th><th class="story-lobby-permission">권한</th><th class="story-lobby-action"></th></tr></thead>
-  <tbody>
+<div class="story-lobby-list" role="list" aria-label="스토리 세션 목록">
   {{range .Stories}}
-    <tr>
-      <td class="story-lobby-title"><strong>{{.Title}}</strong><div class="muted">{{.ID}}{{if .Imported}} · 가져온 스토리{{end}}</div></td>
-      <td class="story-lobby-status"><div class="status-line"><span class="badge">{{friendlyStoryStatusLabel .Status}}</span><span class="badge">{{friendlyStoryPhaseLabel .Phase}}</span></div><div class="muted">{{.StatusLabel}}</div></td>
-      <td class="story-lobby-turn">{{.Turn}}</td>
-      <td class="story-lobby-driver">{{.DriverLabel}}</td>
-      <td class="story-lobby-summary"><div class="story-summary">{{.Summary}}</div></td>
-      <td class="story-lobby-updated muted">{{.Updated}}</td>
-      <td class="story-lobby-permission">{{.Permission}}</td>
-      <td class="story-lobby-action"><a class="button secondary" href="{{storyURL $.Base .ID}}">입장</a></td>
-    </tr>
+    <article class="story-card" role="listitem">
+      <div class="story-card-head">
+        <div class="story-card-heading">
+          <h2 class="story-card-title">{{.Title}}</h2>
+          <div class="story-card-meta">
+            {{range .MetaLabels}}<span class="meta">{{.}}</span>{{end}}
+            <span class="meta">턴 {{.Turn}}</span>
+            <span class="meta">진행자 {{.DriverLabel}}</span>
+          </div>
+        </div>
+        <div class="story-card-badges">
+          <span class="badge">{{friendlyStoryStatusLabel .Status}}</span>
+          <span class="badge">{{friendlyStoryPhaseLabel .Phase}}</span>
+          <span class="badge">{{.Permission}}</span>
+        </div>
+      </div>
+      <div class="story-card-summary">{{.Summary}}</div>
+      <div class="story-card-foot">
+        <div class="story-card-updated muted">업데이트 {{.Updated}}</div>
+        <div class="story-card-actions"><a class="button secondary" href="{{storyURL $.Base .ID}}">입장</a></div>
+      </div>
+    </article>
   {{else}}
-    <tr><td colspan="8" class="muted">아직 story room이 없습니다.</td></tr>
+    <div class="panel empty-state story-lobby-empty">아직 story room이 없습니다.</div>
   {{end}}
-  </tbody>
-</table>
+</div>
 {{end}}`
 
 const newStoryTemplate = `{{define "content"}}
