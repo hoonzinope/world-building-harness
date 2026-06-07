@@ -22,13 +22,14 @@ func (s *webServer) renderStoryLobby(w http.ResponseWriter, r *http.Request) {
 	}
 	rows := []lobbyStoryRow{}
 	for _, m := range stories {
-		row := lobbyStoryRow{ID: m.ID, Title: m.Title, Status: m.Status, Phase: m.Phase, Turn: m.CurrentTurn, MetaLine: storyLobbyMetaLine(m, u), Summary: m.LatestSummary, Updated: storyLobbyUpdatedAt(m.UpdatedAt), MetaLabels: storyLobbyMetaLabels(m, u), Imported: m.SourceDraftPath != "", IsMine: u != nil && (m.CreatedBy == u.ID || m.ActiveDriverID == u.ID), IsWatch: (m.Status == "active" || m.Status == "paused") && !canDriveStory(m, u), IsArchived: m.Status == "completed" || m.Status == "archived" || m.Status == "deleted", IsActive: m.Status == "active", CanDrive: canDriveStory(m, u), DriverLabel: friendlyDriverLabel(m, u), Permission: friendlyPermissionLabel(m, u)}
+		row := storyLobbyRowFromManifest(m, u)
 		if !storyMatchesLobbyFilter(row, filter) {
 			continue
 		}
 		rows = append(rows, row)
 	}
-	s.render(w, r, "스토리", storyLobbyTemplate, map[string]any{"Base": s.base(r), "User": u, "IsAnonymous": u == nil, "Stories": rows, "Filter": filter, "CSRFToken": mustCSRFToken(w, r)})
+	data := storyLobbyTemplateData(s.base(r), u, filter, rows, mustCSRFToken(w, r))
+	s.render(w, r, "스토리", storyLobbyTemplate, data)
 }
 
 func (s *webServer) handleNewStory(w http.ResponseWriter, r *http.Request) {
@@ -147,7 +148,31 @@ func (s *webServer) renderStoryRoom(w http.ResponseWriter, r *http.Request, id s
 			failedJob = &failedJobView{Job: job, CanRecover: isAdminUser(u) || (u != nil && u.ID == job.ActorID), ActorLabel: job.ActorID}
 		}
 	}
-	data := map[string]any{"Base": s.base(r), "User": u, "IsAnonymous": u == nil, "Story": m, "State": st, "Turns": displayTurns, "PreviousTurns": previousTurns, "QA": qa, "CanDrive": canDrive, "CanClaim": canClaim, "CanRelease": canRelease, "CanQuestion": canQuestion, "IsAdmin": isAdminUser(u), "CanAdminMutate": canAdminMutate, "LatestTurnID": latestTurnID, "LatestTurn": latestTurn, "HasTurns": hasTurns, "DriverLabel": driverLabel, "IsProcessing": isProcessing, "Progress": progress, "StatusURL": s.base(r) + "/stories/" + url.PathEscape(id) + "/status", "FailedJob": failedJob, "ExportedBundle": strings.TrimSpace(r.URL.Query().Get("exported")), "ExportedStatus": strings.TrimSpace(r.URL.Query().Get("export_status")), "ExportDraftTarget": strings.TrimSpace(r.URL.Query().Get("export_draft_target")), "RecoveryStatus": strings.TrimSpace(r.URL.Query().Get("recovery_status")), "RecoveryMessage": strings.TrimSpace(r.URL.Query().Get("recovery_message")), "RecoveryChecked": queryCSV(r.URL.Query().Get("recovery_checked")), "RecoveryRepaired": queryCSV(r.URL.Query().Get("recovery_repaired")), "RecoveryLockRemoved": strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("recovery_lock_removed")), "true"), "CSRFToken": mustCSRFToken(w, r)}
+	data := storyRoomTemplateData(
+		s.base(r),
+		id,
+		u,
+		m,
+		st,
+		displayTurns,
+		previousTurns,
+		qa,
+		canDrive,
+		canClaim,
+		canRelease,
+		canQuestion,
+		isAdminUser(u),
+		canAdminMutate,
+		latestTurnID,
+		latestTurn,
+		hasTurns,
+		driverLabel,
+		isProcessing,
+		progress,
+		failedJob,
+		r.URL.Query(),
+		mustCSRFToken(w, r),
+	)
 	s.render(w, r, m.Title, storyRoomTemplate, data)
 }
 
@@ -474,7 +499,86 @@ func (s *webServer) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.render(w, r, "Admin Users", adminUsersTemplate, map[string]any{"Base": s.base(r), "User": u, "Users": users, "CSRFToken": mustCSRFToken(w, r)})
+	data := adminUsersTemplateData(s.base(r), u, users, mustCSRFToken(w, r))
+	s.render(w, r, "Admin Users", adminUsersTemplate, data)
+}
+
+func storyLobbyRowFromManifest(m storyManifest, u *authUser) lobbyStoryRow {
+	return lobbyStoryRow{
+		ID:          m.ID,
+		Title:       m.Title,
+		Status:      m.Status,
+		Phase:       m.Phase,
+		Turn:        m.CurrentTurn,
+		MetaLine:    storyLobbyMetaLine(m, u),
+		Summary:     m.LatestSummary,
+		Updated:     storyLobbyUpdatedAt(m.UpdatedAt),
+		MetaLabels:  storyLobbyMetaLabels(m, u),
+		Imported:    m.SourceDraftPath != "",
+		IsMine:      u != nil && (m.CreatedBy == u.ID || m.ActiveDriverID == u.ID),
+		IsWatch:     (m.Status == "active" || m.Status == "paused") && !canDriveStory(m, u),
+		IsArchived:  m.Status == "completed" || m.Status == "archived" || m.Status == "deleted",
+		IsActive:    m.Status == "active",
+		CanDrive:    canDriveStory(m, u),
+		DriverLabel: friendlyDriverLabel(m, u),
+		Permission:  friendlyPermissionLabel(m, u),
+	}
+}
+
+func storyLobbyTemplateData(base string, u *authUser, filter string, rows []lobbyStoryRow, csrf string) map[string]any {
+	return map[string]any{
+		"Base":        base,
+		"User":        u,
+		"IsAnonymous": u == nil,
+		"Stories":     rows,
+		"Filter":      filter,
+		"CSRFToken":   csrf,
+	}
+}
+
+func storyRoomTemplateData(base, id string, u *authUser, m storyManifest, st storyState, displayTurns, previousTurns []storyTurn, qa []storyQuestion, canDrive, canClaim, canRelease, canQuestion, isAdmin, canAdminMutate bool, latestTurnID int, latestTurn any, hasTurns bool, driverLabel string, isProcessing bool, progress storyProgressView, failedJob *failedJobView, query url.Values, csrf string) map[string]any {
+	return map[string]any{
+		"Base":                base,
+		"User":                u,
+		"IsAnonymous":         u == nil,
+		"Story":               m,
+		"State":               st,
+		"Turns":               displayTurns,
+		"PreviousTurns":       previousTurns,
+		"QA":                  qa,
+		"CanDrive":            canDrive,
+		"CanClaim":            canClaim,
+		"CanRelease":          canRelease,
+		"CanQuestion":         canQuestion,
+		"IsAdmin":             isAdmin,
+		"CanAdminMutate":      canAdminMutate,
+		"LatestTurnID":        latestTurnID,
+		"LatestTurn":          latestTurn,
+		"HasTurns":            hasTurns,
+		"DriverLabel":         driverLabel,
+		"IsProcessing":        isProcessing,
+		"Progress":            progress,
+		"StatusURL":           base + "/stories/" + url.PathEscape(id) + "/status",
+		"FailedJob":           failedJob,
+		"ExportedBundle":      strings.TrimSpace(query.Get("exported")),
+		"ExportedStatus":      strings.TrimSpace(query.Get("export_status")),
+		"ExportDraftTarget":   strings.TrimSpace(query.Get("export_draft_target")),
+		"RecoveryStatus":      strings.TrimSpace(query.Get("recovery_status")),
+		"RecoveryMessage":     strings.TrimSpace(query.Get("recovery_message")),
+		"RecoveryChecked":     queryCSV(query.Get("recovery_checked")),
+		"RecoveryRepaired":    queryCSV(query.Get("recovery_repaired")),
+		"RecoveryLockRemoved": strings.EqualFold(strings.TrimSpace(query.Get("recovery_lock_removed")), "true"),
+		"CSRFToken":           csrf,
+	}
+}
+
+func adminUsersTemplateData(base string, u *authUser, users any, csrf string) map[string]any {
+	return map[string]any{
+		"Base":      base,
+		"User":      u,
+		"Users":     users,
+		"CSRFToken": csrf,
+	}
 }
 func (s *webServer) handleStoryRoomAsset(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {

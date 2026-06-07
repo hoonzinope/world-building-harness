@@ -6,17 +6,47 @@ const layoutTemplate = `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{.PageTitle}}</title>
-<style>{{.BaseStyles}}/* [hidden] { display:none !important; } */</style>
+<style>{{.BaseStyles}}</style>
 </head>
 <body>
 <main class="shell">
-<div class="top"><a class="brand" href="{{.Base}}/">World Harness</a><div class="nav">{{if .StoryEnabled}}<a href="{{.Base}}/stories">스토리</a>{{end}}<a href="{{.Base}}/packs/lumen-federation/">세계관</a>{{with .User}}{{if eq .Role "admin"}}<a href="{{$.Base}}/admin/users">Admin</a>{{end}}<form class="nav-form" method="post" action="{{$.Base}}/logout"><input type="hidden" name="csrf_token" value="{{$.CSRFToken}}"><button class="link-button" type="submit">Logout</button></form>{{else}}{{if .AuthEnabled}}<a href="{{.Base}}/login">로그인</a>{{end}}<span>{{$.PageTitle}}</span>{{end}}</div></div>
-{{template "content" .}}
+  <div class="top">
+    <a class="brand" href="{{.Base}}/">World Harness</a>
+    <div class="nav">
+      {{if .StoryEnabled}}<a href="{{.Base}}/stories">스토리</a>{{end}}
+      <a href="{{.Base}}/packs/lumen-federation/">세계관</a>
+      {{with .User}}
+        {{if eq .Role "admin"}}<a href="{{$.Base}}/admin/users">Admin</a>{{end}}
+        <form class="nav-form" method="post" action="{{$.Base}}/logout">
+          <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+          <button class="link-button" type="submit">Logout</button>
+        </form>
+      {{else}}
+        {{if .AuthEnabled}}<a href="{{.Base}}/login">로그인</a>{{end}}
+        <span>{{$.PageTitle}}</span>
+      {{end}}
+    </div>
+  </div>
+  {{template "content" .}}
 </main>
 </body>
 </html>`
 
-const indexTemplate = `{{define "content"}}<h1>World Packs</h1><p class="lede">읽기 전용 위키는 pack 단위로 분리되고, 변경은 Telegram/Codex와 world-tool draft workflow를 통해 들어갑니다.</p><div class="grid">{{range .Packs}}<a class="card" href="{{packURL $.Base .id}}"><strong>{{.title}}</strong><span class="meta">{{.id}}</span><br><span class="meta">{{index .summary "content_documents"}} canon docs · {{index .summary "active_drafts"}} drafts</span></a>{{else}}<div class="card"><strong>No packs</strong><span class="meta">Create packs/&lt;id&gt;/harness.yaml first.</span></div>{{end}}</div>{{end}}`
+const indexTemplate = `{{define "content"}}
+<h1>World Packs</h1>
+<p class="lede">읽기 전용 위키는 pack 단위로 분리되고, 변경은 Telegram/Codex와 world-tool draft workflow를 통해 들어갑니다.</p>
+<div class="grid">
+  {{range .Packs}}
+    <a class="card" href="{{packURL $.Base .id}}">
+      <strong>{{.title}}</strong>
+      <span class="meta">{{.id}}</span><br>
+      <span class="meta">{{index .summary "content_documents"}} canon docs · {{index .summary "active_drafts"}} drafts</span>
+    </a>
+  {{else}}
+    <div class="card"><strong>No packs</strong><span class="meta">Create packs/&lt;id&gt;/harness.yaml first.</span></div>
+  {{end}}
+</div>
+{{end}}`
 
 const packTemplate = `{{define "content"}}
 <h1>{{.Title}}</h1>
@@ -127,26 +157,66 @@ const adminUsersTemplate = `{{define "content"}}
     <input type="hidden" name="action" value="create">
     <input name="username" placeholder="username" required>
     <input name="display_name" placeholder="display name">
-    <select name="role"><option>friend</option><option>admin</option></select>
+    <select name="role">
+      <option>friend</option>
+      <option>admin</option>
+    </select>
     <input name="password" type="password" placeholder="temporary password" required>
     <button>create</button>
   </form>
 </div>
 <table class="table">
-<thead><tr><th>username</th><th>display</th><th>role/status</th><th>last login</th><th>sessions</th><th>actions</th></tr></thead>
-<tbody>{{range .Users}}<tr>
-  <td>{{.username}}<br><span class="muted">{{.id}}</span></td>
-  <td>{{.display_name}}</td>
-  <td><span class="badge">{{.role}}</span> <span class="badge">{{.status}}</span></td>
-  <td class="muted">{{.last_login_at}}</td>
-  <td>{{.active_sessions}}</td>
-  <td>
-    <div class="admin-action-grid">
-      <form method="post"><input type="hidden" name="csrf_token" value="{{$.CSRFToken}}"><input type="hidden" name="action" value="update"><input type="hidden" name="id" value="{{.id}}"><select name="role"><option {{if eq .role "friend"}}selected{{end}}>friend</option><option {{if eq .role "admin"}}selected{{end}}>admin</option></select><select name="status"><option {{if eq .status "active"}}selected{{end}}>active</option><option {{if eq .status "disabled"}}selected{{end}}>disabled</option></select><button>update</button></form>
-      <form method="post"><input type="hidden" name="csrf_token" value="{{$.CSRFToken}}"><input type="hidden" name="action" value="reset"><input type="hidden" name="id" value="{{.id}}"><input name="password" type="password" placeholder="new password"><button>reset</button></form>
-      <form method="post"><input type="hidden" name="csrf_token" value="{{$.CSRFToken}}"><input type="hidden" name="action" value="revoke"><input type="hidden" name="id" value="{{.id}}"><button class="secondary">revoke sessions</button></form>
-    </div>
-  </td>
-</tr>{{end}}</tbody>
+  <thead>
+    <tr>
+      <th>username</th>
+      <th>display</th>
+      <th>role/status</th>
+      <th>last login</th>
+      <th>sessions</th>
+      <th>actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{range .Users}}
+    <tr>
+      <td>{{.username}}<br><span class="muted">{{.id}}</span></td>
+      <td>{{.display_name}}</td>
+      <td><span class="badge">{{.role}}</span> <span class="badge">{{.status}}</span></td>
+      <td class="muted">{{.last_login_at}}</td>
+      <td>{{.active_sessions}}</td>
+      <td>
+        <div class="admin-action-grid">
+          <form method="post">
+            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+            <input type="hidden" name="action" value="update">
+            <input type="hidden" name="id" value="{{.id}}">
+            <select name="role">
+              <option {{if eq .role "friend"}}selected{{end}}>friend</option>
+              <option {{if eq .role "admin"}}selected{{end}}>admin</option>
+            </select>
+            <select name="status">
+              <option {{if eq .status "active"}}selected{{end}}>active</option>
+              <option {{if eq .status "disabled"}}selected{{end}}>disabled</option>
+            </select>
+            <button>update</button>
+          </form>
+          <form method="post">
+            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+            <input type="hidden" name="action" value="reset">
+            <input type="hidden" name="id" value="{{.id}}">
+            <input name="password" type="password" placeholder="new password">
+            <button>reset</button>
+          </form>
+          <form method="post">
+            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+            <input type="hidden" name="action" value="revoke">
+            <input type="hidden" name="id" value="{{.id}}">
+            <button class="secondary">revoke sessions</button>
+          </form>
+        </div>
+      </td>
+    </tr>
+    {{end}}
+  </tbody>
 </table>
 {{end}}`

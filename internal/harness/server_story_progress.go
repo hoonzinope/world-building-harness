@@ -24,7 +24,7 @@ func writeJSONResponse(w http.ResponseWriter, status int, v any) {
 
 func (s *webServer) writeStoryTaskError(w http.ResponseWriter, r *http.Request, message string, status int) {
 	if wantsJSONResponse(r) {
-		writeJSONResponse(w, status, map[string]any{"error": message})
+		writeJSONResponse(w, status, storyTaskErrorPayload(message))
 		return
 	}
 	http.Error(w, message, status)
@@ -35,16 +35,23 @@ func (s *webServer) writeStoryTaskAccepted(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "missing job id", http.StatusInternalServerError)
 		return
 	}
-	writeJSONResponse(w, http.StatusAccepted, map[string]any{"story_id": storyID, "job_id": jobID, "job_type": jobType, "turn_id": firstNonZero(progress.ActiveJobTurnID, turnID), "status_url": s.base(r) + "/stories/" + url.PathEscape(storyID) + "/status", "next_poll_ms": progress.NextPollMS, "status_label": progress.StatusLabel, "progress_message": progress.ProgressMessage, "step_index": progress.StepIndex, "step_label": progress.StepLabel, "is_processing": progress.IsProcessing, "active_job_id": progress.ActiveJobID, "active_job_type": progress.ActiveJobType, "active_job_status": progress.ActiveJobStatus, "current_turn": progress.CurrentTurn})
+	writeJSONResponse(w, http.StatusAccepted, storyTaskAcceptedPayload(s.base(r), storyID, jobType, turnID, jobID, progress))
 }
 
 func (s *webServer) storyRoomProgressSnapshot(id string, m storyManifest, u *authUser) storyProgressView {
-	progress := storyProgressView{StoryID: id, Status: m.Status, Phase: m.Phase, CurrentTurn: m.CurrentTurn, CanDrive: canDriveStory(m, u), CanQuestion: u != nil && canQuestionStory(m), StatusLabel: friendlyStatusLabel(m), StepIndex: 3, StepLabel: "ready", NextPollMS: 0}
-	if u == nil {
-		progress.ProgressMessage = "로그인하면 진행, 질문, 진행권, 관리 기능을 사용할 수 있습니다."
-	} else {
-		progress.ProgressMessage = "대기 중입니다. 새 입력을 제출할 수 있는 상태입니다."
+	progress := storyProgressView{
+		StoryID:     id,
+		Status:      m.Status,
+		Phase:       m.Phase,
+		CurrentTurn: m.CurrentTurn,
+		CanDrive:    canDriveStory(m, u),
+		CanQuestion: u != nil && canQuestionStory(m),
+		StatusLabel: friendlyStatusLabel(m),
+		StepIndex:   3,
+		StepLabel:   "ready",
+		NextPollMS:  0,
 	}
+	progress.ProgressMessage = storyProgressDefaultMessage(progress.CanQuestion, progress.CanDrive, u == nil)
 	if progress.CanQuestion && !progress.CanDrive {
 		progress.ProgressMessage = "질문은 현재 턴에 대해 보낼 수 있습니다."
 	}
@@ -99,6 +106,43 @@ func (s *webServer) storyRoomProgressSnapshot(id string, m storyManifest, u *aut
 		progress.HasProgressMeta = progress.ActiveJobID != "" || progress.ActiveJobType != "" || progress.ActiveJobStatus != "" || progress.ActiveJobTurnID > 0 || len(progress.PendingQuestions) > 0
 	}
 	return progress
+}
+
+func storyTaskErrorPayload(message string) map[string]any {
+	return map[string]any{
+		"error": message,
+	}
+}
+
+func storyTaskAcceptedPayload(base, storyID, jobType string, turnID int, jobID string, progress storyProgressView) map[string]any {
+	return map[string]any{
+		"story_id":          storyID,
+		"job_id":            jobID,
+		"job_type":          jobType,
+		"turn_id":           firstNonZero(progress.ActiveJobTurnID, turnID),
+		"status_url":        base + "/stories/" + url.PathEscape(storyID) + "/status",
+		"next_poll_ms":      progress.NextPollMS,
+		"status_label":      progress.StatusLabel,
+		"progress_message":  progress.ProgressMessage,
+		"step_index":        progress.StepIndex,
+		"step_label":        progress.StepLabel,
+		"is_processing":     progress.IsProcessing,
+		"active_job_id":     progress.ActiveJobID,
+		"active_job_type":   progress.ActiveJobType,
+		"active_job_status": progress.ActiveJobStatus,
+		"current_turn":      progress.CurrentTurn,
+	}
+}
+
+func storyProgressDefaultMessage(canQuestion, canDrive, anonymous bool) string {
+	switch {
+	case anonymous:
+		return "로그인하면 진행, 질문, 진행권, 관리 기능을 사용할 수 있습니다."
+	case canQuestion && !canDrive:
+		return "질문은 현재 턴에 대해 보낼 수 있습니다."
+	default:
+		return "대기 중입니다. 새 입력을 제출할 수 있는 상태입니다."
+	}
 }
 
 func (s *webServer) storyProgressPendingQuestions(id string) []storyProgressQuestionView {

@@ -21,14 +21,12 @@ func (s *storyStore) ensureSeedStories(actorID string) error {
 }
 
 func (s *storyStore) importHector(actorID string) (string, bool, error) {
-	sourceRel := filepath.Join("lumen-federation", "drafts", "storylets", "hector_first_residual_check.md")
-	sourcePath := filepath.Join(s.packsRoot, sourceRel)
-	b, err := os.ReadFile(sourcePath)
+	sourceRel := hectorSourceRel()
+	b, err := os.ReadFile(filepath.Join(s.packsRoot, sourceRel))
 	if err != nil {
 		return "", false, err
 	}
-	hashBytes := sha256.Sum256(b)
-	hash := "sha256:" + hex.EncodeToString(hashBytes[:])
+	hash := hectorSourceHash(b)
 	parsed, err := parseHectorDraft(string(b))
 	if err != nil {
 		return "", false, err
@@ -36,24 +34,7 @@ func (s *storyStore) importHector(actorID string) (string, bool, error) {
 	existing, _ := s.listStories()
 	for _, m := range existing {
 		if m.SourceDraftPath == filepath.ToSlash(sourceRel) {
-			updated := false
-			title := firstNonEmpty(parsed.Title, "헥터: 첫 잔명 대조")
-			nextTurn := maxInt(m.CurrentTurn, parsed.TurnID)
-			nextSummary := m.LatestSummary
-			if nextTurn <= parsed.TurnID {
-				nextSummary = hectorCurrentSituation()
-			}
-			if m.SourceHash != hash || m.Title != title || m.CurrentTurn != nextTurn || m.LatestSummary != nextSummary {
-				now := time.Now().UTC().Format(time.RFC3339)
-				m.Title, m.SourceHash, m.UpdatedAt, m.CurrentTurn, m.LatestSummary = title, hash, now, nextTurn, nextSummary
-				updated = true
-			}
-			if updated {
-				if err := writeJSONAtomic(filepath.Join(s.storyDir(m.ID), "manifest.json"), m); err != nil {
-					return "", false, err
-				}
-			}
-			return m.ID, true, nil
+			return s.updateHectorImportedStory(m, parsed, hash, true)
 		}
 	}
 	id := "story_hector_first_residual_check"
@@ -61,11 +42,11 @@ func (s *storyStore) importHector(actorID string) (string, bool, error) {
 		id = id + "_" + randomID()
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
-	m := storyManifest{ID: id, Title: firstNonEmpty(parsed.Title, "헥터: 첫 잔명 대조"), WorldID: "lumen-federation", Status: "active", Phase: "waiting_for_choice", CurrentTurn: parsed.TurnID, ActiveDriverID: actorID, SourceDraftPath: filepath.ToSlash(sourceRel), SourceHash: hash, CreatedBy: actorID, CreatedAt: now, UpdatedAt: now, LatestSummary: hectorCurrentSituation()}
-	st := storyState{Location: "베이르 제3정정실 / 마라 베온 대기실 연결 채널", ActiveCharacters: []string{"헥터", "라우", "마라 베온", "아델 카이", "V-13 베른"}, Facts: []string{"마라 베온은 의료 진정 상태로 안정화 중이다.", "대체 우안 동기화율은 하락하기 시작했다.", "라우는 생존 보호 명령 범위를 표본 안정자 내부 반응 조정까지 확장했다.", "감리단은 이 확장이 자기 고유 권한 침해라고 주장한다.", "17-B 기록군에는 23개의 사망 보상권, 9개의 신체 권리 분쟁, 4개의 생존 주장 잔류 건이 묶여 있다."}, OpenThreads: []string{"17-B 기록군 전체를 열 추가 연결점 확보", "감리단 권한 충돌 대응", "마라 베온의 생존 주장과 원 신체 권리 주장 확정", "17B-STB-EYE-03의 표본 안정자 지위 반박"}, Risks: []string{"감리단이 범위 확장 철회를 요구하고 있다.", "기록군 전체 재심사가 다수의 보상권과 신체 권리 분쟁을 흔들 수 있다.", "마라의 안정 상태는 의료 조치에 의존하고 있어 장기 안전이 확정되지 않았다."}, Flags: []string{"mara_medically_stabilized", "survival_protection_extended", "inspectorate_conflict_open", "record_group_17b_revealed"}}
+	m := newHectorSeedManifest(id, parsed, actorID, sourceRel, hash, now)
+	st := newHectorSeedState()
 	turns := parsed.Turns
 	if len(turns) == 0 {
-		turns = []storyTurn{{TurnID: parsed.TurnID, BranchID: "branch_main", ParentTurnID: 18, ActorID: actorID, InputID: "import_hector_turn_19", Source: "import", SelectedChoiceID: "B", SceneTitle: "첫 잔명 대조", SceneBody: parsed.SceneBody, CurrentSituation: hectorCurrentSituation(), RevealedFacts: parsed.Facts, Choices: parsed.Choices, CreatedAt: now}}
+		turns = []storyTurn{newHectorFallbackTurn(parsed, actorID, now)}
 	}
 	for i := range turns {
 		turns[i].ActorID, turns[i].CreatedAt = actorID, now
@@ -77,13 +58,11 @@ func (s *storyStore) importHector(actorID string) (string, bool, error) {
 }
 
 func (s *storyStore) refreshHectorHistory(storyID, actorID string) error {
-	sourcePath := filepath.Join(s.packsRoot, "lumen-federation", "drafts", "storylets", "hector_first_residual_check.md")
-	b, err := os.ReadFile(sourcePath)
+	b, err := os.ReadFile(filepath.Join(s.packsRoot, hectorSourceRel()))
 	if err != nil {
 		return err
 	}
-	hashBytes := sha256.Sum256(b)
-	currentHash := "sha256:" + hex.EncodeToString(hashBytes[:])
+	currentHash := hectorSourceHash(b)
 	parsed, err := s.parseHectorHistory()
 	if err != nil || len(parsed.Turns) == 0 {
 		return err
@@ -125,6 +104,7 @@ func maxInt(values ...int) int {
 	}
 	return max
 }
+
 func maxStoryTurn(turns []storyTurn) int {
 	max := 0
 	for _, turn := range turns {
@@ -136,7 +116,7 @@ func maxStoryTurn(turns []storyTurn) int {
 }
 
 func (s *storyStore) parseHectorHistory() (hectorParsed, error) {
-	sourcePath := filepath.Join(s.packsRoot, "lumen-federation", "drafts", "storylets", "hector_first_residual_check.md")
+	sourcePath := filepath.Join(s.packsRoot, hectorSourceRel())
 	paths, _ := filepath.Glob(filepath.Join(s.packsRoot, "lumen-federation", "runs", "inbox", "*-body.md"))
 	paths = append(paths, sourcePath)
 	sort.Strings(paths)
@@ -218,6 +198,115 @@ func (s *storyStore) replaceStory(m storyManifest, st storyState, turns []storyT
 	}
 	return s.createStory(m, st, turns)
 }
+
+func hectorSourceRel() string {
+	return filepath.Join("lumen-federation", "drafts", "storylets", "hector_first_residual_check.md")
+}
+
+func hectorSourceHash(b []byte) string {
+	hashBytes := sha256.Sum256(b)
+	return "sha256:" + hex.EncodeToString(hashBytes[:])
+}
+
+func newHectorSeedManifest(id string, parsed hectorParsed, actorID, sourceRel, hash, now string) storyManifest {
+	return storyManifest{
+		ID:              id,
+		Title:           firstNonEmpty(parsed.Title, "헥터: 첫 잔명 대조"),
+		WorldID:         "lumen-federation",
+		Status:          "active",
+		Phase:           "waiting_for_choice",
+		CurrentTurn:     parsed.TurnID,
+		ActiveDriverID:  actorID,
+		SourceDraftPath: filepath.ToSlash(sourceRel),
+		SourceHash:      hash,
+		CreatedBy:       actorID,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+		LatestSummary:   hectorCurrentSituation(),
+	}
+}
+
+func newHectorSeedState() storyState {
+	return storyState{
+		Location: "베이르 제3정정실 / 마라 베온 대기실 연결 채널",
+		ActiveCharacters: []string{
+			"헥터",
+			"라우",
+			"마라 베온",
+			"아델 카이",
+			"V-13 베른",
+		},
+		Facts: []string{
+			"마라 베온은 의료 진정 상태로 안정화 중이다.",
+			"대체 우안 동기화율은 하락하기 시작했다.",
+			"라우는 생존 보호 명령 범위를 표본 안정자 내부 반응 조정까지 확장했다.",
+			"감리단은 이 확장이 자기 고유 권한 침해라고 주장한다.",
+			"17-B 기록군에는 23개의 사망 보상권, 9개의 신체 권리 분쟁, 4개의 생존 주장 잔류 건이 묶여 있다.",
+		},
+		OpenThreads: []string{
+			"17-B 기록군 전체를 열 추가 연결점 확보",
+			"감리단 권한 충돌 대응",
+			"마라 베온의 생존 주장과 원 신체 권리 주장 확정",
+			"17B-STB-EYE-03의 표본 안정자 지위 반박",
+		},
+		Risks: []string{
+			"감리단이 범위 확장 철회를 요구하고 있다.",
+			"기록군 전체 재심사가 다수의 보상권과 신체 권리 분쟁을 흔들 수 있다.",
+			"마라의 안정 상태는 의료 조치에 의존하고 있어 장기 안전이 확정되지 않았다.",
+		},
+		Flags: []string{
+			"mara_medically_stabilized",
+			"survival_protection_extended",
+			"inspectorate_conflict_open",
+			"record_group_17b_revealed",
+		},
+	}
+}
+
+func newHectorFallbackTurn(parsed hectorParsed, actorID, now string) storyTurn {
+	return storyTurn{
+		TurnID:           parsed.TurnID,
+		BranchID:         "branch_main",
+		ParentTurnID:     18,
+		ActorID:          actorID,
+		InputID:          "import_hector_turn_19",
+		Source:           "import",
+		SelectedChoiceID: "B",
+		SceneTitle:       "첫 잔명 대조",
+		SceneBody:        parsed.SceneBody,
+		CurrentSituation: hectorCurrentSituation(),
+		RevealedFacts:    parsed.Facts,
+		Choices:          parsed.Choices,
+		CreatedAt:        now,
+	}
+}
+
+func (s *storyStore) updateHectorImportedStory(m storyManifest, parsed hectorParsed, hash string, imported bool) (string, bool, error) {
+	_ = imported
+	updated := false
+	title := firstNonEmpty(parsed.Title, "헥터: 첫 잔명 대조")
+	nextTurn := maxInt(m.CurrentTurn, parsed.TurnID)
+	nextSummary := m.LatestSummary
+	if nextTurn <= parsed.TurnID {
+		nextSummary = hectorCurrentSituation()
+	}
+	if m.SourceHash != hash || m.Title != title || m.CurrentTurn != nextTurn || m.LatestSummary != nextSummary {
+		now := time.Now().UTC().Format(time.RFC3339)
+		m.Title = title
+		m.SourceHash = hash
+		m.UpdatedAt = now
+		m.CurrentTurn = nextTurn
+		m.LatestSummary = nextSummary
+		updated = true
+	}
+	if updated {
+		if err := writeJSONAtomic(filepath.Join(s.storyDir(m.ID), "manifest.json"), m); err != nil {
+			return "", false, err
+		}
+	}
+	return m.ID, true, nil
+}
+
 func hectorCurrentSituation() string {
 	return "마라 베온은 안정화 중이고, 감리단 권한 충돌이 열린 상태다. 17-B 기록군 전체를 열 추가 연결점이 필요하다."
 }
