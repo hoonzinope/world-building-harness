@@ -265,6 +265,22 @@ func parseFormInt(v string) int {
 	return n
 }
 
+func queryCSV(v string) []string {
+	trimmed := strings.TrimSpace(v)
+	if trimmed == "" {
+		return nil
+	}
+	parts := strings.Split(trimmed, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
+}
+
 func (s *webServer) handle(w http.ResponseWriter, r *http.Request) {
 	s.addSecurityHeaders(w)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -638,14 +654,17 @@ func (s *webServer) renderStoryRoom(w http.ResponseWriter, r *http.Request, id s
 		return displayTurns[i].TurnID > displayTurns[j].TurnID
 	})
 	latestTurnID := 0
+	var latestTurn any
 	if hasTurns {
 		latestTurnID = displayTurns[0].TurnID
+		latestTurn = displayTurns[0]
 	}
 	isProcessing := s.stories.storyHasBlockingGMJob(m)
 	canDrive := canDriveStory(m, u) && !isProcessing
 	canClaim := m.ActiveDriverID == "" && m.Status == "active" && m.Phase == "waiting_for_choice" && !isProcessing
 	canRelease := (u.Role == "admin" || u.ID == m.ActiveDriverID) && m.ActiveDriverID != "" && m.Status == "active" && m.Phase == "waiting_for_choice" && !isProcessing
 	canQuestion := canQuestionStory(m) && !isProcessing
+	canAdminMutate := u.Role == "admin" && hasTurns && !isProcessing
 	driverLabel := friendlyDriverLabel(m, u)
 	var failedJob *failedJobView
 	if m.Phase == "failed_waiting_retry" && m.ActiveJobID != "" {
@@ -654,26 +673,33 @@ func (s *webServer) renderStoryRoom(w http.ResponseWriter, r *http.Request, id s
 		}
 	}
 	data := map[string]any{
-		"Base":              s.base(r),
-		"User":              u,
-		"Story":             m,
-		"State":             st,
-		"Turns":             displayTurns,
-		"QA":                qa,
-		"CanDrive":          canDrive,
-		"CanClaim":          canClaim,
-		"CanRelease":        canRelease,
-		"CanQuestion":       canQuestion,
-		"IsAdmin":           u.Role == "admin",
-		"LatestTurnID":      latestTurnID,
-		"HasTurns":          hasTurns,
-		"DriverLabel":       driverLabel,
-		"IsProcessing":      isProcessing,
-		"FailedJob":         failedJob,
-		"ExportedBundle":    strings.TrimSpace(r.URL.Query().Get("exported")),
-		"ExportedStatus":    strings.TrimSpace(r.URL.Query().Get("export_status")),
-		"ExportDraftTarget": strings.TrimSpace(r.URL.Query().Get("export_draft_target")),
-		"CSRFToken":         mustCSRFToken(w, r),
+		"Base":                s.base(r),
+		"User":                u,
+		"Story":               m,
+		"State":               st,
+		"Turns":               displayTurns,
+		"QA":                  qa,
+		"CanDrive":            canDrive,
+		"CanClaim":            canClaim,
+		"CanRelease":          canRelease,
+		"CanQuestion":         canQuestion,
+		"IsAdmin":             u.Role == "admin",
+		"CanAdminMutate":      canAdminMutate,
+		"LatestTurnID":        latestTurnID,
+		"LatestTurn":          latestTurn,
+		"HasTurns":            hasTurns,
+		"DriverLabel":         driverLabel,
+		"IsProcessing":        isProcessing,
+		"FailedJob":           failedJob,
+		"ExportedBundle":      strings.TrimSpace(r.URL.Query().Get("exported")),
+		"ExportedStatus":      strings.TrimSpace(r.URL.Query().Get("export_status")),
+		"ExportDraftTarget":   strings.TrimSpace(r.URL.Query().Get("export_draft_target")),
+		"RecoveryStatus":      strings.TrimSpace(r.URL.Query().Get("recovery_status")),
+		"RecoveryMessage":     strings.TrimSpace(r.URL.Query().Get("recovery_message")),
+		"RecoveryChecked":     queryCSV(r.URL.Query().Get("recovery_checked")),
+		"RecoveryRepaired":    queryCSV(r.URL.Query().Get("recovery_repaired")),
+		"RecoveryLockRemoved": strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("recovery_lock_removed")), "true"),
+		"CSRFToken":           mustCSRFToken(w, r),
 	}
 	s.render(w, r, m.Title, storyRoomTemplate, data)
 }
@@ -781,6 +807,31 @@ func (s *webServer) handleStoryAdmin(w http.ResponseWriter, r *http.Request, id 
 			return
 		}
 		http.Redirect(w, r, s.base(r)+"/stories/"+url.PathEscape(id), http.StatusSeeOther)
+	case "edit_turn":
+		if u.Role != "admin" {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		if err := s.stories.editCurrentTurn(id, u.ID, r.FormValue("scene_body"), r.FormValue("current_situation")); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		http.Redirect(w, r, s.base(r)+"/stories/"+url.PathEscape(id), http.StatusSeeOther)
+	case "rollback_turn":
+		if u.Role != "admin" {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		turnID := parseFormInt(r.FormValue("turn_id"))
+		if turnID <= 0 {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		if err := s.stories.rollbackStoryToTurn(id, u.ID, turnID); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		http.Redirect(w, r, s.base(r)+"/stories/"+url.PathEscape(id), http.StatusSeeOther)
 	case "archive":
 		if u.Role != "admin" {
 			http.Error(w, "forbidden", http.StatusForbidden)
@@ -824,6 +875,23 @@ func (s *webServer) handleStoryAdmin(w http.ResponseWriter, r *http.Request, id 
 		draftTarget := filepath.ToSlash(filepath.Join("drafts", "storylets", id+".md"))
 		redirectURL := s.base(r) + "/stories/" + url.PathEscape(id) + "?exported=" + url.QueryEscape(bundlePath) + "&export_status=" + url.QueryEscape("draft_pending") + "&export_draft_target=" + url.QueryEscape(draftTarget)
 		http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+	case "recover_store":
+		if u.Role != "admin" {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		report, err := s.stories.recoverStory(id)
+		if err != nil {
+			redirectURL := s.base(r) + "/stories/" + url.PathEscape(id) + "?recovery_status=" + url.QueryEscape("failed") + "&recovery_message=" + url.QueryEscape(err.Error())
+			http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+			return
+		}
+		values := url.Values{}
+		values.Set("recovery_status", report.RecoveryStatus)
+		values.Set("recovery_checked", strings.Join(report.CheckedFiles, ","))
+		values.Set("recovery_repaired", strings.Join(report.RepairedItems, ","))
+		values.Set("recovery_lock_removed", fmt.Sprint(report.LockRemoved))
+		http.Redirect(w, r, s.base(r)+"/stories/"+url.PathEscape(id)+"?"+values.Encode(), http.StatusSeeOther)
 	default:
 		http.Error(w, "bad request", http.StatusBadRequest)
 	}
@@ -1246,7 +1314,8 @@ const storyRoomTemplate = `{{define "content"}}
 </div>
 {{if .IsProcessing}}<div class="panel status-panel"><strong>GM 생성 중</strong><p>요청 이벤트가 접수되었습니다. Codex/GM worker가 장면을 생성하는 동안 추가 진행 입력은 잠시 막힙니다.</p><p class="muted">active job: {{.Story.ActiveJobID}} · phase: {{.Story.Phase}}</p></div>{{end}}
 {{if .FailedJob}}{{if .FailedJob.CanRecover}}<div class="panel status-panel"><strong>GM 생성 실패</strong><p>현재 job이 실패 상태입니다. 복구를 진행하거나 취소할 수 있습니다.</p><p class="muted">active job: {{.Story.ActiveJobID}} · actor: {{.FailedJob.ActorLabel}}</p><div class="toolbar"><form method="post" action="{{.Base}}/stories/{{.Story.ID}}/recover"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><input type="hidden" name="action" value="resume"><button>resume</button></form><form method="post" action="{{.Base}}/stories/{{.Story.ID}}/recover"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><input type="hidden" name="action" value="cancel"><button class="secondary">cancel</button></form></div></div>{{else}}<div class="panel status-panel"><strong>GM 생성 실패</strong><p>현재 job이 실패 상태입니다. 새 진행 입력은 실패 job 처리 후 가능합니다.</p><p class="muted">active job: {{.Story.ActiveJobID}}</p></div>{{end}}{{end}}
-{{if .ExportedBundle}}<div class="panel status-panel"><strong>Export handoff</strong><p>Bundle exported to <code>{{.ExportedBundle}}</code>.</p><p class="muted">Draft creation is pending/manual via the admin writer path.</p><p class="muted">Target draft: <code>{{.ExportDraftTarget}}</code> · status: <span class="badge">{{if .ExportedStatus}}{{.ExportedStatus}}{{else}}draft_pending{{end}}</span></p></div>{{end}}
+{{if .ExportedBundle}}<div class="panel status-panel"><strong>Export handoff</strong><p>Bundle exported to <code>{{.ExportedBundle}}</code>.</p><p class="muted">Draft creation is pending/manual via the admin writer path. An admin can now create the draft with story export-draft through the writer path.</p><p class="muted">Target draft: <code>{{.ExportDraftTarget}}</code> · status: <span class="badge">{{if .ExportedStatus}}{{.ExportedStatus}}{{else}}draft_pending{{end}}</span></p></div>{{end}}
+{{if .RecoveryStatus}}<div class="panel status-panel"><strong>Store recovery</strong><p>Recovery status: <span class="badge">{{.RecoveryStatus}}</span></p>{{if .RecoveryMessage}}<p>{{.RecoveryMessage}}</p>{{end}}<p class="muted">Checked files: {{range $i, $v := .RecoveryChecked}}{{if $i}}, {{end}}<code>{{$v}}</code>{{end}}</p>{{if .RecoveryRepaired}}<p class="muted">Repaired items: {{range $i, $v := .RecoveryRepaired}}{{if $i}}, {{end}}<code>{{$v}}</code>{{end}}</p>{{else}}<p class="muted">No file tails needed repair.</p>{{end}}{{if .RecoveryLockRemoved}}<p class="muted">Stale lock.json was removed.</p>{{end}}</div>{{end}}
 {{if .HasTurns}}<nav class="turn-nav" aria-label="turn list">
   {{range .Turns}}<a href="#turn-{{.TurnID}}">Turn {{.TurnID}}</a>{{end}}
 </nav>{{end}}
@@ -1292,7 +1361,7 @@ const storyRoomTemplate = `{{define "content"}}
     <div class="panel"><h3>확인된 정보</h3><ul>{{range .State.Facts}}<li>{{.}}</li>{{end}}</ul></div>
     <div class="panel"><h3>열린 실마리</h3><ul>{{range .State.OpenThreads}}<li>{{.}}</li>{{end}}</ul></div>
     <div class="panel"><h3>위험</h3><ul>{{range .State.Risks}}<li>{{.}}</li>{{end}}</ul></div>
-    {{if .IsAdmin}}<div class="panel"><h3>Admin</h3><form method="post" action="{{.Base}}/stories/{{.Story.ID}}/admin"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><input type="hidden" name="action" value="update"><label class="muted">Status</label><select name="status"><option value="">변경 없음</option><option>active</option><option>paused</option><option>completed</option><option>archived</option></select><label class="muted">Active driver user id</label><input name="active_driver_id" placeholder="{{.DriverLabel}}"><div class="toolbar"><button>적용</button></div></form><form method="post" action="{{.Base}}/stories/{{.Story.ID}}/admin"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><input type="hidden" name="action" value="update"><input type="hidden" name="active_driver_id" value="__open__"><button class="secondary">open으로 변경</button></form><div class="toolbar">{{if or (eq .Story.Status "archived") (eq .Story.Status "deleted")}}<form method="post" action="{{.Base}}/stories/{{.Story.ID}}/admin"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><input type="hidden" name="action" value="restore"><button>restore</button></form>{{else}}<form method="post" action="{{.Base}}/stories/{{.Story.ID}}/admin"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><input type="hidden" name="action" value="archive"><button>archive</button></form>{{end}}{{if ne .Story.Status "deleted"}}<form method="post" action="{{.Base}}/stories/{{.Story.ID}}/admin"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><input type="hidden" name="action" value="delete"><button class="secondary">delete</button></form>{{end}}<form method="post" action="{{.Base}}/stories/{{.Story.ID}}/admin"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><input type="hidden" name="action" value="export_bundle"><button class="secondary">export bundle</button></form></div></div>{{end}}
+    {{if .IsAdmin}}<div class="panel"><h3>Admin</h3><form method="post" action="{{.Base}}/stories/{{.Story.ID}}/admin"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><input type="hidden" name="action" value="update"><label class="muted">Status</label><select name="status"><option value="">변경 없음</option><option>active</option><option>paused</option><option>completed</option><option>archived</option></select><label class="muted">Active driver user id</label><input name="active_driver_id" placeholder="{{.DriverLabel}}"><div class="toolbar"><button>적용</button></div></form><form method="post" action="{{.Base}}/stories/{{.Story.ID}}/admin"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><input type="hidden" name="action" value="update"><input type="hidden" name="active_driver_id" value="__open__"><button class="secondary">open으로 변경</button></form>{{if .CanAdminMutate}}{{with .LatestTurn}}<form method="post" action="{{$.Base}}/stories/{{$.Story.ID}}/admin"><input type="hidden" name="csrf_token" value="{{$.CSRFToken}}"><input type="hidden" name="action" value="edit_turn"><label class="muted">Edit current turn {{$.LatestTurnID}}</label><label class="muted">Scene body</label><textarea name="scene_body">{{.SceneBody}}</textarea><label class="muted">Current situation</label><textarea name="current_situation">{{.CurrentSituation}}</textarea><div class="toolbar"><button class="secondary">save turn edit</button></div></form>{{end}}<form method="post" action="{{.Base}}/stories/{{.Story.ID}}/admin"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><input type="hidden" name="action" value="rollback_turn"><label class="muted">Rollback to turn</label><select name="turn_id">{{range .Turns}}<option value="{{.TurnID}}" {{if eq .TurnID $.LatestTurnID}}selected{{end}}>Turn {{.TurnID}}</option>{{end}}</select><div class="toolbar"><button class="secondary">rollback</button></div></form>{{else if .IsProcessing}}<p class="muted">GM 생성 중에는 편집과 롤백을 막습니다.</p>{{end}}<div class="toolbar">{{if or (eq .Story.Status "archived") (eq .Story.Status "deleted")}}<form method="post" action="{{.Base}}/stories/{{.Story.ID}}/admin"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><input type="hidden" name="action" value="restore"><button>restore</button></form>{{else}}<form method="post" action="{{.Base}}/stories/{{.Story.ID}}/admin"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><input type="hidden" name="action" value="archive"><button>archive</button></form>{{end}}{{if ne .Story.Status "deleted"}}<form method="post" action="{{.Base}}/stories/{{.Story.ID}}/admin"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><input type="hidden" name="action" value="delete"><button class="secondary">delete</button></form>{{end}}<form method="post" action="{{.Base}}/stories/{{.Story.ID}}/admin"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><input type="hidden" name="action" value="export_bundle"><button class="secondary">export bundle</button></form><form method="post" action="{{.Base}}/stories/{{.Story.ID}}/admin"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><input type="hidden" name="action" value="recover_store"><button class="secondary">recover store</button></form></div></div>{{end}}
   </aside>
 </div>
 {{if .HasTurns}}<div class="mobile-action-dock"><a class="button secondary" href="#turn-{{.LatestTurnID}}">최신 턴</a><a class="button" href="#input-panel">입력</a></div>{{else}}<div class="mobile-action-dock"><a class="button" href="#input-panel">입력</a></div>{{end}}

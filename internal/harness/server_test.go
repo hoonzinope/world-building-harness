@@ -57,6 +57,8 @@ func TestStoryRoomFormsWireCSRFAndUniqueIdempotencyKeys(t *testing.T) {
 		`name="csrf_token" value="`,
 		`name="action" value="claim"`,
 		`name="action" value="update"`,
+		`name="action" value="edit_turn"`,
+		`name="action" value="rollback_turn"`,
 		`name="action" value="export_bundle"`,
 		`name="mode"`,
 		`value="question"`,
@@ -81,6 +83,28 @@ func TestStoryRoomFormsWireCSRFAndUniqueIdempotencyKeys(t *testing.T) {
 	}
 	if len(seen) != len(matches) {
 		t.Fatalf("expected unique idempotency keys, got %d matches with %d unique values", len(matches), len(seen))
+	}
+}
+
+func TestStoryRoomAdminTurnControlsBlockWhileGMJobActive(t *testing.T) {
+	root := t.TempDir()
+	storyRoot := filepath.Join(root, "stories")
+	packRoot := filepath.Join(root, "packs")
+	store, err := openStoryStore(storyRoot, packRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := store.createStoryWithPrologueJob("user_admin", "르네의 이야기", "생존극", "르네", "루세라의 간호사")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := &webServer{stories: store}
+	html := renderStoryRoomHTML(t, srv, id, &authUser{ID: "user_admin", Role: "admin"}, "")
+	if strings.Contains(html, `name="action" value="edit_turn"`) || strings.Contains(html, `name="action" value="rollback_turn"`) {
+		t.Fatalf("admin turn controls should be hidden while GM job is active")
+	}
+	if !strings.Contains(html, `편집과 롤백을 막습니다`) {
+		t.Fatalf("missing GM blocking note in admin panel")
 	}
 }
 
@@ -140,6 +164,37 @@ func TestStoryRoomAdminLifecycleButtonsFollowStoryStatus(t *testing.T) {
 	}
 	if strings.Contains(deletedHTML, `name="action" value="delete"`) {
 		t.Fatalf("delete should be hidden for deleted story")
+	}
+}
+
+func TestStoryRoomRecoveryControlsAndStatusPanel(t *testing.T) {
+	root := t.TempDir()
+	storyRoot := filepath.Join(root, "stories")
+	packRoot := filepath.Join(root, "packs")
+	store, err := openStoryStore(storyRoot, packRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := store.createDemoStory("user_admin", "르네의 이야기", "생존극", "르네", "루세라의 간호사")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := &webServer{stories: store}
+
+	html := renderStoryRoomHTML(t, srv, id, &authUser{ID: "user_admin", Role: "admin"}, "?recovery_status=recovered&recovery_checked=events.jsonl,turns.jsonl,qa.jsonl&recovery_repaired=turns.jsonl,qa.jsonl&recovery_lock_removed=true")
+	for _, want := range []string{
+		`name="action" value="recover_store"`,
+		`Store recovery`,
+		`Recovery status: <span class="badge">recovered</span>`,
+		`<code>events.jsonl</code>`,
+		`<code>turns.jsonl</code>`,
+		`<code>qa.jsonl</code>`,
+		`Repaired items:`,
+		`Stale lock.json was removed.`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("missing %q in recovery panel", want)
+		}
 	}
 }
 

@@ -24,6 +24,8 @@ type storyStore struct {
 	exportRoot string
 }
 
+const storyLockTimeout = 10 * time.Minute
+
 type storyManifest struct {
 	ID              string `json:"id"`
 	Title           string `json:"title"`
@@ -654,6 +656,36 @@ func (s *storyStore) createStory(m storyManifest, st storyState, turns []storyTu
 	return writeAtomic(filepath.Join(dir, "summary.md"), []byte(m.LatestSummary+"\n"))
 }
 
+func (s *storyStore) writeStoryTurnsProjection(storyID string, turns []storyTurn) error {
+	var b bytes.Buffer
+	for _, turn := range turns {
+		data, err := json.Marshal(turn)
+		if err != nil {
+			return err
+		}
+		if _, err := b.Write(data); err != nil {
+			return err
+		}
+		if err := b.WriteByte('\n'); err != nil {
+			return err
+		}
+	}
+	return writeAtomic(filepath.Join(s.storyDir(storyID), "turns.jsonl"), b.Bytes())
+}
+
+func (s *storyStore) rewriteStorySummary(storyID, summary string) error {
+	return writeAtomic(filepath.Join(s.storyDir(storyID), "summary.md"), []byte(firstNonEmpty(strings.TrimSpace(summary), "No summary yet")+"\n"))
+}
+
+func findStoryTurn(turns []storyTurn, turnID int) (int, bool) {
+	for i := range turns {
+		if turns[i].TurnID == turnID {
+			return i, true
+		}
+	}
+	return -1, false
+}
+
 func (s *storyStore) appendChoice(storyID string, u *authUser, choiceID, customMode, customText string) error {
 	unlock, err := s.acquireLock(storyID, "turn_input", u.ID)
 	if err != nil {
@@ -752,6 +784,14 @@ func (s *storyStore) appendStoryLifecycleEvent(storyID, actorID, eventType, from
 	})
 }
 
+type storyRecoveryReport struct {
+	StoryID        string   `json:"story_id"`
+	RecoveryStatus string   `json:"recovery_status"`
+	CheckedFiles   []string `json:"checked_files"`
+	RepairedItems  []string `json:"repaired_items"`
+	LockRemoved    bool     `json:"lock_removed"`
+}
+
 func (s *storyStore) changeStoryLifecycleStatus(storyID, actorID, nextStatus, eventType string) error {
 	unlock, err := s.acquireLock(storyID, "admin_update", "admin")
 	if err != nil {
@@ -816,6 +856,115 @@ func (s *storyStore) adminUpdateStory(storyID, actorID, status, activeDriver str
 	return writeJSONAtomic(filepath.Join(s.storyDir(storyID), "manifest.json"), m)
 }
 
+func (s *storyStore) editCurrentTurn(storyID, actorID, sceneBody, currentSituation string) error {
+	unlock, err := s.acquireLock(storyID, "admin_turn_edit", actorID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	m, err := s.readManifest(storyID)
+	if err != nil {
+		return err
+	}
+	if s.storyHasBlockingGMJob(m) {
+		return errors.New("story has an active GM job")
+	}
+	turns, err := s.readTurns(storyID)
+	if err != nil {
+		return err
+	}
+	idx, ok := findStoryTurn(turns, m.CurrentTurn)
+	if !ok {
+		return errors.New("current turn not found")
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	before := turns[idx]
+	turns[idx].SceneBody = sceneBody
+	turns[idx].CurrentSituation = currentSituation
+	m.CurrentTurn = turns[idx].TurnID
+	m.LatestSummary = currentSituation
+	m.UpdatedAt = now
+	if err := s.writeStoryTurnsProjection(storyID, turns); err != nil {
+		return err
+	}
+	if err := writeJSONAtomic(filepath.Join(s.storyDir(storyID), "manifest.json"), m); err != nil {
+		return err
+	}
+	if err := s.rewriteStorySummary(storyID, currentSituation); err != nil {
+		return err
+	}
+	return appendJSONL(filepath.Join(s.storyDir(storyID), "events.jsonl"), map[string]any{
+		"type":                "turn_edited_by_admin",
+		"at":                  now,
+		"story_id":            storyID,
+		"actor_id":            actorID,
+		"turn_id":             before.TurnID,
+		"previous_scene_body": before.SceneBody,
+		"previous_situation":  before.CurrentSituation,
+		"turn":                turns[idx],
+	})
+}
+
+func (s *storyStore) rollbackStoryToTurn(storyID, actorID string, targetTurnID int) error {
+	unlock, err := s.acquireLock(storyID, "admin_turn_rollback", actorID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	m, err := s.readManifest(storyID)
+	if err != nil {
+		return err
+	}
+	if s.storyHasBlockingGMJob(m) {
+		return errors.New("story has an active GM job")
+	}
+	turns, err := s.readTurns(storyID)
+	if err != nil {
+		return err
+	}
+	idx, ok := findStoryTurn(turns, targetTurnID)
+	if !ok {
+		return errors.New("selected turn not found")
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	kept := append([]storyTurn(nil), turns[:idx+1]...)
+	fromTurnID := m.CurrentTurn
+	if fromTurnID == 0 && len(turns) > 0 {
+		fromTurnID = turns[len(turns)-1].TurnID
+	}
+	m.CurrentTurn = targetTurnID
+	m.LatestSummary = kept[len(kept)-1].CurrentSituation
+	m.UpdatedAt = now
+	if err := s.writeStoryTurnsProjection(storyID, kept); err != nil {
+		return err
+	}
+	if err := writeJSONAtomic(filepath.Join(s.storyDir(storyID), "manifest.json"), m); err != nil {
+		return err
+	}
+	if err := s.rewriteStorySummary(storyID, m.LatestSummary); err != nil {
+		return err
+	}
+	return appendJSONL(filepath.Join(s.storyDir(storyID), "events.jsonl"), map[string]any{
+		"type":            "story_rolled_back_by_admin",
+		"at":              now,
+		"story_id":        storyID,
+		"actor_id":        actorID,
+		"from_turn_id":    fromTurnID,
+		"to_turn_id":      targetTurnID,
+		"kept_turn_count": len(kept),
+		"removed_turn_ids": func() []int {
+			if len(turns) <= len(kept) {
+				return nil
+			}
+			removed := make([]int, 0, len(turns)-len(kept))
+			for _, turn := range turns[len(kept):] {
+				removed = append(removed, turn.TurnID)
+			}
+			return removed
+		}(),
+	})
+}
+
 func (s *storyStore) updateDriver(storyID string, u *authUser, action string) error {
 	unlock, err := s.acquireLock(storyID, "driver_"+action, u.ID)
 	if err != nil {
@@ -847,6 +996,119 @@ func (s *storyStore) updateDriver(storyID string, u *authUser, action string) er
 	return writeJSONAtomic(filepath.Join(s.storyDir(storyID), "manifest.json"), m)
 }
 
+func (s *storyStore) recoverStory(storyID string) (storyRecoveryReport, error) {
+	dir := s.storyDir(storyID)
+	info, err := os.Stat(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return storyRecoveryReport{}, errors.New("story not found")
+		}
+		return storyRecoveryReport{}, err
+	}
+	if !info.IsDir() {
+		return storyRecoveryReport{}, errors.New("story path is not a directory")
+	}
+
+	lockRemoved := false
+	lockPath := filepath.Join(dir, "lock.json")
+	if b, err := os.ReadFile(lockPath); err == nil {
+		var lock map[string]any
+		if json.Unmarshal(b, &lock) == nil {
+			if at, err := time.Parse(time.RFC3339, fmt.Sprint(lock["acquired_at"])); err == nil && !at.IsZero() {
+				if time.Since(at) > storyLockTimeout {
+					if err := os.Remove(lockPath); err != nil && !os.IsNotExist(err) {
+						return storyRecoveryReport{}, err
+					}
+					_ = fsyncDir(dir)
+					lockRemoved = true
+				} else {
+					return storyRecoveryReport{}, errors.New("story is locked")
+				}
+			}
+		}
+	}
+
+	unlock, err := s.acquireLock(storyID, "store_recover", "admin")
+	if err != nil {
+		return storyRecoveryReport{}, err
+	}
+	defer unlock()
+
+	checked := []string{"events.jsonl", "turns.jsonl", "qa.jsonl"}
+	repaired := []string{}
+
+	eventsPath := filepath.Join(dir, "events.jsonl")
+	eventsBefore, err := readFileIfExists(eventsPath)
+	if err != nil {
+		return storyRecoveryReport{}, err
+	}
+	if err := readStoryJSONL(eventsPath, func(b []byte) error {
+		var v map[string]any
+		return json.Unmarshal(b, &v)
+	}); err != nil {
+		return storyRecoveryReport{}, err
+	}
+	eventsAfter, err := readFileIfExists(eventsPath)
+	if err != nil {
+		return storyRecoveryReport{}, err
+	} else if !bytes.Equal(eventsBefore, eventsAfter) {
+		repaired = append(repaired, "events.jsonl")
+	}
+
+	turnsPath := filepath.Join(dir, "turns.jsonl")
+	turnsBefore, err := readFileIfExists(turnsPath)
+	if err != nil {
+		return storyRecoveryReport{}, err
+	}
+	if _, err := s.readTurns(storyID); err != nil {
+		return storyRecoveryReport{}, err
+	}
+	turnsAfter, err := readFileIfExists(turnsPath)
+	if err != nil {
+		return storyRecoveryReport{}, err
+	} else if !bytes.Equal(turnsBefore, turnsAfter) {
+		repaired = append(repaired, "turns.jsonl")
+	}
+
+	qaPath := filepath.Join(dir, "qa.jsonl")
+	qaBefore, err := readFileIfExists(qaPath)
+	if err != nil {
+		return storyRecoveryReport{}, err
+	}
+	if _, err := s.readQA(storyID); err != nil {
+		return storyRecoveryReport{}, err
+	}
+	qaAfter, err := readFileIfExists(qaPath)
+	if err != nil {
+		return storyRecoveryReport{}, err
+	} else if !bytes.Equal(qaBefore, qaAfter) {
+		repaired = append(repaired, "qa.jsonl")
+	}
+
+	status := "checked"
+	if len(repaired) > 0 || lockRemoved {
+		status = "recovered"
+	}
+	if err := appendJSONL(eventsPath, map[string]any{
+		"type":            "story_recovered",
+		"at":              time.Now().UTC().Format(time.RFC3339),
+		"story_id":        storyID,
+		"checked_files":   checked,
+		"repaired_items":  repaired,
+		"lock_removed":    lockRemoved,
+		"recovery_status": status,
+	}); err != nil {
+		return storyRecoveryReport{}, err
+	}
+	return storyRecoveryReport{
+		StoryID:        storyID,
+		RecoveryStatus: status,
+		CheckedFiles:   checked,
+		RepairedItems:  repaired,
+		LockRemoved:    lockRemoved,
+	}, nil
+}
+
 func (s *storyStore) acquireLock(storyID, reason, actorID string) (func(), error) {
 	dir := s.storyDir(storyID)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -857,7 +1119,7 @@ func (s *storyStore) acquireLock(storyID, reason, actorID string) (func(), error
 	if b, err := os.ReadFile(path); err == nil {
 		var existing map[string]any
 		_ = json.Unmarshal(b, &existing)
-		if at, _ := time.Parse(time.RFC3339, fmt.Sprint(existing["acquired_at"])); !at.IsZero() && now.Sub(at) > 10*time.Minute {
+		if at, _ := time.Parse(time.RFC3339, fmt.Sprint(existing["acquired_at"])); !at.IsZero() && now.Sub(at) > storyLockTimeout {
 			_ = os.Remove(path)
 		}
 	}
@@ -1016,6 +1278,17 @@ func readJSON(path string, v any) error {
 		return err
 	}
 	return json.Unmarshal(b, v)
+}
+
+func readFileIfExists(path string) ([]byte, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return b, nil
 }
 
 func readStoryJSONL(path string, fn func([]byte) error) error {
