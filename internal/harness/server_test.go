@@ -873,6 +873,7 @@ func TestStoryRoomProcessingStateOmitsMetaRefreshAndShowsBusyProgress(t *testing
 		`aria-busy="true"`,
 		`id="story-progress" role="status" aria-live="polite" aria-atomic="true" aria-busy="true"`,
 		`data-story-progress`,
+		`data-story-progress-meta hidden`,
 		`story-progress-steps`,
 		`data-story-step="queued"`,
 		`data-story-step="generating"`,

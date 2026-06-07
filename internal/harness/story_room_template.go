@@ -199,7 +199,7 @@ const storyRoomTemplate = `{{define "content"}}
               <span class="story-progress-step-text">최신 턴 준비</span>
             </span>
           </div>
-          <p class="muted story-progress-meta" data-story-progress-meta {{if not .Progress.HasProgressMeta}}hidden{{end}}>
+          <p class="muted story-progress-meta" data-story-progress-meta hidden>
             <code data-story-progress-job-id>{{.Progress.ActiveJobID}}</code>
             {{if .Progress.ActiveJobType}}<span data-story-progress-job-type>{{.Progress.ActiveJobType}}</span>{{end}}
             {{if .Progress.ActiveJobStatus}}<span data-story-progress-job-status>{{.Progress.ActiveJobStatus}}</span>{{end}}
@@ -686,13 +686,6 @@ const storyRoomAssetJS = `(() => {
   }
 
   function renderStatus(payload) {
-    const hasMeta = Boolean(
-      payload.active_job_id ||
-      payload.active_job_type ||
-      payload.active_job_status ||
-      payload.active_job_turn_id ||
-      (payload.pending_questions && payload.pending_questions.length),
-    );
     progress.dataset.stepIndex = String(payload.step_index ?? 3);
     progress.dataset.stepLabel = payload.step_label || 'ready';
     progress.dataset.activeJobId = payload.active_job_id || '';
@@ -707,7 +700,7 @@ const storyRoomAssetJS = `(() => {
     if (jobStatusNode) jobStatusNode.textContent = payload.active_job_status || '';
     if (turnNode) turnNode.textContent = payload.active_job_turn_id ? String(payload.active_job_turn_id) : '';
     if (pendingNode) pendingNode.textContent = payload.pending_questions ? String(payload.pending_questions.length) : '';
-    showMeta(hasMeta);
+    showMeta(false);
     setStep(payload.step_label || (payload.is_processing ? 'generating' : 'ready'));
     setBusy(Boolean(payload.is_processing));
   }
