@@ -1,7 +1,9 @@
 package harness
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -206,6 +208,137 @@ func TestNewStoryProgressionUsesItsOwnState(t *testing.T) {
 	}
 }
 
+func TestStoryReadTurnsRepairsFinalPartialTail(t *testing.T) {
+	root := t.TempDir()
+	storyRoot := filepath.Join(root, "stories")
+	store, err := openStoryStore(storyRoot, filepath.Join(root, "packs"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := "story_partial_tail"
+	dir := filepath.Join(storyRoot, id)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	turn1 := storyTurn{
+		TurnID:           1,
+		BranchID:         "branch_main",
+		ActorID:          "user_admin",
+		InputID:          "input_1",
+		Source:           "setup",
+		SceneTitle:       "Turn 1",
+		SceneBody:        "first",
+		CurrentSituation: "situation 1",
+		CreatedAt:        "2026-06-07T00:00:00Z",
+	}
+	turn2 := storyTurn{
+		TurnID:           2,
+		BranchID:         "branch_main",
+		ParentTurnID:     1,
+		ActorID:          "user_admin",
+		InputID:          "input_2",
+		Source:           "choice",
+		SceneTitle:       "Turn 2",
+		SceneBody:        "second",
+		CurrentSituation: "situation 2",
+		CreatedAt:        "2026-06-07T00:01:00Z",
+	}
+	b1, err := json.Marshal(turn1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b2, err := json.Marshal(turn2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "turns.jsonl"), append(append(b1, '\n'), b2[:len(b2)/2]...), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	turns, err := store.readTurns(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(turns) != 1 || turns[0].TurnID != 1 {
+		t.Fatalf("recovered turns = %#v", turns)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dir, "turns.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(data, append(b1, '\n')) {
+		t.Fatalf("turns.jsonl was not truncated: %q", string(data))
+	}
+
+	var sawRecovery bool
+	if err := readJSONL(filepath.Join(dir, "events.jsonl"), func(b []byte) error {
+		var ev map[string]any
+		if err := json.Unmarshal(b, &ev); err != nil {
+			return err
+		}
+		if ev["type"] == "story_recovered" {
+			sawRecovery = true
+			if ev["recovered_path"] != "turns.jsonl" {
+				t.Fatalf("recovered_path = %#v", ev["recovered_path"])
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !sawRecovery {
+		t.Fatal("missing story_recovered event after truncating turns.jsonl")
+	}
+}
+
+func TestStoryReadTurnsRejectsMalformedMiddleLine(t *testing.T) {
+	root := t.TempDir()
+	storyRoot := filepath.Join(root, "stories")
+	store, err := openStoryStore(storyRoot, filepath.Join(root, "packs"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := "story_bad_middle"
+	dir := filepath.Join(storyRoot, id)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	good, err := json.Marshal(storyTurn{TurnID: 1, BranchID: "branch_main", ActorID: "user_admin", InputID: "input_1", Source: "setup", SceneTitle: "Turn 1", SceneBody: "first", CurrentSituation: "situation 1", CreatedAt: "2026-06-07T00:00:00Z"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bad := []byte(`{"turn_id":2,"branch_id":"branch_main"`)
+	third, err := json.Marshal(storyTurn{TurnID: 3, BranchID: "branch_main", ParentTurnID: 2, ActorID: "user_admin", InputID: "input_3", Source: "choice", SceneTitle: "Turn 3", SceneBody: "third", CurrentSituation: "situation 3", CreatedAt: "2026-06-07T00:02:00Z"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body bytes.Buffer
+	body.Write(good)
+	body.WriteByte('\n')
+	body.Write(bad)
+	body.WriteByte('\n')
+	body.Write(third)
+	body.WriteByte('\n')
+	if err := os.WriteFile(filepath.Join(dir, "turns.jsonl"), body.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := store.readTurns(id); err == nil {
+		t.Fatal("expected malformed middle line to fail")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "events.jsonl")); !os.IsNotExist(err) {
+		t.Fatalf("events.jsonl should not be created on middle-line failure: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "turns.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(data, bad) {
+		t.Fatalf("turns.jsonl was unexpectedly repaired: %q", string(data))
+	}
+}
+
 func TestStoryInputCreatesJobBeforeTurnCommit(t *testing.T) {
 	root := t.TempDir()
 	store, err := openStoryStore(filepath.Join(root, "stories"), filepath.Join(root, "packs"))
@@ -216,7 +349,7 @@ func TestStoryInputCreatesJobBeforeTurnCommit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	jobID, err := store.submitStoryInput(id, &authUser{ID: "user_admin", Role: "admin"}, "A", "", "")
+	jobID, err := store.submitStoryInput(id, &authUser{ID: "user_admin", Role: "admin"}, 1, "input-idem-create", "A", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -241,6 +374,57 @@ func TestStoryInputCreatesJobBeforeTurnCommit(t *testing.T) {
 	turns, _ = store.readTurns(id)
 	if m.Phase != "waiting_for_choice" || m.ActiveJobID != "" || m.CurrentTurn != 2 || len(turns) != 2 {
 		t.Fatalf("job did not commit turn: manifest=%#v turns=%d", m, len(turns))
+	}
+}
+
+func TestStoryInputRejectsStaleTurn(t *testing.T) {
+	root := t.TempDir()
+	store, err := openStoryStore(filepath.Join(root, "stories"), filepath.Join(root, "packs"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := store.createDemoStory("user_admin", "르네의 이야기", "생존극", "르네", "루세라의 간호사")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.submitStoryInput(id, &authUser{ID: "user_admin", Role: "admin"}, 1, "input-idem-stale-1", "A", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.processOneGMJob(context.Background(), mockGMProvider{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.submitStoryInput(id, &authUser{ID: "user_admin", Role: "admin"}, 1, "input-idem-stale-2", "A", "", ""); err == nil {
+		t.Fatal("expected stale turn rejection")
+	}
+}
+
+func TestQuestionJobIsIdempotent(t *testing.T) {
+	root := t.TempDir()
+	store, err := openStoryStore(filepath.Join(root, "stories"), filepath.Join(root, "packs"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := store.createDemoStory("user_admin", "르네의 이야기", "생존극", "르네", "루세라의 간호사")
+	if err != nil {
+		t.Fatal(err)
+	}
+	jobID1, err := store.submitQuestionJob(id, &authUser{ID: "user_admin", Role: "admin"}, 1, "question-idem", "루세라는 어디야?")
+	if err != nil {
+		t.Fatal(err)
+	}
+	jobID2, err := store.submitQuestionJob(id, &authUser{ID: "user_admin", Role: "admin"}, 1, "question-idem", "루세라는 어디야?")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if jobID1 != jobID2 {
+		t.Fatalf("expected duplicate question job id to match, got %q and %q", jobID1, jobID2)
+	}
+	qa, err := store.readQA(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(qa) != 1 {
+		t.Fatalf("expected one queued question, got %#v", qa)
 	}
 }
 
@@ -271,6 +455,230 @@ func TestNewStoryCreatesPrologueJob(t *testing.T) {
 	}
 	if !strings.Contains(turns[0].SceneBody, "르네") || !strings.Contains(turns[0].SceneBody, "루세라") {
 		t.Fatalf("bad prologue: %q", turns[0].SceneBody)
+	}
+}
+
+func TestExportStoryBundleWritesHandoffMetadataAndAuditEvent(t *testing.T) {
+	root := t.TempDir()
+	storyRoot := filepath.Join(root, "stories")
+	store, err := openStoryStore(storyRoot, filepath.Join(root, "packs"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := store.createDemoStory("user_admin", "르네의 이야기", "생존극", "르네", "루세라의 간호사")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundleDir, err := store.exportStoryBundle(id, &authUser{ID: "user_admin", Role: "admin"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, name := range []string{"source_manifest.json", "turn_hashes.json", "storylet.md", "summary.md", "export_manifest.json"} {
+		if _, err := os.Stat(filepath.Join(bundleDir, name)); err != nil {
+			t.Fatalf("missing bundle file %q: %v", name, err)
+		}
+	}
+
+	var exportManifest map[string]any
+	if err := readJSON(filepath.Join(bundleDir, "export_manifest.json"), &exportManifest); err != nil {
+		t.Fatal(err)
+	}
+	if got := exportManifest["story_id"]; got != id {
+		t.Fatalf("story_id = %#v", got)
+	}
+	if got := exportManifest["status"]; got != "draft_pending" {
+		t.Fatalf("status = %#v", got)
+	}
+	if got := exportManifest["exported_by"]; got != "user_admin" {
+		t.Fatalf("exported_by = %#v", got)
+	}
+	if got := exportManifest["draft_target_suggestion"]; got != filepath.ToSlash(filepath.Join("drafts", "storylets", id+".md")) {
+		t.Fatalf("draft target = %#v", got)
+	}
+	if got := exportManifest["turn_hashes_path"]; got != "turn_hashes.json" {
+		t.Fatalf("turn_hashes_path = %#v", got)
+	}
+	if got := exportManifest["storylet_path"]; got != "storylet.md" {
+		t.Fatalf("storylet_path = %#v", got)
+	}
+	if got := exportManifest["summary_path"]; got != "summary.md" {
+		t.Fatalf("summary_path = %#v", got)
+	}
+
+	var sawExportEvent bool
+	if err := readStoryJSONL(filepath.Join(storyRoot, id, "events.jsonl"), func(b []byte) error {
+		var ev map[string]any
+		if err := json.Unmarshal(b, &ev); err != nil {
+			return err
+		}
+		if ev["type"] == "story_export_handoff" {
+			sawExportEvent = true
+			if ev["actor_id"] != "user_admin" {
+				t.Fatalf("actor_id = %#v", ev["actor_id"])
+			}
+			if ev["bundle_path"] != bundleDir {
+				t.Fatalf("bundle_path = %#v", ev["bundle_path"])
+			}
+			if ev["target_draft_suggestion"] != filepath.ToSlash(filepath.Join("drafts", "storylets", id+".md")) {
+				t.Fatalf("target_draft_suggestion = %#v", ev["target_draft_suggestion"])
+			}
+			if ev["status"] != "draft_pending" {
+				t.Fatalf("status = %#v", ev["status"])
+			}
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !sawExportEvent {
+		t.Fatal("missing story_export_handoff audit event")
+	}
+}
+
+func TestStoryLifecycleActionsAuditAndGuardActiveJobs(t *testing.T) {
+	root := t.TempDir()
+	storyRoot := filepath.Join(root, "stories")
+	store, err := openStoryStore(storyRoot, filepath.Join(root, "packs"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := store.createDemoStory("user_admin", "르네의 이야기", "생존극", "르네", "루세라의 간호사")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.adminUpdateStory(id, "user_admin", "paused", "user_friend"); err != nil {
+		t.Fatal(err)
+	}
+	m, err := store.readManifest(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Status != "paused" || m.ActiveDriverID != "user_friend" {
+		t.Fatalf("generic admin update failed: %#v", m)
+	}
+
+	if err := store.archiveStory(id, "user_admin"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.restoreStory(id, "user_admin"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.deleteStory(id, "user_admin"); err != nil {
+		t.Fatal(err)
+	}
+
+	m, err = store.readManifest(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Status != "deleted" {
+		t.Fatalf("delete did not tombstone story: %#v", m)
+	}
+	if _, err := os.Stat(filepath.Join(storyRoot, id, "turns.jsonl")); err != nil {
+		t.Fatalf("story data was removed: %v", err)
+	}
+
+	var eventTypes []string
+	if err := readStoryJSONL(filepath.Join(storyRoot, id, "events.jsonl"), func(b []byte) error {
+		var ev map[string]any
+		if err := json.Unmarshal(b, &ev); err != nil {
+			return err
+		}
+		if typ, _ := ev["type"].(string); typ != "" {
+			eventTypes = append(eventTypes, typ)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"story_status_changed", "story_archived", "story_restored", "story_deleted"} {
+		found := false
+		for _, got := range eventTypes {
+			if got == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("missing audit event %q in %#v", want, eventTypes)
+		}
+	}
+
+	busyID, err := store.createStoryWithPrologueJob("user_admin", "busy", "조사극", "르네", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	busyManifest, err := store.readManifest(busyID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	busyManifest.Phase = "waiting_for_choice"
+	if err := writeJSONAtomic(filepath.Join(storyRoot, busyID, "manifest.json"), busyManifest); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.archiveStory(busyID, "user_admin"); err == nil {
+		t.Fatal("expected archive to be blocked by active GM job")
+	}
+	if _, err := store.exportStoryBundle(busyID, &authUser{ID: "user_admin", Role: "admin"}); err == nil {
+		t.Fatal("expected export to be blocked by active GM job")
+	}
+}
+
+func TestStoryReadEventsRepairsFinalPartialTail(t *testing.T) {
+	root := t.TempDir()
+	storyRoot := filepath.Join(root, "stories")
+	_, err := openStoryStore(storyRoot, filepath.Join(root, "packs"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := "story_events_tail"
+	dir := filepath.Join(storyRoot, id)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	first, err := json.Marshal(map[string]any{"type": "turn_committed", "at": "2026-06-07T00:00:00Z", "turn": map[string]any{"turn_id": 1}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := json.Marshal(map[string]any{"type": "turn_committed", "at": "2026-06-07T00:01:00Z", "turn": map[string]any{"turn_id": 2}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "events.jsonl"), append(append(first, '\n'), second[:len(second)/2]...), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var events []map[string]any
+	if err := readStoryJSONL(filepath.Join(dir, "events.jsonl"), func(b []byte) error {
+		var ev map[string]any
+		if err := json.Unmarshal(b, &ev); err != nil {
+			return err
+		}
+		events = append(events, ev)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 || events[0]["type"] != "turn_committed" {
+		t.Fatalf("unexpected repaired read: %#v", events)
+	}
+	events = nil
+	if err := readJSONL(filepath.Join(dir, "events.jsonl"), func(b []byte) error {
+		var ev map[string]any
+		if err := json.Unmarshal(b, &ev); err != nil {
+			return err
+		}
+		events = append(events, ev)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("expected recovery event in events.jsonl, got %#v", events)
+	}
+	if events[1]["type"] != "story_recovered" {
+		t.Fatalf("missing story_recovered event: %#v", events)
 	}
 }
 

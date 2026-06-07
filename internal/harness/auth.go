@@ -20,6 +20,7 @@ import (
 )
 
 const sessionCookieName = "wh_session"
+const csrfCookieName = "wh_csrf"
 
 type authStore struct {
 	db *sql.DB
@@ -254,6 +255,42 @@ func setSessionCookie(w http.ResponseWriter, token string, expires time.Time, se
 
 func clearSessionCookie(w http.ResponseWriter) {
 	http.SetCookie(w, &http.Cookie{Name: sessionCookieName, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteLaxMode})
+}
+
+func ensureCSRFToken(w http.ResponseWriter, r *http.Request) (string, error) {
+	if c, err := r.Cookie(csrfCookieName); err == nil && strings.TrimSpace(c.Value) != "" {
+		return c.Value, nil
+	}
+	token, err := randomToken(32)
+	if err != nil {
+		return "", err
+	}
+	setCSRFCookie(w, token, r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https")
+	return token, nil
+}
+
+func requireCSRF(r *http.Request) bool {
+	cookie, err := r.Cookie(csrfCookieName)
+	if err != nil || strings.TrimSpace(cookie.Value) == "" {
+		return false
+	}
+	form := strings.TrimSpace(r.FormValue("csrf_token"))
+	if form == "" {
+		return false
+	}
+	return cookie.Value == form
+}
+
+func setCSRFCookie(w http.ResponseWriter, token string, secure bool) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     csrfCookieName,
+		Value:    token,
+		Path:     "/",
+		Expires:  time.Now().UTC().Add(14 * 24 * time.Hour),
+		HttpOnly: true,
+		Secure:   secure,
+		SameSite: http.SameSiteLaxMode,
+	})
 }
 
 func randomToken(n int) (string, error) {

@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -24,6 +25,7 @@ import (
 
 type webServer struct {
 	packsRoot    string
+	dataRoot     string
 	registry     string
 	basePath     string
 	authRequired bool
@@ -31,6 +33,31 @@ type webServer struct {
 	auth         *authStore
 	stories      *storyStore
 	md           goldmark.Markdown
+}
+
+type lobbyStoryRow struct {
+	ID          string
+	Title       string
+	Status      string
+	Phase       string
+	Turn        int
+	Summary     string
+	Updated     string
+	Imported    bool
+	IsMine      bool
+	IsWatch     bool
+	IsArchived  bool
+	IsActive    bool
+	CanDrive    bool
+	DriverLabel string
+	Permission  string
+	StatusLabel string
+}
+
+type failedJobView struct {
+	Job        gmJob
+	CanRecover bool
+	ActorLabel string
 }
 
 func runServe(args []string) int {
@@ -76,6 +103,7 @@ func runServe(args []string) int {
 	defer cancel()
 	s := &webServer{
 		packsRoot:    *packsRoot,
+		dataRoot:     *dataRoot,
 		registry:     *registry,
 		basePath:     strings.TrimRight(*basePath, "/"),
 		authRequired: *authRequired,
@@ -124,7 +152,121 @@ func envBool(key string, def bool) bool {
 	return v == "1" || v == "true" || v == "yes" || v == "on"
 }
 
+func (s *webServer) addSecurityHeaders(w http.ResponseWriter) {
+	w.Header().Set("Content-Security-Policy", "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; form-action 'self'; connect-src 'self'")
+	w.Header().Set("X-Frame-Options", "DENY")
+	w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+	w.Header().Set("Cross-Origin-Opener-Policy", "same-origin")
+	w.Header().Set("Cross-Origin-Resource-Policy", "same-origin")
+}
+
+func canDriveStory(m storyManifest, u *authUser) bool {
+	return m.Status == "active" && m.Phase == "waiting_for_choice" && (u.Role == "admin" || u.ID == m.ActiveDriverID)
+}
+
+func canQuestionStory(m storyManifest) bool {
+	return (m.Status == "active" || m.Status == "paused") && m.Phase == "waiting_for_choice"
+}
+
+func friendlyDriverLabel(m storyManifest, u *authUser) string {
+	if m.ActiveDriverID == "" {
+		return "open"
+	}
+	if u != nil && u.ID == m.ActiveDriverID {
+		return "you"
+	}
+	if u != nil && u.Role == "admin" {
+		return m.ActiveDriverID
+	}
+	return m.ActiveDriverID
+}
+
+func friendlyUserLabel(u *authUser, fallback string) string {
+	if u == nil {
+		return fallback
+	}
+	if u.DisplayName != "" {
+		return u.DisplayName
+	}
+	if u.Username != "" {
+		return u.Username
+	}
+	return fallback
+}
+
+func friendlyPermissionLabel(m storyManifest, u *authUser) string {
+	switch {
+	case m.Status == "completed" || m.Status == "archived" || m.Status == "deleted":
+		return "종료"
+	case canDriveStory(m, u):
+		return "진행 가능"
+	case canQuestionStory(m):
+		return "질문 가능"
+	case m.Status == "active" || m.Status == "paused":
+		return "관전 가능"
+	default:
+		return "읽기 전용"
+	}
+}
+
+func friendlyStatusLabel(m storyManifest) string {
+	label := m.Status
+	if m.Phase != "" {
+		label += " / " + m.Phase
+	}
+	return label
+}
+
+func storyMatchesLobbyFilter(row lobbyStoryRow, filter string) bool {
+	switch filter {
+	case "", "all":
+		return true
+	case "active":
+		return row.IsActive
+	case "mine":
+		return row.IsMine
+	case "watch":
+		return row.IsWatch
+	case "archived":
+		return row.IsArchived
+	case "imported":
+		return row.Imported
+	default:
+		return true
+	}
+}
+
+func mustCSRFToken(w http.ResponseWriter, r *http.Request) string {
+	token, err := ensureCSRFToken(w, r)
+	if err != nil {
+		return ""
+	}
+	return token
+}
+
+func (s *webServer) requireCSRF(w http.ResponseWriter, r *http.Request) bool {
+	if !requireCSRF(r) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return false
+	}
+	return true
+}
+
+func mustTurnIdempotencyKey() string {
+	token, err := randomToken(18)
+	if err != nil {
+		return randomID()
+	}
+	return token
+}
+
+func parseFormInt(v string) int {
+	n, _ := strconv.Atoi(strings.TrimSpace(v))
+	return n
+}
+
 func (s *webServer) handle(w http.ResponseWriter, r *http.Request) {
+	s.addSecurityHeaders(w)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 	w.Header().Set("Cache-Control", "no-store")
@@ -212,7 +354,7 @@ func (s *webServer) requireAuth(w http.ResponseWriter, r *http.Request) (*authUs
 
 func (s *webServer) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
-		s.render(w, "Login", loginTemplate, map[string]any{"Base": s.base(r)})
+		s.render(w, r, "Login", loginTemplate, map[string]any{"Base": s.base(r), "CSRFToken": mustCSRFToken(w, r)})
 		return
 	}
 	if r.Method != http.MethodPost {
@@ -223,9 +365,12 @@ func (s *webServer) handleLogin(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
+	if !s.requireCSRF(w, r) {
+		return
+	}
 	u, err := s.auth.authenticate(strings.TrimSpace(r.FormValue("username")), r.FormValue("password"))
 	if err != nil {
-		s.render(w, "Login", loginTemplate, map[string]any{"Base": s.base(r), "Error": "로그인 정보를 확인할 수 없습니다."})
+		s.render(w, r, "Login", loginTemplate, map[string]any{"Base": s.base(r), "Error": "로그인 정보를 확인할 수 없습니다.", "CSRFToken": mustCSRFToken(w, r)})
 		return
 	}
 	token, expires, err := s.auth.createSession(u.ID)
@@ -238,6 +383,10 @@ func (s *webServer) handleLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *webServer) handleLogout(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	if c, err := r.Cookie(sessionCookieName); err == nil {
 		s.auth.revokeToken(c.Value)
 	}
@@ -255,7 +404,7 @@ func (s *webServer) base(r *http.Request) string {
 func (s *webServer) renderIndex(w http.ResponseWriter, r *http.Request) {
 	packs := s.packs()
 	data := map[string]any{"Title": "World Harness", "Base": s.base(r), "Packs": packs}
-	s.render(w, "World Harness", indexTemplate, data)
+	s.render(w, r, "World Harness", indexTemplate, data)
 }
 
 func (s *webServer) renderPackRoute(w http.ResponseWriter, r *http.Request, rest string) {
@@ -307,7 +456,7 @@ func (s *webServer) renderPack(w http.ResponseWriter, r *http.Request, ctx *Worl
 		"Types":   keys,
 		"Query":   query,
 	}
-	s.render(w, ctx.ID, packTemplate, data)
+	s.render(w, r, ctx.ID, packTemplate, data)
 }
 
 func (s *webServer) renderDoc(w http.ResponseWriter, r *http.Request, ctx *WorldContext) {
@@ -334,7 +483,7 @@ func (s *webServer) renderDoc(w http.ResponseWriter, r *http.Request, ctx *World
 		"Frontmatter": doc.Meta,
 		"BodyHTML":    template.HTML(htmlBuf.String()),
 	}
-	s.render(w, doc.Title(), docTemplate, data)
+	s.render(w, r, doc.Title(), docTemplate, data)
 }
 
 var markdownLinkPattern = regexp.MustCompile(`\]\(([^)#][^)]+?\.md)(#[^)]+)?\)`)
@@ -371,18 +520,42 @@ func (s *webServer) renderStoryLobby(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	rows := []map[string]any{}
-	for _, m := range stories {
-		canDrive := u.Role == "admin" || (m.ActiveDriverID == u.ID && m.Status == "active" && m.Phase == "waiting_for_choice")
-		rows = append(rows, map[string]any{"id": m.ID, "title": m.Title, "status": m.Status, "phase": m.Phase, "turn": m.CurrentTurn, "active_driver": m.ActiveDriverID, "summary": m.LatestSummary, "updated": m.UpdatedAt, "can_drive": canDrive, "imported": m.SourceDraftPath != ""})
+	filter := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("filter")))
+	if filter == "" {
+		filter = "all"
 	}
-	s.render(w, "Stories", storyLobbyTemplate, map[string]any{"Base": s.base(r), "User": u, "Stories": rows})
+	rows := []lobbyStoryRow{}
+	for _, m := range stories {
+		row := lobbyStoryRow{
+			ID:          m.ID,
+			Title:       m.Title,
+			Status:      m.Status,
+			Phase:       m.Phase,
+			Turn:        m.CurrentTurn,
+			Summary:     m.LatestSummary,
+			Updated:     m.UpdatedAt,
+			Imported:    m.SourceDraftPath != "",
+			IsMine:      m.CreatedBy == u.ID || m.ActiveDriverID == u.ID,
+			IsWatch:     (m.Status == "active" || m.Status == "paused") && !canDriveStory(m, u),
+			IsArchived:  m.Status == "completed" || m.Status == "archived" || m.Status == "deleted",
+			IsActive:    m.Status == "active",
+			CanDrive:    canDriveStory(m, u),
+			DriverLabel: friendlyDriverLabel(m, u),
+			Permission:  friendlyPermissionLabel(m, u),
+			StatusLabel: friendlyStatusLabel(m),
+		}
+		if !storyMatchesLobbyFilter(row, filter) {
+			continue
+		}
+		rows = append(rows, row)
+	}
+	s.render(w, r, "Stories", storyLobbyTemplate, map[string]any{"Base": s.base(r), "User": u, "Stories": rows, "Filter": filter, "CSRFToken": mustCSRFToken(w, r)})
 }
 
 func (s *webServer) handleNewStory(w http.ResponseWriter, r *http.Request) {
 	u := currentUser(r)
 	if r.Method == http.MethodGet {
-		s.render(w, "New Story", newStoryTemplate, map[string]any{"Base": s.base(r), "User": u})
+		s.render(w, r, "New Story", newStoryTemplate, map[string]any{"Base": s.base(r), "User": u, "CSRFToken": mustCSRFToken(w, r)})
 		return
 	}
 	if r.Method != http.MethodPost {
@@ -391,6 +564,9 @@ func (s *webServer) handleNewStory(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	if !s.requireCSRF(w, r) {
 		return
 	}
 	id, err := s.stories.createStoryWithPrologueJob(u.ID, r.FormValue("title"), r.FormValue("style"), r.FormValue("character_name"), r.FormValue("traits"))
@@ -404,6 +580,9 @@ func (s *webServer) handleNewStory(w http.ResponseWriter, r *http.Request) {
 func (s *webServer) handleImportHector(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.requireCSRF(w, r) {
 		return
 	}
 	id, _, err := s.stories.importHector(currentUser(r).ID)
@@ -436,6 +615,8 @@ func (s *webServer) handleStoryRoute(w http.ResponseWriter, r *http.Request, res
 		s.handleStoryDriver(w, r, id)
 	case "admin":
 		s.handleStoryAdmin(w, r, id)
+	case "recover":
+		s.handleStoryRecovery(w, r, id)
 	default:
 		http.NotFound(w, r)
 	}
@@ -451,21 +632,50 @@ func (s *webServer) renderStoryRoom(w http.ResponseWriter, r *http.Request, id s
 	st, _ := s.stories.readState(id)
 	turns, _ := s.stories.readTurns(id)
 	qa, _ := s.stories.readQA(id)
+	hasTurns := len(turns) > 0
+	displayTurns := append([]storyTurn(nil), turns...)
+	sort.SliceStable(displayTurns, func(i, j int) bool {
+		return displayTurns[i].TurnID > displayTurns[j].TurnID
+	})
 	latestTurnID := 0
-	if len(turns) > 0 {
-		latestTurnID = turns[len(turns)-1].TurnID
+	if hasTurns {
+		latestTurnID = displayTurns[0].TurnID
 	}
-	canDrive := u.Role == "admin" || (u.ID == m.ActiveDriverID && m.Status == "active" && m.Phase == "waiting_for_choice")
-	canClaim := m.ActiveDriverID == "" && m.Status == "active" && m.Phase == "waiting_for_choice"
-	canRelease := (u.Role == "admin" || u.ID == m.ActiveDriverID) && m.ActiveDriverID != "" && m.Status == "active" && m.Phase == "waiting_for_choice"
-	canQuestion := (m.Status == "active" || m.Status == "paused") && m.Phase == "waiting_for_choice"
-	driverLabel := m.ActiveDriverID
-	if driverLabel == "" {
-		driverLabel = "open"
+	isProcessing := s.stories.storyHasBlockingGMJob(m)
+	canDrive := canDriveStory(m, u) && !isProcessing
+	canClaim := m.ActiveDriverID == "" && m.Status == "active" && m.Phase == "waiting_for_choice" && !isProcessing
+	canRelease := (u.Role == "admin" || u.ID == m.ActiveDriverID) && m.ActiveDriverID != "" && m.Status == "active" && m.Phase == "waiting_for_choice" && !isProcessing
+	canQuestion := canQuestionStory(m) && !isProcessing
+	driverLabel := friendlyDriverLabel(m, u)
+	var failedJob *failedJobView
+	if m.Phase == "failed_waiting_retry" && m.ActiveJobID != "" {
+		if job, err := s.stories.readJob(id, m.ActiveJobID); err == nil {
+			failedJob = &failedJobView{Job: job, CanRecover: u.Role == "admin" || u.ID == job.ActorID, ActorLabel: job.ActorID}
+		}
 	}
-	isProcessing := m.Phase == "gm_generating" || m.Phase == "validating_output" || m.Phase == "applying_turn"
-	data := map[string]any{"Base": s.base(r), "User": u, "Story": m, "State": st, "Turns": turns, "QA": qa, "CanDrive": canDrive, "CanClaim": canClaim, "CanRelease": canRelease, "CanQuestion": canQuestion, "IsAdmin": u.Role == "admin", "LatestTurnID": latestTurnID, "DriverLabel": driverLabel, "IsProcessing": isProcessing}
-	s.render(w, m.Title, storyRoomTemplate, data)
+	data := map[string]any{
+		"Base":              s.base(r),
+		"User":              u,
+		"Story":             m,
+		"State":             st,
+		"Turns":             displayTurns,
+		"QA":                qa,
+		"CanDrive":          canDrive,
+		"CanClaim":          canClaim,
+		"CanRelease":        canRelease,
+		"CanQuestion":       canQuestion,
+		"IsAdmin":           u.Role == "admin",
+		"LatestTurnID":      latestTurnID,
+		"HasTurns":          hasTurns,
+		"DriverLabel":       driverLabel,
+		"IsProcessing":      isProcessing,
+		"FailedJob":         failedJob,
+		"ExportedBundle":    strings.TrimSpace(r.URL.Query().Get("exported")),
+		"ExportedStatus":    strings.TrimSpace(r.URL.Query().Get("export_status")),
+		"ExportDraftTarget": strings.TrimSpace(r.URL.Query().Get("export_draft_target")),
+		"CSRFToken":         mustCSRFToken(w, r),
+	}
+	s.render(w, r, m.Title, storyRoomTemplate, data)
 }
 
 func (s *webServer) handleStoryInput(w http.ResponseWriter, r *http.Request, id string) {
@@ -477,12 +687,28 @@ func (s *webServer) handleStoryInput(w http.ResponseWriter, r *http.Request, id 
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
-	_, err := s.stories.submitStoryInput(id, currentUser(r), r.FormValue("choice_id"), r.FormValue("mode"), strings.TrimSpace(r.FormValue("custom_text")))
+	if !s.requireCSRF(w, r) {
+		return
+	}
+	u := currentUser(r)
+	mode := strings.TrimSpace(r.FormValue("mode"))
+	turnID := parseFormInt(r.FormValue("turn_id"))
+	idem := strings.TrimSpace(r.FormValue("idempotency_key"))
+	var err error
+	if mode == "question" {
+		_, err = s.stories.submitQuestionJob(id, u, turnID, idem, strings.TrimSpace(r.FormValue("custom_text")))
+	} else {
+		_, err = s.stories.submitStoryInput(id, u, turnID, idem, r.FormValue("choice_id"), mode, strings.TrimSpace(r.FormValue("custom_text")))
+	}
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusForbidden)
 		return
 	}
-	http.Redirect(w, r, s.base(r)+"/stories/"+url.PathEscape(id)+"#input-panel", http.StatusSeeOther)
+	fragment := "#input-panel"
+	if mode == "question" {
+		fragment = "#qa"
+	}
+	http.Redirect(w, r, s.base(r)+"/stories/"+url.PathEscape(id)+fragment, http.StatusSeeOther)
 }
 
 func (s *webServer) handleStoryQuestion(w http.ResponseWriter, r *http.Request, id string) {
@@ -494,7 +720,18 @@ func (s *webServer) handleStoryQuestion(w http.ResponseWriter, r *http.Request, 
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
-	if err := s.stories.askQuestion(id, currentUser(r), strings.TrimSpace(r.FormValue("question"))); err != nil {
+	if !s.requireCSRF(w, r) {
+		return
+	}
+	turnID := parseFormInt(r.FormValue("turn_id"))
+	if turnID == 0 {
+		if m, err := s.stories.readManifest(id); err == nil {
+			turnID = m.CurrentTurn
+		}
+	}
+	question := firstNonEmpty(strings.TrimSpace(r.FormValue("question")), strings.TrimSpace(r.FormValue("custom_text")))
+	_, err := s.stories.submitQuestionJob(id, currentUser(r), turnID, strings.TrimSpace(r.FormValue("idempotency_key")), question)
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusForbidden)
 		return
 	}
@@ -510,6 +747,9 @@ func (s *webServer) handleStoryDriver(w http.ResponseWriter, r *http.Request, id
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
+	if !s.requireCSRF(w, r) {
+		return
+	}
 	if err := s.stories.updateDriver(id, currentUser(r), r.FormValue("action")); err != nil {
 		http.Error(w, err.Error(), http.StatusForbidden)
 		return
@@ -518,11 +758,6 @@ func (s *webServer) handleStoryDriver(w http.ResponseWriter, r *http.Request, id
 }
 
 func (s *webServer) handleStoryAdmin(w http.ResponseWriter, r *http.Request, id string) {
-	u := currentUser(r)
-	if u.Role != "admin" {
-		http.Error(w, "forbidden", http.StatusForbidden)
-		return
-	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -531,11 +766,98 @@ func (s *webServer) handleStoryAdmin(w http.ResponseWriter, r *http.Request, id 
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
-	if err := s.stories.adminUpdateStory(id, r.FormValue("status"), r.FormValue("active_driver_id")); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+	if !s.requireCSRF(w, r) {
 		return
 	}
-	http.Redirect(w, r, s.base(r)+"/stories/"+url.PathEscape(id), http.StatusSeeOther)
+	u := currentUser(r)
+	switch r.FormValue("action") {
+	case "update":
+		if u.Role != "admin" {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		if err := s.stories.adminUpdateStory(id, u.ID, r.FormValue("status"), r.FormValue("active_driver_id")); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		http.Redirect(w, r, s.base(r)+"/stories/"+url.PathEscape(id), http.StatusSeeOther)
+	case "archive":
+		if u.Role != "admin" {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		if err := s.stories.archiveStory(id, u.ID); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		http.Redirect(w, r, s.base(r)+"/stories/"+url.PathEscape(id), http.StatusSeeOther)
+	case "restore":
+		if u.Role != "admin" {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		if err := s.stories.restoreStory(id, u.ID); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		http.Redirect(w, r, s.base(r)+"/stories/"+url.PathEscape(id), http.StatusSeeOther)
+	case "delete":
+		if u.Role != "admin" {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		if err := s.stories.deleteStory(id, u.ID); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		http.Redirect(w, r, s.base(r)+"/stories/"+url.PathEscape(id), http.StatusSeeOther)
+	case "export_bundle":
+		if u.Role != "admin" {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		bundlePath, err := s.stories.exportStoryBundle(id, u)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		draftTarget := filepath.ToSlash(filepath.Join("drafts", "storylets", id+".md"))
+		redirectURL := s.base(r) + "/stories/" + url.PathEscape(id) + "?exported=" + url.QueryEscape(bundlePath) + "&export_status=" + url.QueryEscape("draft_pending") + "&export_draft_target=" + url.QueryEscape(draftTarget)
+		http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+	default:
+		http.Error(w, "bad request", http.StatusBadRequest)
+	}
+}
+
+func (s *webServer) handleStoryRecovery(w http.ResponseWriter, r *http.Request, id string) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	if !s.requireCSRF(w, r) {
+		return
+	}
+	u := currentUser(r)
+	switch r.FormValue("action") {
+	case "resume":
+		if _, err := s.stories.resumeFailedJob(id, u); err != nil {
+			http.Error(w, err.Error(), http.StatusForbidden)
+			return
+		}
+		http.Redirect(w, r, s.base(r)+"/stories/"+url.PathEscape(id)+"#input-panel", http.StatusSeeOther)
+	case "cancel":
+		if err := s.stories.cancelFailedJob(id, u); err != nil {
+			http.Error(w, err.Error(), http.StatusForbidden)
+			return
+		}
+		http.Redirect(w, r, s.base(r)+"/stories/"+url.PathEscape(id)+"#input-panel", http.StatusSeeOther)
+	default:
+		http.Error(w, "bad request", http.StatusBadRequest)
+	}
 }
 
 func (s *webServer) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
@@ -547,6 +869,9 @@ func (s *webServer) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
 		if err := r.ParseForm(); err != nil {
 			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		if !s.requireCSRF(w, r) {
 			return
 		}
 		switch r.FormValue("action") {
@@ -579,7 +904,7 @@ func (s *webServer) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.render(w, "Admin Users", adminUsersTemplate, map[string]any{"Base": s.base(r), "User": u, "Users": users})
+	s.render(w, r, "Admin Users", adminUsersTemplate, map[string]any{"Base": s.base(r), "User": u, "Users": users, "CSRFToken": mustCSRFToken(w, r)})
 }
 
 func (s *webServer) packContext(pack string) (*WorldContext, error) {
@@ -632,8 +957,11 @@ func packTitle(ctx *WorldContext) string {
 	return ctx.ID
 }
 
-func (s *webServer) render(w http.ResponseWriter, title, body string, data map[string]any) {
+func (s *webServer) render(w http.ResponseWriter, r *http.Request, title, body string, data map[string]any) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if _, ok := data["CSRFToken"]; !ok {
+		data["CSRFToken"] = mustCSRFToken(w, r)
+	}
 	data["PageTitle"] = title
 	data["StoryEnabled"] = s.storyEnabled
 	t, err := template.New("page").Funcs(template.FuncMap{
@@ -645,6 +973,9 @@ func (s *webServer) render(w http.ResponseWriter, title, body string, data map[s
 		},
 		"storyURL": func(base, id string) string {
 			return fmt.Sprintf("%s/stories/%s", base, url.PathEscape(id))
+		},
+		"idem": func() string {
+			return mustTurnIdempotencyKey()
 		},
 		"eq":  func(a, b any) bool { return fmt.Sprint(a) == fmt.Sprint(b) },
 		"not": func(v bool) bool { return !v },
@@ -673,11 +1004,13 @@ const layoutTemplate = `<!doctype html>
 html { scroll-behavior:smooth; }
 body { margin:0; background:linear-gradient(180deg,#f8f4ea 0%,#eee7d8 100%); color:var(--ink); font-family: ui-serif, Georgia, "Apple SD Gothic Neo", "Noto Serif KR", serif; line-height:1.65; }
 a { color:var(--deep); text-decoration-thickness:1px; text-underline-offset:3px; }
-.shell { max-width:1180px; margin:0 auto; padding:28px 20px 88px; }
+.shell { max-width:1180px; margin:0 auto; padding:28px 20px 124px; }
 .top { display:flex; align-items:flex-end; justify-content:space-between; gap:20px; border-bottom:1px solid var(--line); padding-bottom:18px; margin-bottom:24px; }
 .brand { font-size:13px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); font-family: ui-sans-serif, system-ui, sans-serif; }
 .crumb, .nav { font-family: ui-sans-serif, system-ui, sans-serif; font-size:14px; color:var(--muted); display:flex; gap:12px; flex-wrap:wrap; justify-content:flex-end; }
 .nav a { color:var(--deep); }
+.nav-form { display:inline-flex; margin:0; }
+.link-button { border:0; background:none; color:var(--deep); padding:0; min-height:auto; font:inherit; text-decoration:underline; text-underline-offset:3px; border-radius:0; }
 h1 { font-size:clamp(34px, 6vw, 72px); line-height:1; margin:0 0 18px; letter-spacing:0; }
 h2 { font-size:24px; margin:34px 0 12px; border-top:1px solid var(--line); padding-top:18px; }
 .lede { max-width:760px; font-size:19px; color:#323833; }
@@ -695,15 +1028,31 @@ h2 { font-size:24px; margin:34px 0 12px; border-top:1px solid var(--line); paddi
 .prose p, .prose li { font-size:18px; }
 .side { position:sticky; top:16px; border-left:3px solid var(--accent); padding-left:16px; font-family:ui-sans-serif, system-ui, sans-serif; color:var(--muted); }
 .search { display:flex; gap:8px; max-width:520px; margin:18px 0 24px; }
-.search input, input, select, textarea { border:1px solid var(--line); border-radius:6px; padding:12px 13px; background:var(--panel); font:inherit; width:100%; min-height:44px; }
+.search input, input, select, textarea { border:1px solid var(--line); border-radius:6px; padding:12px 13px; background:var(--panel); font:inherit; width:100%; min-height:44px; max-width:100%; }
 textarea { min-height:110px; resize:vertical; }
-button, .button { border:1px solid var(--deep); background:var(--deep); color:white; border-radius:6px; padding:11px 15px; min-height:44px; font:600 14px ui-sans-serif, system-ui, sans-serif; cursor:pointer; text-decoration:none; display:inline-flex; align-items:center; justify-content:center; }
+button, .button { border:1px solid var(--deep); background:var(--deep); color:white; border-radius:6px; padding:11px 15px; min-height:44px; font:600 14px ui-sans-serif, system-ui, sans-serif; cursor:pointer; text-decoration:none; display:inline-flex; align-items:center; justify-content:center; white-space:nowrap; }
+button:focus-visible, .button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, .link-button:focus-visible, a:focus-visible { outline:3px solid rgba(184,51,45,.45); outline-offset:2px; }
 button:disabled { opacity:.45; cursor:not-allowed; }
 button.secondary, .button.secondary { background:transparent; color:var(--deep); }
 button.danger { border-color:var(--accent); background:var(--accent); }
+.filter-bar { display:flex; gap:8px; flex-wrap:wrap; margin:12px 0 18px; }
+.filter-link { display:inline-flex; align-items:center; border:1px solid var(--line); border-radius:999px; padding:6px 12px; background:rgba(255,255,255,.38); text-decoration:none; color:var(--deep); font:600 13px ui-sans-serif, system-ui, sans-serif; min-height:36px; }
+.filter-link[aria-current="page"] { background:var(--deep); color:#fff; border-color:var(--deep); }
+.status-line { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+.story-summary { max-width:44ch; }
 .toolbar { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin:18px 0 22px; }
 .table { width:100%; border-collapse:collapse; font-family:ui-sans-serif, system-ui, sans-serif; font-size:14px; }
 .table th, .table td { text-align:left; border-bottom:1px solid var(--line); padding:10px 8px; vertical-align:top; }
+.story-lobby-table { table-layout:auto; }
+.story-lobby-table th, .story-lobby-table td { word-break:keep-all; }
+.story-lobby-table .story-lobby-status,
+.story-lobby-table .story-lobby-turn,
+.story-lobby-table .story-lobby-driver,
+.story-lobby-table .story-lobby-updated,
+.story-lobby-table .story-lobby-permission,
+.story-lobby-table .story-lobby-action { white-space:nowrap; }
+.story-lobby-table .story-lobby-summary { min-width:18ch; }
+.story-lobby-table .story-lobby-action { width:1%; }
 .badge { display:inline-flex; border:1px solid var(--line); border-radius:999px; padding:2px 8px; font:12px ui-sans-serif, system-ui, sans-serif; color:var(--muted); background:rgba(255,255,255,.35); }
 .story-header { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:16px; align-items:end; border-bottom:1px solid var(--line); padding-bottom:18px; margin-bottom:20px; }
 .story-header h1 { margin-bottom:0; }
@@ -725,7 +1074,7 @@ button.danger { border-color:var(--accent); background:var(--accent); }
 .turn-title { display:flex; gap:8px; flex-wrap:wrap; align-items:baseline; }
 .scene { white-space:pre-wrap; font-size:19px; line-height:1.92; max-width:72ch; margin:18px auto 24px; text-wrap:pretty; }
 .choice-list { display:grid; gap:10px; margin:12px 0; }
-.choice { text-align:left; justify-content:flex-start; background:var(--panel); color:var(--ink); border-color:var(--line); }
+.choice { text-align:left; justify-content:flex-start; background:var(--panel); color:var(--ink); border-color:var(--line); white-space:normal; align-items:flex-start; gap:4px; }
 .choice strong { margin-right:8px; color:var(--accent); }
 .archived-choice { border:1px solid var(--line); border-radius:6px; background:rgba(255,255,255,.25); padding:10px 12px; }
 .input-panel { scroll-margin-top:18px; }
@@ -738,8 +1087,10 @@ button.danger { border-color:var(--accent); background:var(--accent); }
 .panel ul { padding-left:20px; }
 .muted { color:var(--muted); font-family:ui-sans-serif, system-ui, sans-serif; font-size:13px; }
 .error { color:var(--accent); font-family:ui-sans-serif, system-ui, sans-serif; }
+.empty-state { padding:18px; border:1px dashed var(--line); border-radius:6px; background:rgba(255,255,255,.26); }
+.failed-job-meta { display:grid; gap:6px; }
 @media (max-width:820px){
-  .shell{padding:16px 14px 112px;}
+  .shell{padding:16px 14px 176px;}
   .top{align-items:flex-start; flex-direction:column; gap:10px; margin-bottom:18px;}
   .nav{justify-content:flex-start;}
   .reader{grid-template-columns:1fr;}
@@ -752,13 +1103,15 @@ button.danger { border-color:var(--accent); background:var(--accent); }
   .driver-actions{justify-content:flex-start;}
   .scene{font-size:17px; line-height:1.72;}
   .panel{padding:14px;}
-  .toolbar > *, .driver-actions > *{flex:1 1 auto;}
+  .toolbar > *, .driver-actions > *{flex:1 1 auto; min-width:0;}
   button, .button{width:100%; min-height:48px;}
   .table, .table tbody, .table tr, .table td{display:block; width:100%;}
   .table thead{display:none;}
   .table tr{border:1px solid var(--line); border-radius:6px; background:rgba(255,255,255,.35); margin:0 0 12px; padding:10px;}
   .table td{border:0; padding:6px 4px;}
-  .mobile-action-dock{position:fixed; left:0; right:0; bottom:0; z-index:10; display:grid; grid-template-columns:1fr 1fr; gap:8px; padding:10px 12px calc(10px + env(safe-area-inset-bottom)); background:rgba(247,244,237,.94); border-top:1px solid var(--line); box-shadow:var(--shadow); backdrop-filter:blur(12px);}
+  .story-lobby-table th, .story-lobby-table td{white-space:normal; word-break:keep-all;}
+  .story-lobby-table .story-lobby-action{width:auto;}
+  .mobile-action-dock{position:fixed; left:0; right:0; bottom:0; z-index:10; display:grid; grid-template-columns:1fr 1fr; gap:8px; padding:10px 12px calc(14px + env(safe-area-inset-bottom)); background:rgba(247,244,237,.94); border-top:1px solid var(--line); box-shadow:var(--shadow); backdrop-filter:blur(12px);}
   .mobile-action-dock a{min-height:48px;}
 }
 @media (max-width:960px){ .story-layout{grid-template-columns:1fr;} .table{font-size:13px;} }
@@ -766,7 +1119,7 @@ button.danger { border-color:var(--accent); background:var(--accent); }
 </head>
 <body>
 <main class="shell">
-<div class="top"><a class="brand" href="{{.Base}}/">World Harness</a><div class="nav">{{if .StoryEnabled}}<a href="{{.Base}}/stories">스토리</a>{{end}}<a href="{{.Base}}/packs/lumen-federation/">세계관</a>{{with .User}}{{if eq .Role "admin"}}<a href="{{$.Base}}/admin/users">Admin</a>{{end}}<a href="{{$.Base}}/logout">Logout</a>{{else}}<span>{{$.PageTitle}}</span>{{end}}</div></div>
+<div class="top"><a class="brand" href="{{.Base}}/">World Harness</a><div class="nav">{{if .StoryEnabled}}<a href="{{.Base}}/stories">스토리</a>{{end}}<a href="{{.Base}}/packs/lumen-federation/">세계관</a>{{with .User}}{{if eq .Role "admin"}}<a href="{{$.Base}}/admin/users">Admin</a>{{end}}<form class="nav-form" method="post" action="{{$.Base}}/logout"><input type="hidden" name="csrf_token" value="{{$.CSRFToken}}"><button class="link-button" type="submit">Logout</button></form>{{else}}<span>{{$.PageTitle}}</span>{{end}}</div></div>
 {{template "content" .}}
 </main>
 </body>
@@ -815,6 +1168,7 @@ const loginTemplate = `{{define "content"}}
 <p class="lede">Private story runtime</p>
 {{if .Error}}<p class="error">{{.Error}}</p>{{end}}
 <form method="post" class="panel" style="max-width:420px">
+  <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
   <label class="muted">Username</label>
   <input name="username" autocomplete="username" required autofocus>
   <label class="muted">Password</label>
@@ -829,20 +1183,29 @@ const storyLobbyTemplate = `{{define "content"}}
 <div class="toolbar">
   <a class="button" href="{{.Base}}/stories/new">새 스토리</a>
   <a class="button secondary" href="{{.Base}}/stories">새로고침</a>
+  <form class="nav-form" method="post" action="{{.Base}}/stories/import/hector"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><button class="secondary" type="submit">헥터 import</button></form>
 </div>
-<table class="table">
-  <thead><tr><th>제목</th><th>상태</th><th>Turn</th><th>진행자</th><th>현재 상황</th><th>업데이트</th><th>권한</th><th></th></tr></thead>
+<div class="filter-bar" role="tablist" aria-label="story filters">
+  <a class="filter-link" href="{{.Base}}/stories" {{if eq .Filter "all"}}aria-current="page"{{end}}>all</a>
+  <a class="filter-link" href="{{.Base}}/stories?filter=active" {{if eq .Filter "active"}}aria-current="page"{{end}}>active</a>
+  <a class="filter-link" href="{{.Base}}/stories?filter=mine" {{if eq .Filter "mine"}}aria-current="page"{{end}}>mine</a>
+  <a class="filter-link" href="{{.Base}}/stories?filter=watch" {{if eq .Filter "watch"}}aria-current="page"{{end}}>watch</a>
+  <a class="filter-link" href="{{.Base}}/stories?filter=archived" {{if eq .Filter "archived"}}aria-current="page"{{end}}>archived</a>
+  <a class="filter-link" href="{{.Base}}/stories?filter=imported" {{if eq .Filter "imported"}}aria-current="page"{{end}}>imported</a>
+</div>
+<table class="table story-lobby-table">
+  <thead><tr><th class="story-lobby-title">제목</th><th class="story-lobby-status">상태</th><th class="story-lobby-turn">Turn</th><th class="story-lobby-driver">진행자</th><th class="story-lobby-summary">현재 상황</th><th class="story-lobby-updated">업데이트</th><th class="story-lobby-permission">권한</th><th class="story-lobby-action"></th></tr></thead>
   <tbody>
   {{range .Stories}}
     <tr>
-      <td><strong>{{.title}}</strong></td>
-      <td><span class="badge">{{.status}}</span><br><span class="muted">{{.phase}}</span></td>
-      <td>{{.turn}}</td>
-      <td>{{if .active_driver}}{{.active_driver}}{{else}}open{{end}}</td>
-      <td>{{.summary}}</td>
-      <td class="muted">{{.updated}}</td>
-      <td>{{if .can_drive}}진행 가능{{else}}읽기/질문{{end}}</td>
-      <td><a class="button secondary" href="{{storyURL $.Base .id}}">입장</a></td>
+      <td class="story-lobby-title"><strong>{{.Title}}</strong><div class="muted">{{.ID}}{{if .Imported}} · imported{{end}}</div></td>
+      <td class="story-lobby-status"><div class="status-line"><span class="badge">{{.Status}}</span><span class="badge">{{.Phase}}</span></div><div class="muted">{{.StatusLabel}}</div></td>
+      <td class="story-lobby-turn">{{.Turn}}</td>
+      <td class="story-lobby-driver">{{.DriverLabel}}</td>
+      <td class="story-lobby-summary"><div class="story-summary">{{.Summary}}</div></td>
+      <td class="story-lobby-updated muted">{{.Updated}}</td>
+      <td class="story-lobby-permission">{{.Permission}}</td>
+      <td class="story-lobby-action"><a class="button secondary" href="{{storyURL $.Base .ID}}">입장</a></td>
     </tr>
   {{else}}
     <tr><td colspan="8" class="muted">아직 story room이 없습니다.</td></tr>
@@ -854,6 +1217,7 @@ const storyLobbyTemplate = `{{define "content"}}
 const newStoryTemplate = `{{define "content"}}
 <h1>New Story</h1>
 <form method="post" class="panel">
+  <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
   <div class="form-grid">
     <div><label class="muted">World</label><input value="lumen-federation" disabled></div>
     <div><label class="muted">Title</label><input name="title" placeholder="새 스토리"></div>
@@ -876,15 +1240,16 @@ const storyRoomTemplate = `{{define "content"}}
     </div>
   </div>
   <div class="driver-actions">
-    {{if .CanClaim}}<form method="post" action="{{.Base}}/stories/{{.Story.ID}}/driver"><input type="hidden" name="action" value="claim"><button>진행권 받기</button></form>{{end}}
-    {{if .CanRelease}}<form method="post" action="{{.Base}}/stories/{{.Story.ID}}/driver"><input type="hidden" name="action" value="release"><button class="secondary">open으로 나가기</button></form>{{end}}
+    {{if .CanClaim}}<form method="post" action="{{.Base}}/stories/{{.Story.ID}}/driver"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><input type="hidden" name="action" value="claim"><button>진행권 받기</button></form>{{end}}
+    {{if .CanRelease}}<form method="post" action="{{.Base}}/stories/{{.Story.ID}}/driver"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><input type="hidden" name="action" value="release"><button class="secondary">open으로 나가기</button></form>{{end}}
   </div>
 </div>
 {{if .IsProcessing}}<div class="panel status-panel"><strong>GM 생성 중</strong><p>요청 이벤트가 접수되었습니다. Codex/GM worker가 장면을 생성하는 동안 추가 진행 입력은 잠시 막힙니다.</p><p class="muted">active job: {{.Story.ActiveJobID}} · phase: {{.Story.Phase}}</p></div>{{end}}
-{{if eq .Story.Phase "failed_waiting_retry"}}<div class="panel status-panel"><strong>GM 생성 실패</strong><p>현재 job이 실패 상태입니다. 새 진행 입력은 실패 job 처리 후 가능합니다.</p><p class="muted">active job: {{.Story.ActiveJobID}}</p></div>{{end}}
-<nav class="turn-nav" aria-label="turn list">
+{{if .FailedJob}}{{if .FailedJob.CanRecover}}<div class="panel status-panel"><strong>GM 생성 실패</strong><p>현재 job이 실패 상태입니다. 복구를 진행하거나 취소할 수 있습니다.</p><p class="muted">active job: {{.Story.ActiveJobID}} · actor: {{.FailedJob.ActorLabel}}</p><div class="toolbar"><form method="post" action="{{.Base}}/stories/{{.Story.ID}}/recover"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><input type="hidden" name="action" value="resume"><button>resume</button></form><form method="post" action="{{.Base}}/stories/{{.Story.ID}}/recover"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><input type="hidden" name="action" value="cancel"><button class="secondary">cancel</button></form></div></div>{{else}}<div class="panel status-panel"><strong>GM 생성 실패</strong><p>현재 job이 실패 상태입니다. 새 진행 입력은 실패 job 처리 후 가능합니다.</p><p class="muted">active job: {{.Story.ActiveJobID}}</p></div>{{end}}{{end}}
+{{if .ExportedBundle}}<div class="panel status-panel"><strong>Export handoff</strong><p>Bundle exported to <code>{{.ExportedBundle}}</code>.</p><p class="muted">Draft creation is pending/manual via the admin writer path.</p><p class="muted">Target draft: <code>{{.ExportDraftTarget}}</code> · status: <span class="badge">{{if .ExportedStatus}}{{.ExportedStatus}}{{else}}draft_pending{{end}}</span></p></div>{{end}}
+{{if .HasTurns}}<nav class="turn-nav" aria-label="turn list">
   {{range .Turns}}<a href="#turn-{{.TurnID}}">Turn {{.TurnID}}</a>{{end}}
-</nav>
+</nav>{{end}}
 <div class="story-layout">
   <article>
     {{range .Turns}}
@@ -894,25 +1259,31 @@ const storyRoomTemplate = `{{define "content"}}
         <div class="scene">{{.SceneBody}}</div>
         <div class="panel"><strong>현재 상황</strong><p>{{.CurrentSituation}}</p></div>
         {{if .RevealedFacts}}<div class="panel"><strong>확인된 정보</strong><ul>{{range .RevealedFacts}}<li>{{.}}</li>{{end}}</ul></div>{{end}}
-        {{$turnID := .TurnID}}{{if .Choices}}<div class="panel"><strong>{{if eq .TurnID $.LatestTurnID}}다음 갈림길{{else}}기록된 선택지{{end}}</strong><div class="choice-list">{{range .Choices}}{{if eq $turnID $.LatestTurnID}}<form method="post" action="{{$.Base}}/stories/{{$.Story.ID}}/input"><input type="hidden" name="choice_id" value="{{.ID}}"><button class="choice" {{if not $.CanDrive}}disabled{{end}}><strong>{{.ID}}</strong>{{.Text}}</button>{{if .RiskHint}}<div class="muted">{{.RiskHint}}</div>{{end}}</form>{{else}}<div class="archived-choice"><strong>{{.ID}}</strong> {{.Text}}{{if .RiskHint}}<div class="muted">{{.RiskHint}}</div>{{end}}</div>{{end}}{{end}}</div></div>{{end}}
+        {{$turnID := .TurnID}}{{if .Choices}}<div class="panel"><strong>{{if eq .TurnID $.LatestTurnID}}다음 갈림길{{else}}기록된 선택지{{end}}</strong><div class="choice-list">{{range .Choices}}{{if eq $turnID $.LatestTurnID}}<form method="post" action="{{$.Base}}/stories/{{$.Story.ID}}/input"><input type="hidden" name="csrf_token" value="{{$.CSRFToken}}"><input type="hidden" name="turn_id" value="{{$.LatestTurnID}}"><input type="hidden" name="idempotency_key" value="{{idem}}"><input type="hidden" name="choice_id" value="{{.ID}}"><button class="choice" {{if not $.CanDrive}}disabled{{end}}><strong>{{.ID}}</strong>{{.Text}}</button>{{if .RiskHint}}<div class="muted">{{.RiskHint}}</div>{{end}}</form>{{else}}<div class="archived-choice"><strong>{{.ID}}</strong> {{.Text}}{{if .RiskHint}}<div class="muted">{{.RiskHint}}</div>{{end}}</div>{{end}}{{end}}</div></div>{{end}}
       </details>
     {{end}}
     <section class="turn input-panel" id="input-panel">
       <h2>직접 입력</h2>
       {{if .CanDrive}}
       <form method="post" action="{{.Base}}/stories/{{.Story.ID}}/input" class="panel">
-        <div class="form-grid"><div><label class="muted">Mode</label><select name="mode"><option value="action">행동</option><option value="dialogue">대사</option><option value="narration">서술 보정</option></select></div></div>
-        <textarea name="custom_text" placeholder="플레이어 캐릭터가 시도하는 행동/대사/서술 요청"></textarea>
-        <div class="toolbar"><button>진행</button></div>
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <input type="hidden" name="turn_id" value="{{.LatestTurnID}}">
+        <input type="hidden" name="idempotency_key" value="{{idem}}">
+        <div class="form-grid"><div><label class="muted">Mode</label><select name="mode"><option value="action">행동</option><option value="dialogue">대사</option><option value="narration">서술 보정</option><option value="question">질문</option></select></div></div>
+        <textarea name="custom_text" placeholder="플레이어 캐릭터가 시도하는 행동/대사/서술/질문"></textarea>
+        <div class="toolbar"><button>제출</button></div>
       </form>
       {{else}}{{if .IsProcessing}}<p class="muted">GM 생성 중입니다. 완료되면 새 턴이 자동으로 표시됩니다.</p>{{else}}{{if .CanClaim}}<p class="muted">현재 진행권이 open 상태입니다. 진행권을 받은 뒤 입력할 수 있습니다.</p>{{else}}<p class="muted">현재 {{.DriverLabel}}가 진행 중입니다. 진행 입력은 비활성화되어 있습니다.</p>{{end}}{{end}}{{end}}
       <h2 id="qa">질문</h2>
-      {{if .CanQuestion}}
+      {{if .CanDrive}}<p class="muted">질문은 직접 입력에서 question 모드를 선택해 제출할 수 있습니다.</p>{{else}}{{if .CanQuestion}}
       <form method="post" action="{{.Base}}/stories/{{.Story.ID}}/question" class="panel">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <input type="hidden" name="turn_id" value="{{.LatestTurnID}}">
+        <input type="hidden" name="idempotency_key" value="{{idem}}">
         <textarea name="question" placeholder="현재 상황, 인물, 단서, 설정, 선택지 의미를 묻는 비진행 질문"></textarea>
         <div class="toolbar"><button class="secondary">질문 제출</button></div>
       </form>
-      {{else}}{{if .IsProcessing}}<p class="muted">GM 생성 중에는 질문 제출도 잠시 막습니다.</p>{{else}}<p class="muted">completed/archived room에서는 새 질문을 받지 않습니다.</p>{{end}}{{end}}
+      {{else}}{{if .IsProcessing}}<p class="muted">GM 생성 중에는 질문 제출도 잠시 막습니다.</p>{{else}}<p class="muted">completed/archived/deleted room에서는 새 질문을 받지 않습니다.</p>{{end}}{{end}}{{end}}
       {{range .QA}}<div class="panel"><div class="muted">{{.CreatedAt}} · Turn {{.TurnID}}</div><strong>Q. {{.Question}}</strong><p>A. {{.Answer}}</p></div>{{end}}
     </section>
   </article>
@@ -921,10 +1292,10 @@ const storyRoomTemplate = `{{define "content"}}
     <div class="panel"><h3>확인된 정보</h3><ul>{{range .State.Facts}}<li>{{.}}</li>{{end}}</ul></div>
     <div class="panel"><h3>열린 실마리</h3><ul>{{range .State.OpenThreads}}<li>{{.}}</li>{{end}}</ul></div>
     <div class="panel"><h3>위험</h3><ul>{{range .State.Risks}}<li>{{.}}</li>{{end}}</ul></div>
-    {{if .IsAdmin}}<div class="panel"><h3>Admin</h3><form method="post" action="{{.Base}}/stories/{{.Story.ID}}/admin"><label class="muted">Status</label><select name="status"><option value="">변경 없음</option><option>active</option><option>paused</option><option>completed</option><option>archived</option></select><label class="muted">Active driver user id</label><input name="active_driver_id" placeholder="{{.DriverLabel}}"><div class="toolbar"><button>적용</button></div></form><form method="post" action="{{.Base}}/stories/{{.Story.ID}}/admin"><input type="hidden" name="active_driver_id" value="__open__"><button class="secondary">open으로 변경</button></form></div>{{end}}
+    {{if .IsAdmin}}<div class="panel"><h3>Admin</h3><form method="post" action="{{.Base}}/stories/{{.Story.ID}}/admin"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><input type="hidden" name="action" value="update"><label class="muted">Status</label><select name="status"><option value="">변경 없음</option><option>active</option><option>paused</option><option>completed</option><option>archived</option></select><label class="muted">Active driver user id</label><input name="active_driver_id" placeholder="{{.DriverLabel}}"><div class="toolbar"><button>적용</button></div></form><form method="post" action="{{.Base}}/stories/{{.Story.ID}}/admin"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><input type="hidden" name="action" value="update"><input type="hidden" name="active_driver_id" value="__open__"><button class="secondary">open으로 변경</button></form><div class="toolbar">{{if or (eq .Story.Status "archived") (eq .Story.Status "deleted")}}<form method="post" action="{{.Base}}/stories/{{.Story.ID}}/admin"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><input type="hidden" name="action" value="restore"><button>restore</button></form>{{else}}<form method="post" action="{{.Base}}/stories/{{.Story.ID}}/admin"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><input type="hidden" name="action" value="archive"><button>archive</button></form>{{end}}{{if ne .Story.Status "deleted"}}<form method="post" action="{{.Base}}/stories/{{.Story.ID}}/admin"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><input type="hidden" name="action" value="delete"><button class="secondary">delete</button></form>{{end}}<form method="post" action="{{.Base}}/stories/{{.Story.ID}}/admin"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><input type="hidden" name="action" value="export_bundle"><button class="secondary">export bundle</button></form></div></div>{{end}}
   </aside>
 </div>
-<div class="mobile-action-dock"><a class="button secondary" href="#turn-{{.LatestTurnID}}">최신 턴</a><a class="button" href="#input-panel">입력</a></div>
+{{if .HasTurns}}<div class="mobile-action-dock"><a class="button secondary" href="#turn-{{.LatestTurnID}}">최신 턴</a><a class="button" href="#input-panel">입력</a></div>{{else}}<div class="mobile-action-dock"><a class="button" href="#input-panel">입력</a></div>{{end}}
 {{end}}`
 
 const adminUsersTemplate = `{{define "content"}}
@@ -932,6 +1303,7 @@ const adminUsersTemplate = `{{define "content"}}
 <div class="panel">
   <h2>Create user</h2>
   <form method="post" class="form-grid">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
     <input type="hidden" name="action" value="create">
     <input name="username" placeholder="username" required>
     <input name="display_name" placeholder="display name">
@@ -949,9 +1321,9 @@ const adminUsersTemplate = `{{define "content"}}
   <td class="muted">{{.last_login_at}}</td>
   <td>{{.active_sessions}}</td>
   <td>
-    <form method="post" class="toolbar"><input type="hidden" name="action" value="update"><input type="hidden" name="id" value="{{.id}}"><select name="role"><option {{if eq .role "friend"}}selected{{end}}>friend</option><option {{if eq .role "admin"}}selected{{end}}>admin</option></select><select name="status"><option {{if eq .status "active"}}selected{{end}}>active</option><option {{if eq .status "disabled"}}selected{{end}}>disabled</option></select><button class="secondary">update</button></form>
-    <form method="post" class="toolbar"><input type="hidden" name="action" value="reset"><input type="hidden" name="id" value="{{.id}}"><input name="password" type="password" placeholder="new password"><button class="secondary">reset password</button></form>
-    <form method="post" class="toolbar"><input type="hidden" name="action" value="revoke"><input type="hidden" name="id" value="{{.id}}"><button class="danger">revoke sessions</button></form>
+    <form method="post" class="toolbar"><input type="hidden" name="csrf_token" value="{{$.CSRFToken}}"><input type="hidden" name="action" value="update"><input type="hidden" name="id" value="{{.id}}"><select name="role"><option {{if eq .role "friend"}}selected{{end}}>friend</option><option {{if eq .role "admin"}}selected{{end}}>admin</option></select><select name="status"><option {{if eq .status "active"}}selected{{end}}>active</option><option {{if eq .status "disabled"}}selected{{end}}>disabled</option></select><button class="secondary">update</button></form>
+    <form method="post" class="toolbar"><input type="hidden" name="csrf_token" value="{{$.CSRFToken}}"><input type="hidden" name="action" value="reset"><input type="hidden" name="id" value="{{.id}}"><input name="password" type="password" placeholder="new password"><button class="secondary">reset password</button></form>
+    <form method="post" class="toolbar"><input type="hidden" name="csrf_token" value="{{$.CSRFToken}}"><input type="hidden" name="action" value="revoke"><input type="hidden" name="id" value="{{.id}}"><button class="danger">revoke sessions</button></form>
   </td>
 </tr>{{end}}</tbody>
 </table>

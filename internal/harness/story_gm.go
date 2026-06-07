@@ -115,15 +115,31 @@ func newGMProvider(name string) gmProvider {
 	}
 }
 
-func (s *storyStore) submitStoryInput(storyID string, u *authUser, choiceID, customMode, customText string) (string, error) {
+func (s *storyStore) submitStoryInput(storyID string, u *authUser, currentTurnID int, idempotencyKey, choiceID, customMode, customText string) (string, error) {
+	choiceID = strings.TrimSpace(choiceID)
+	customMode = strings.TrimSpace(customMode)
+	customText = strings.TrimSpace(customText)
+	idempotencyKey = strings.TrimSpace(idempotencyKey)
 	unlock, err := s.acquireLock(storyID, "submit_input", u.ID)
 	if err != nil {
 		return "", err
 	}
 	defer unlock()
+	if job, found, err := s.findJobByIdempotencyKey(storyID, "story_turn", idempotencyKey); err != nil {
+		return "", err
+	} else if found {
+		if s.idempotencyMatchesStoryInput(job, u.ID, choiceID, customMode, customText, currentTurnID) {
+			return job.ID, nil
+		}
+		return "", errors.New("idempotency key conflict")
+	}
 	m, err := s.readManifest(storyID)
 	if err != nil {
 		return "", err
+	}
+	turns, err := s.readTurns(storyID)
+	if err != nil || len(turns) == 0 {
+		return "", errors.New("story has no turns")
 	}
 	if m.Status != "active" || m.Phase != "waiting_for_choice" {
 		return "", errors.New("story is not waiting for input")
@@ -131,11 +147,13 @@ func (s *storyStore) submitStoryInput(storyID string, u *authUser, choiceID, cus
 	if u.Role != "admin" && (m.ActiveDriverID == "" || m.ActiveDriverID != u.ID) {
 		return "", errors.New("only active driver can progress this story")
 	}
-	turns, err := s.readTurns(storyID)
-	if err != nil || len(turns) == 0 {
-		return "", errors.New("story has no turns")
-	}
 	prev := turns[len(turns)-1]
+	if currentTurnID != prev.TurnID {
+		return "", errors.New("stale turn")
+	}
+	if choiceID == "" && customText == "" {
+		return "", errors.New("input is empty")
+	}
 	if choiceID != "" {
 		found := false
 		for _, c := range prev.Choices {
@@ -152,11 +170,11 @@ func (s *storyStore) submitStoryInput(storyID string, u *authUser, choiceID, cus
 	input := storyInput{ID: "input_" + randomID(), SelectedChoiceID: choiceID, CustomInputMode: customMode, CustomText: strings.TrimSpace(customText)}
 	job := gmJob{
 		ID: "job_" + randomID(), StoryID: storyID, JobType: "story_turn", Status: "queued", Attempt: 1,
-		ActorID: u.ID, ActorRole: u.Role, Input: &input, TurnID: prev.TurnID + 1, ParentTurnID: prev.TurnID,
-		ContextHash: storyContextHash(m, turns), CreatedAt: now, ExclusiveProgression: true,
+		ActorID: u.ID, ActorRole: u.Role, Input: &input, TurnID: currentTurnID + 1, ParentTurnID: currentTurnID,
+		ContextHash: storyContextHash(m, turns), CreatedAt: now, ExclusiveProgression: true, IdempotencyKey: idempotencyKey,
 	}
 	dir := s.storyDir(storyID)
-	if err := appendJSONL(filepath.Join(dir, "events.jsonl"), map[string]any{"type": "input_submitted", "at": now, "input": input, "actor_id": u.ID}); err != nil {
+	if err := appendJSONL(filepath.Join(dir, "events.jsonl"), map[string]any{"type": "input_submitted", "at": now, "input": input, "actor_id": u.ID, "idempotency_key": idempotencyKey}); err != nil {
 		return "", err
 	}
 	if err := appendJSONL(filepath.Join(dir, "events.jsonl"), map[string]any{"type": "gm_job_created", "at": now, "job": job}); err != nil {
@@ -213,8 +231,9 @@ func (s *storyStore) createStoryWithPrologueJob(actorID, title, style, character
 	return id, writeAtomic(filepath.Join(dir, "summary.md"), []byte(m.LatestSummary+"\n"))
 }
 
-func (s *storyStore) submitQuestionJob(storyID string, u *authUser, text string) (string, error) {
+func (s *storyStore) submitQuestionJob(storyID string, u *authUser, currentTurnID int, idempotencyKey, text string) (string, error) {
 	text = strings.TrimSpace(text)
+	idempotencyKey = strings.TrimSpace(idempotencyKey)
 	if text == "" {
 		return "", errors.New("question is empty")
 	}
@@ -223,6 +242,14 @@ func (s *storyStore) submitQuestionJob(storyID string, u *authUser, text string)
 		return "", err
 	}
 	defer unlock()
+	if job, found, err := s.findJobByIdempotencyKey(storyID, "question_answer", idempotencyKey); err != nil {
+		return "", err
+	} else if found {
+		if s.idempotencyMatchesQuestion(job, u.ID, text, currentTurnID) {
+			return job.ID, nil
+		}
+		return "", errors.New("idempotency key conflict")
+	}
 	m, err := s.readManifest(storyID)
 	if err != nil {
 		return "", err
@@ -233,15 +260,18 @@ func (s *storyStore) submitQuestionJob(storyID string, u *authUser, text string)
 	if m.Phase == "gm_generating" || m.Phase == "validating_output" || m.Phase == "applying_turn" {
 		return "", errors.New("GM is generating")
 	}
+	if currentTurnID != m.CurrentTurn {
+		return "", errors.New("stale turn")
+	}
 	now := time.Now().UTC().Format(time.RFC3339)
-	q := storyQuestion{ID: "question_" + randomID(), ActorID: u.ID, Question: text, Answer: "답변 생성 중", TurnID: m.CurrentTurn, CreatedAt: now}
+	q := storyQuestion{ID: "question_" + randomID(), ActorID: u.ID, Question: text, Answer: "답변 생성 중", TurnID: currentTurnID, CreatedAt: now}
 	job := gmJob{
 		ID: "job_" + randomID(), StoryID: storyID, JobType: "question_answer", Status: "queued", Attempt: 1,
-		ActorID: u.ID, ActorRole: u.Role, Question: &q, TurnID: m.CurrentTurn, ParentTurnID: m.CurrentTurn,
-		ContextHash: "sha256:question", CreatedAt: now, ExclusiveProgression: false,
+		ActorID: u.ID, ActorRole: u.Role, Question: &q, TurnID: currentTurnID, ParentTurnID: currentTurnID,
+		ContextHash: "sha256:question", CreatedAt: now, ExclusiveProgression: false, IdempotencyKey: idempotencyKey,
 	}
 	dir := s.storyDir(storyID)
-	if err := appendJSONL(filepath.Join(dir, "events.jsonl"), map[string]any{"type": "question_asked", "at": now, "question": q}); err != nil {
+	if err := appendJSONL(filepath.Join(dir, "events.jsonl"), map[string]any{"type": "question_asked", "at": now, "question": q, "idempotency_key": idempotencyKey}); err != nil {
 		return "", err
 	}
 	if err := appendJSONL(filepath.Join(dir, "events.jsonl"), map[string]any{"type": "gm_job_created", "at": now, "job": job}); err != nil {
@@ -304,6 +334,14 @@ func (s *storyStore) runGMJob(ctx context.Context, provider gmProvider, job gmJo
 	defer cancel()
 	out, raw, providerName, model, err := provider.Generate(timeoutCtx, req)
 	if err != nil {
+		if strings.TrimSpace(raw) != "" {
+			rawPath, writeErr := s.writeFailedGMRaw(job, raw)
+			if writeErr == nil {
+				job.Provider = providerName
+				job.Model = model
+				job.RawOutputPath = rawPath
+			}
+		}
 		_ = s.failGMJob(job, "GM_PROVIDER_ERROR", err.Error())
 		return err
 	}
@@ -360,7 +398,7 @@ func (s *storyStore) applyGMOutput(job gmJob, out gmOutput, raw, providerName, m
 	now := time.Now().UTC().Format(time.RFC3339)
 	turn := storyTurn{
 		TurnID: job.TurnID, BranchID: out.Turn.BranchID, ParentTurnID: job.ParentTurnID, ActorID: job.ActorID,
-		InputID: out.Turn.InputID, Source: out.Turn.Source,
+		InputID: out.Turn.InputID, Source: outputSourceForJob(job),
 		SceneTitle: out.SceneTitle, SceneBody: out.SceneBody, CurrentSituation: out.CurrentSituation,
 		RevealedFacts: out.RevealedFacts, Choices: out.Choices, CreatedAt: now,
 	}
@@ -471,6 +509,15 @@ func (s *storyStore) failGMJob(job gmJob, code, message string) error {
 	}
 	_ = appendJSONL(filepath.Join(dir, "events.jsonl"), map[string]any{"type": "gm_job_failed", "at": now, "job": job})
 	return writeJSONAtomic(filepath.Join(dir, "jobs", job.ID+".json"), job)
+}
+
+func (s *storyStore) writeFailedGMRaw(job gmJob, raw string) (string, error) {
+	dir := s.storyDir(job.StoryID)
+	rawPath := filepath.Join("jobs", job.ID+".failed.txt")
+	if err := writeAtomic(filepath.Join(dir, rawPath), []byte(raw)); err != nil {
+		return "", err
+	}
+	return rawPath, nil
 }
 
 func (s *storyStore) buildGMRequest(job gmJob) (gmRequest, error) {
@@ -626,10 +673,14 @@ func (codexCLIProvider) Generate(ctx context.Context, req gmRequest) (gmOutput, 
 }
 
 func buildCodexGMPrompt(req gmRequest, contextPath string) string {
+	contextJSON, _ := json.MarshalIndent(req, "", "  ")
 	if req.Job.JobType == "question_answer" {
 		return fmt.Sprintf(`You are the question-answer GM worker for world-harness Story Web UI.
 
-Read the job context JSON at %s. Answer the user's non-progressing story question using only current story state, recent turns, and read-only world documents under the added pack directory if needed.
+Use the embedded context below as authoritative. A copy also exists at %s. Answer the user's non-progressing story question using only current story state, recent turns, and read-only world documents under the added pack directory if needed.
+
+Embedded context JSON:
+%s
 
 Do not advance the story. Do not change choices, state, summary, canon, or files.
 
@@ -640,38 +691,106 @@ Required schema:
   "schema_version": "story-question-answer.v1",
   "story_id": %q,
   "answer": "Korean answer, concise but useful"
-}`, contextPath, req.Job.StoryID)
+}`, contextPath, string(contextJSON), req.Job.StoryID)
 	}
 	inputID := ""
-	source := "choice or custom"
+	source := outputSourceForJob(req.Job)
 	if req.Job.Input != nil {
 		inputID = req.Job.Input.ID
 	} else {
 		inputID = "setup_" + req.Job.ID
-		source = "setup"
 	}
+	inputSummary := summarizeGMInput(req)
 	return fmt.Sprintf(`You are the GM worker for world-harness Story Web UI.
 
-Read the job context JSON at %s. Use only the provided context and read-only world documents under the added pack directory if needed.
+Use the embedded context below as authoritative. A copy also exists at %s, but do not say context is missing when the embedded context is present.
+
+Current player input:
+%s
+
+Embedded context JSON:
+%s
 
 Return exactly one JSON object. Do not use Markdown fences. Do not include explanations outside JSON.
 
-Required schema:
-- schema_version: "story-gm-output.v1"
-- story_id: %q
-- turn.branch_id: "branch_main"
-- turn.turn_id: %d
-- turn.parent_turn_id: %d
-- turn.input_id: %q
-- turn.job_id: %q
-- turn.source: %q
-- scene_title, scene_body, current_situation: Korean strings
-- revealed_facts: Korean string array
-- state_patch: object with allowed add/set/remove fields
-- resolution: "accepted", "partial", or "rejected"
-- choices: 3 or 4 choices with id A-D, text, intent, risk_hint
+Required JSON shape. Keep scene_title, scene_body, current_situation, revealed_facts, state_patch, resolution, and choices as top-level fields, not inside turn:
+{
+  "schema_version": "story-gm-output.v1",
+  "story_id": %q,
+  "turn": {
+    "branch_id": "branch_main",
+    "turn_id": %d,
+    "parent_turn_id": %d,
+    "input_id": %q,
+    "job_id": %q,
+    "source": %q
+  },
+  "scene_title": "Korean title",
+  "scene_body": "Korean literary prose",
+  "current_situation": "Korean current situation",
+  "revealed_facts": ["Korean fact"],
+  "state_patch": {
+    "add": {
+      "facts": [],
+      "open_threads": [],
+      "risks": []
+    },
+    "set": {
+      "location": "",
+      "active_characters": [],
+      "latest_summary": ""
+    },
+    "remove": {
+      "facts": [],
+      "open_threads": [],
+      "risks": []
+    }
+  },
+  "resolution": "accepted",
+  "choices": [
+    {"id": "A", "text": "Korean choice", "intent": "Korean intent", "risk_hint": "Korean risk"}
+  ]
+}
 
-The output should be interactive literary Korean prose, 1500-3000 Korean characters when possible. Do not change canon or files.`, contextPath, req.Job.StoryID, req.Job.TurnID, req.Job.ParentTurnID, inputID, req.Job.ID, source)
+Rules:
+- Continue directly from the latest recent_turns entry.
+- If selected_choice_id is set, resolve it against the latest turn choices and depict that choice.
+- Never write that prior context is unavailable if recent_turns is non-empty.
+- Do not expose job_id, input_id, schema details, or implementation metadata as revealed facts.
+- Validate your final answer as complete JSON before returning it.
+- The output should be interactive literary Korean prose, 1500-3000 Korean characters when possible. Do not change canon or files.`, contextPath, inputSummary, string(contextJSON), req.Job.StoryID, req.Job.TurnID, req.Job.ParentTurnID, inputID, req.Job.ID, source)
+}
+
+func outputSourceForJob(job gmJob) string {
+	if job.JobType == "prologue" {
+		return "setup"
+	}
+	if job.Input != nil && job.Input.SelectedChoiceID != "" {
+		return "choice"
+	}
+	return "custom"
+}
+
+func summarizeGMInput(req gmRequest) string {
+	if req.Job.Input == nil {
+		if req.Job.Setup != nil {
+			return fmt.Sprintf("프롤로그 생성: 이름=%s, 스타일=%s, 특징=%s", req.Job.Setup.CharacterName, req.Job.Setup.Style, req.Job.Setup.Traits)
+		}
+		return "입력 없음"
+	}
+	if req.Job.Input.SelectedChoiceID != "" {
+		chosen := ""
+		if len(req.Turns) > 0 {
+			for _, c := range req.Turns[len(req.Turns)-1].Choices {
+				if c.ID == req.Job.Input.SelectedChoiceID {
+					chosen = c.Text
+					break
+				}
+			}
+		}
+		return fmt.Sprintf("선택지 %s: %s", req.Job.Input.SelectedChoiceID, chosen)
+	}
+	return fmt.Sprintf("%s: %s", req.Job.Input.CustomInputMode, req.Job.Input.CustomText)
 }
 
 func validateGMOutput(job gmJob, out gmOutput) error {
@@ -687,6 +806,16 @@ func validateGMOutput(job gmJob, out gmOutput) error {
 	}
 	if strings.TrimSpace(out.SceneBody) == "" || strings.TrimSpace(out.SceneTitle) == "" || strings.TrimSpace(out.CurrentSituation) == "" {
 		return errors.New("empty required scene field")
+	}
+	if len(out.SceneBody) < 200 {
+		return errors.New("scene_body too short")
+	}
+	blocked := []string{"맥락을 확인할 수 없", "이전 장면의 구체적 내용이 확인되지", "input_id", "job_id", "작업 ID", "입력 ID"}
+	joined := out.SceneBody + "\n" + out.CurrentSituation + "\n" + strings.Join(out.RevealedFacts, "\n")
+	for _, term := range blocked {
+		if strings.Contains(joined, term) {
+			return fmt.Errorf("output contains invalid fallback/meta text: %s", term)
+		}
 	}
 	if len(out.Choices) < 3 || len(out.Choices) > 4 {
 		return errors.New("choices must be 3 or 4")

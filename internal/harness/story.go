@@ -2,11 +2,13 @@ package harness
 
 import (
 	"bufio"
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -17,8 +19,9 @@ import (
 )
 
 type storyStore struct {
-	root      string
-	packsRoot string
+	root       string
+	packsRoot  string
+	exportRoot string
 }
 
 type storyManifest struct {
@@ -85,7 +88,7 @@ func openStoryStore(root, packsRoot string) (*storyStore, error) {
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		return nil, err
 	}
-	return &storyStore{root: root, packsRoot: packsRoot}, nil
+	return &storyStore{root: root, packsRoot: packsRoot, exportRoot: filepath.Join(filepath.Dir(root), "exports")}, nil
 }
 
 func (s *storyStore) storyDir(id string) string {
@@ -125,7 +128,7 @@ func (s *storyStore) readState(id string) (storyState, error) {
 
 func (s *storyStore) readTurns(id string) ([]storyTurn, error) {
 	var turns []storyTurn
-	err := readJSONL(filepath.Join(s.storyDir(id), "turns.jsonl"), func(b []byte) error {
+	err := readStoryJSONL(filepath.Join(s.storyDir(id), "turns.jsonl"), func(b []byte) error {
 		var t storyTurn
 		if err := json.Unmarshal(b, &t); err != nil {
 			return err
@@ -138,7 +141,7 @@ func (s *storyStore) readTurns(id string) ([]storyTurn, error) {
 
 func (s *storyStore) readQA(id string) ([]storyQuestion, error) {
 	var qa []storyQuestion
-	err := readJSONL(filepath.Join(s.storyDir(id), "qa.jsonl"), func(b []byte) error {
+	err := readStoryJSONL(filepath.Join(s.storyDir(id), "qa.jsonl"), func(b []byte) error {
 		var q storyQuestion
 		if err := json.Unmarshal(b, &q); err != nil {
 			return err
@@ -147,6 +150,310 @@ func (s *storyStore) readQA(id string) ([]storyQuestion, error) {
 		return nil
 	})
 	return qa, err
+}
+
+func (s *storyStore) exportStoryBundle(storyID string, actor *authUser) (string, error) {
+	m, err := s.readManifest(storyID)
+	if err != nil {
+		return "", err
+	}
+	if s.storyHasBlockingGMJob(m) {
+		return "", errors.New("story has an active GM job")
+	}
+	st, err := s.readState(storyID)
+	if err != nil {
+		return "", err
+	}
+	turns, err := s.readTurns(storyID)
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(s.exportRoot, 0o700); err != nil {
+		return "", err
+	}
+	bundleID := time.Now().UTC().Format("20060102T150405Z") + "_" + randomID()
+	dir := filepath.Join(s.exportRoot, storyID, bundleID)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	if err := writeJSONAtomic(filepath.Join(dir, "source_manifest.json"), m); err != nil {
+		return "", err
+	}
+	if err := writeJSONAtomic(filepath.Join(dir, "turn_hashes.json"), map[string]any{
+		"story_id": storyID,
+		"turns":    turnHashes(turns),
+	}); err != nil {
+		return "", err
+	}
+	if err := writeAtomic(filepath.Join(dir, "summary.md"), []byte(firstNonEmpty(strings.TrimSpace(m.LatestSummary), "No summary yet")+"\n")); err != nil {
+		return "", err
+	}
+	if err := writeAtomic(filepath.Join(dir, "storylet.md"), []byte(renderStoryletBundle(m, st, turns))); err != nil {
+		return "", err
+	}
+	exportedAt := time.Now().UTC().Format(time.RFC3339)
+	exportManifest := map[string]any{
+		"story_id":                    storyID,
+		"world_id":                    m.WorldID,
+		"exported_at":                 exportedAt,
+		"status":                      "draft_pending",
+		"draft_target_suggestion":     filepath.ToSlash(filepath.Join("drafts", "storylets", storyID+".md")),
+		"source_files":                []string{"source_manifest.json", "turn_hashes.json", "storylet.md", "summary.md"},
+		"turn_hashes_path":            "turn_hashes.json",
+		"storylet_path":               "storylet.md",
+		"summary_path":                "summary.md",
+		"next_admin_cli_instructions": []string{"Copy the bundle into the admin writer workflow.", "Create the draft at the suggested target path.", "Mark the draft as ready before republishing or review."},
+	}
+	if actor != nil && strings.TrimSpace(actor.ID) != "" {
+		exportManifest["exported_by"] = actor.ID
+	}
+	if err := writeJSONAtomic(filepath.Join(dir, "export_manifest.json"), exportManifest); err != nil {
+		return "", err
+	}
+	actorID := ""
+	if actor != nil {
+		actorID = strings.TrimSpace(actor.ID)
+	}
+	if err := appendJSONL(filepath.Join(s.storyDir(storyID), "events.jsonl"), map[string]any{
+		"type":                    "story_export_handoff",
+		"at":                      exportedAt,
+		"story_id":                storyID,
+		"actor_id":                actorID,
+		"bundle_path":             dir,
+		"target_draft_suggestion": filepath.ToSlash(filepath.Join("drafts", "storylets", storyID+".md")),
+		"status":                  "draft_pending",
+	}); err != nil {
+		return "", err
+	}
+	return dir, nil
+}
+
+func turnHashes(turns []storyTurn) []map[string]any {
+	out := make([]map[string]any, 0, len(turns))
+	for _, turn := range turns {
+		b, _ := json.Marshal(turn)
+		sum := sha256.Sum256(b)
+		out = append(out, map[string]any{
+			"turn_id":     turn.TurnID,
+			"branch_id":   turn.BranchID,
+			"source":      turn.Source,
+			"created_at":  turn.CreatedAt,
+			"hash":        "sha256:" + hex.EncodeToString(sum[:]),
+			"input_id":    turn.InputID,
+			"actor_id":    turn.ActorID,
+			"parent_turn": turn.ParentTurnID,
+		})
+	}
+	return out
+}
+
+func renderStoryletBundle(m storyManifest, st storyState, turns []storyTurn) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "# %s\n\n", m.Title)
+	fmt.Fprintf(&b, "- story_id: `%s`\n- status: `%s`\n- phase: `%s`\n- current_turn: `%d`\n- active_driver: `%s`\n", m.ID, m.Status, m.Phase, m.CurrentTurn, firstNonEmpty(m.ActiveDriverID, "open"))
+	if m.SourceDraftPath != "" {
+		fmt.Fprintf(&b, "- source_draft_path: `%s`\n", m.SourceDraftPath)
+	}
+	fmt.Fprintf(&b, "\n## Summary\n\n%s\n\n## State\n\n- Location: %s\n- Active characters: %s\n\n### Facts\n", firstNonEmpty(strings.TrimSpace(m.LatestSummary), "No summary yet"), firstNonEmpty(st.Location, "미정"), strings.Join(st.ActiveCharacters, ", "))
+	for _, fact := range st.Facts {
+		fmt.Fprintf(&b, "- %s\n", fact)
+	}
+	b.WriteString("\n### Open threads\n")
+	for _, thread := range st.OpenThreads {
+		fmt.Fprintf(&b, "- %s\n", thread)
+	}
+	b.WriteString("\n### Risks\n")
+	for _, risk := range st.Risks {
+		fmt.Fprintf(&b, "- %s\n", risk)
+	}
+	b.WriteString("\n## Turns\n")
+	for _, turn := range turns {
+		fmt.Fprintf(&b, "\n### Turn %d\n\n", turn.TurnID)
+		fmt.Fprintf(&b, "- actor: `%s`\n- source: `%s`\n- input_id: `%s`\n\n", turn.ActorID, turn.Source, turn.InputID)
+		if turn.SceneTitle != "" {
+			fmt.Fprintf(&b, "**%s**\n\n", turn.SceneTitle)
+		}
+		if turn.SceneBody != "" {
+			b.WriteString(strings.TrimSpace(turn.SceneBody) + "\n\n")
+		}
+		if turn.CurrentSituation != "" {
+			fmt.Fprintf(&b, "_Current situation: %s_\n\n", turn.CurrentSituation)
+		}
+		if len(turn.RevealedFacts) > 0 {
+			b.WriteString("Facts:\n")
+			for _, fact := range turn.RevealedFacts {
+				fmt.Fprintf(&b, "- %s\n", fact)
+			}
+			b.WriteString("\n")
+		}
+	}
+	return b.String()
+}
+
+func (s *storyStore) listJobs(storyID string) ([]gmJob, error) {
+	entries, err := os.ReadDir(filepath.Join(s.storyDir(storyID), "jobs"))
+	if err != nil {
+		return nil, err
+	}
+	var out []gmJob
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+			continue
+		}
+		var j gmJob
+		if err := readJSON(filepath.Join(s.storyDir(storyID), "jobs", e.Name()), &j); err == nil {
+			out = append(out, j)
+		}
+	}
+	return out, nil
+}
+
+func (s *storyStore) findJobByIdempotencyKey(storyID, jobType, key string) (gmJob, bool, error) {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return gmJob{}, false, nil
+	}
+	jobs, err := s.listJobs(storyID)
+	if err != nil {
+		return gmJob{}, false, err
+	}
+	for _, job := range jobs {
+		if job.IdempotencyKey == key && (jobType == "" || job.JobType == jobType) {
+			return job, true, nil
+		}
+	}
+	return gmJob{}, false, nil
+}
+
+func (s *storyStore) idempotencyMatchesStoryInput(job gmJob, actorID, choiceID, customMode, customText string, turnID int) bool {
+	if job.ActorID != actorID || job.JobType != "story_turn" {
+		return false
+	}
+	if job.TurnID != turnID {
+		return false
+	}
+	if job.Input == nil {
+		return false
+	}
+	return job.Input.SelectedChoiceID == choiceID && job.Input.CustomInputMode == customMode && job.Input.CustomText == strings.TrimSpace(customText)
+}
+
+func (s *storyStore) idempotencyMatchesQuestion(job gmJob, actorID, question string, turnID int) bool {
+	if job.ActorID != actorID || job.JobType != "question_answer" {
+		return false
+	}
+	if job.TurnID != turnID {
+		return false
+	}
+	if job.Question == nil {
+		return false
+	}
+	return job.Question.Question == strings.TrimSpace(question)
+}
+
+func (s *storyStore) failedProgressionJob(storyID string) (gmJob, bool, error) {
+	m, err := s.readManifest(storyID)
+	if err != nil {
+		return gmJob{}, false, err
+	}
+	if m.Phase != "failed_waiting_retry" || m.ActiveJobID == "" {
+		return gmJob{}, false, nil
+	}
+	job, err := s.readJob(storyID, m.ActiveJobID)
+	if err != nil {
+		return gmJob{}, false, err
+	}
+	return job, true, nil
+}
+
+func (s *storyStore) resumeFailedJob(storyID string, u *authUser) (string, error) {
+	unlock, err := s.acquireLock(storyID, "resume_failed_job", u.ID)
+	if err != nil {
+		return "", err
+	}
+	defer unlock()
+	m, err := s.readManifest(storyID)
+	if err != nil {
+		return "", err
+	}
+	if m.Phase != "failed_waiting_retry" || m.ActiveJobID == "" {
+		return "", errors.New("no failed job to resume")
+	}
+	job, err := s.readJob(storyID, m.ActiveJobID)
+	if err != nil {
+		return "", err
+	}
+	if u.Role != "admin" && u.ID != job.ActorID {
+		return "", errors.New("not allowed to resume this job")
+	}
+	if job.JobType != "story_turn" && job.JobType != "prologue" {
+		return "", errors.New("failed job cannot be resumed")
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	newJob := job
+	newJob.ID = "job_" + randomID()
+	newJob.Status = "queued"
+	newJob.Attempt++
+	newJob.CreatedAt = now
+	newJob.StartedAt = ""
+	newJob.CompletedAt = ""
+	newJob.ErrorCode = ""
+	newJob.ErrorMessage = ""
+	newJob.Provider = ""
+	newJob.Model = ""
+	newJob.RawOutputPath = ""
+	newJob.IdempotencyKey = ""
+	newJob.ContextHash = storyContextHash(m, mustReadTurns(s, storyID))
+	dir := s.storyDir(storyID)
+	if err := appendJSONL(filepath.Join(dir, "events.jsonl"), map[string]any{"type": "gm_job_resumed", "at": now, "job": newJob, "from_job_id": job.ID}); err != nil {
+		return "", err
+	}
+	if err := writeJSONAtomic(filepath.Join(dir, "jobs", newJob.ID+".json"), newJob); err != nil {
+		return "", err
+	}
+	m.Phase = "gm_generating"
+	m.ActiveJobID = newJob.ID
+	m.UpdatedAt = now
+	if err := writeJSONAtomic(filepath.Join(dir, "manifest.json"), m); err != nil {
+		return "", err
+	}
+	return newJob.ID, nil
+}
+
+func (s *storyStore) cancelFailedJob(storyID string, u *authUser) error {
+	unlock, err := s.acquireLock(storyID, "cancel_failed_job", u.ID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	m, err := s.readManifest(storyID)
+	if err != nil {
+		return err
+	}
+	if m.Phase != "failed_waiting_retry" || m.ActiveJobID == "" {
+		return errors.New("no failed job to cancel")
+	}
+	job, err := s.readJob(storyID, m.ActiveJobID)
+	if err != nil {
+		return err
+	}
+	if u.Role != "admin" && u.ID != job.ActorID {
+		return errors.New("not allowed to cancel this job")
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	dir := s.storyDir(storyID)
+	if err := appendJSONL(filepath.Join(dir, "events.jsonl"), map[string]any{"type": "gm_job_canceled", "at": now, "job_id": job.ID, "actor_id": u.ID}); err != nil {
+		return err
+	}
+	m.Phase = "waiting_for_choice"
+	m.ActiveJobID = ""
+	m.UpdatedAt = now
+	return writeJSONAtomic(filepath.Join(dir, "manifest.json"), m)
+}
+
+func mustReadTurns(s *storyStore, storyID string) []storyTurn {
+	turns, _ := s.readTurns(storyID)
+	return turns
 }
 
 func (s *storyStore) ensureSeedStories(actorID string) error {
@@ -405,11 +712,47 @@ func (s *storyStore) appendChoice(storyID string, u *authUser, choiceID, customM
 }
 
 func (s *storyStore) askQuestion(storyID string, u *authUser, question string) error {
-	_, err := s.submitQuestionJob(storyID, u, question)
+	m, err := s.readManifest(storyID)
+	if err != nil {
+		return err
+	}
+	_, err = s.submitQuestionJob(storyID, u, m.CurrentTurn, "", question)
 	return err
 }
 
-func (s *storyStore) adminUpdateStory(storyID string, status, activeDriver string) error {
+func (s *storyStore) storyHasBlockingGMJob(m storyManifest) bool {
+	switch m.Phase {
+	case "gm_generating", "validating_output", "applying_turn":
+		return true
+	}
+	if m.ActiveJobID == "" {
+		return false
+	}
+	job, err := s.readJob(m.ID, m.ActiveJobID)
+	if err != nil {
+		return true
+	}
+	switch job.Status {
+	case "queued", "running", "validating", "applying":
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *storyStore) appendStoryLifecycleEvent(storyID, actorID, eventType, fromStatus, toStatus string) error {
+	now := time.Now().UTC().Format(time.RFC3339)
+	return appendJSONL(filepath.Join(s.storyDir(storyID), "events.jsonl"), map[string]any{
+		"type":        eventType,
+		"at":          now,
+		"story_id":    storyID,
+		"actor_id":    actorID,
+		"from_status": fromStatus,
+		"to_status":   toStatus,
+	})
+}
+
+func (s *storyStore) changeStoryLifecycleStatus(storyID, actorID, nextStatus, eventType string) error {
 	unlock, err := s.acquireLock(storyID, "admin_update", "admin")
 	if err != nil {
 		return err
@@ -419,10 +762,49 @@ func (s *storyStore) adminUpdateStory(storyID string, status, activeDriver strin
 	if err != nil {
 		return err
 	}
-	if m.Phase == "gm_generating" || m.Phase == "validating_output" || m.Phase == "applying_turn" {
+	if s.storyHasBlockingGMJob(m) {
 		return errors.New("story has an active GM job")
 	}
-	if status != "" {
+	if m.Status == nextStatus {
+		return nil
+	}
+	if err := s.appendStoryLifecycleEvent(storyID, actorID, eventType, m.Status, nextStatus); err != nil {
+		return err
+	}
+	m.Status = nextStatus
+	m.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+	return writeJSONAtomic(filepath.Join(s.storyDir(storyID), "manifest.json"), m)
+}
+
+func (s *storyStore) archiveStory(storyID, actorID string) error {
+	return s.changeStoryLifecycleStatus(storyID, actorID, "archived", "story_archived")
+}
+
+func (s *storyStore) restoreStory(storyID, actorID string) error {
+	return s.changeStoryLifecycleStatus(storyID, actorID, "active", "story_restored")
+}
+
+func (s *storyStore) deleteStory(storyID, actorID string) error {
+	return s.changeStoryLifecycleStatus(storyID, actorID, "deleted", "story_deleted")
+}
+
+func (s *storyStore) adminUpdateStory(storyID, actorID, status, activeDriver string) error {
+	unlock, err := s.acquireLock(storyID, "admin_update", actorID)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	m, err := s.readManifest(storyID)
+	if err != nil {
+		return err
+	}
+	if s.storyHasBlockingGMJob(m) {
+		return errors.New("story has an active GM job")
+	}
+	if status != "" && status != m.Status {
+		if err := s.appendStoryLifecycleEvent(storyID, actorID, "story_status_changed", m.Status, status); err != nil {
+			return err
+		}
 		m.Status = status
 	}
 	if activeDriver == "__open__" {
@@ -634,6 +1016,100 @@ func readJSON(path string, v any) error {
 		return err
 	}
 	return json.Unmarshal(b, v)
+}
+
+func readStoryJSONL(path string, fn func([]byte) error) error {
+	f, err := os.Open(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+
+	var (
+		offset      int64
+		lastGood    int64
+		lineNo      int
+		lastLine    []byte
+		needsRepair bool
+	)
+	sc := bufio.NewReader(f)
+	for {
+		line, err := sc.ReadBytes('\n')
+		if len(line) == 0 && err == io.EOF {
+			break
+		}
+		lineNo++
+		offset += int64(len(line))
+		trimmed := bytes.TrimRight(line, "\r\n")
+		if len(bytes.TrimSpace(trimmed)) == 0 {
+			if err == io.EOF {
+				break
+			}
+			lastGood = offset
+			continue
+		}
+		if fnErr := fn(trimmed); fnErr != nil {
+			if err == io.EOF {
+				needsRepair = true
+				lastLine = append([]byte(nil), trimmed...)
+				break
+			}
+			_ = f.Close()
+			return fmt.Errorf("malformed JSONL line %d in %s: %w", lineNo, path, fnErr)
+		}
+		lastGood = offset
+		if err == io.EOF {
+			break
+		}
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	if !needsRepair {
+		return nil
+	}
+	if err := truncateStoryJSONL(path, lastGood); err != nil {
+		return err
+	}
+	if err := appendStoryRecoveryEvent(path, lastGood, lastLine); err != nil {
+		return err
+	}
+	return nil
+}
+
+func truncateStoryJSONL(path string, offset int64) error {
+	f, err := os.OpenFile(path, os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	if err := f.Truncate(offset); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return fsyncDir(filepath.Dir(path))
+}
+
+func appendStoryRecoveryEvent(path string, truncatedTo int64, repairedLine []byte) error {
+	eventPath := path
+	if filepath.Base(path) != "events.jsonl" {
+		eventPath = filepath.Join(filepath.Dir(path), "events.jsonl")
+	}
+	return appendJSONL(eventPath, map[string]any{
+		"type":           "story_recovered",
+		"at":             time.Now().UTC().Format(time.RFC3339),
+		"recovered_path": filepath.Base(path),
+		"truncated_to":   truncatedTo,
+		"repaired_tail":  string(repairedLine),
+	})
 }
 
 func readJSONL(path string, fn func([]byte) error) error {
