@@ -624,6 +624,10 @@ func TestStoryRoomFormsWireCSRFAndUniqueIdempotencyKeys(t *testing.T) {
 		`mode-tabs`,
 		`progress-loader`,
 		`data-story-progress`,
+		`data-story-step="queued"`,
+		`data-story-step="generating"`,
+		`data-story-step="applying"`,
+		`data-story-step="ready"`,
 		`data-story-submit`,
 		`data-story-refresh`,
 		`script defer src="`,
@@ -637,6 +641,9 @@ func TestStoryRoomFormsWireCSRFAndUniqueIdempotencyKeys(t *testing.T) {
 		`data-story-progress-meta hidden`,
 		`<strong data-story-progress-label>입력 가능</strong>`,
 		`data-step-label="ready"`,
+		`role="status" aria-live="polite" aria-atomic="true"`,
+		`진행 단계`,
+		`최신 턴 준비`,
 		`이번 턴에서 확인된 정보`,
 		`누적 확인 정보`,
 		`현재 턴`,
@@ -645,9 +652,6 @@ func TestStoryRoomFormsWireCSRFAndUniqueIdempotencyKeys(t *testing.T) {
 		if !strings.Contains(htmlOpen, want) {
 			t.Fatalf("missing %q in rendered story room", want)
 		}
-	}
-	if strings.Contains(htmlOpen, `story-progress-steps`) {
-		t.Fatalf("unexpected visible progress step list in rendered story room")
 	}
 	for _, forbidden := range []string{
 		`>ready<`,
@@ -869,9 +873,12 @@ func TestStoryRoomProcessingStateOmitsMetaRefreshAndShowsBusyProgress(t *testing
 		`aria-busy="true"`,
 		`id="story-progress" role="status" aria-live="polite" aria-atomic="true" aria-busy="true"`,
 		`data-story-progress`,
-		`GM 생성 중`,
-		`완료되면 자동으로 최신 턴이 갱신됩니다.`,
-		`잠시만 기다려 주세요.`,
+		`story-progress-steps`,
+		`data-story-step="queued"`,
+		`data-story-step="generating"`,
+		`data-story-step="applying"`,
+		`data-story-step="ready"`,
+		`대기열에 들어갔습니다. 순서를 기다립니다.`,
 	} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("missing %q in processing story room", want)
@@ -879,9 +886,6 @@ func TestStoryRoomProcessingStateOmitsMetaRefreshAndShowsBusyProgress(t *testing
 	}
 	if strings.Contains(html, `active job:`) {
 		t.Fatalf("unexpected active job copy in processing story room")
-	}
-	if strings.Contains(html, `story-progress-steps`) {
-		t.Fatalf("unexpected progress step list in processing story room")
 	}
 }
 

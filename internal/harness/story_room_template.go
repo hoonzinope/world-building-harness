@@ -181,7 +181,25 @@ const storyRoomTemplate = `{{define "content"}}
             </div>
           </div>
           <p class="story-progress-message" data-story-progress-message>{{.Progress.ProgressMessage}}</p>
-          <p class="muted story-progress-meta" data-story-progress-meta hidden>
+          <div class="story-progress-steps" aria-label="진행 단계">
+            <span class="story-progress-step" data-story-step="queued"{{if eq .Progress.StepLabel "queued"}} aria-current="step"{{end}}>
+              <span class="story-progress-step-index">1</span>
+              <span class="story-progress-step-text">대기열</span>
+            </span>
+            <span class="story-progress-step" data-story-step="generating"{{if eq .Progress.StepLabel "generating"}} aria-current="step"{{end}}>
+              <span class="story-progress-step-index">2</span>
+              <span class="story-progress-step-text">생성 중</span>
+            </span>
+            <span class="story-progress-step" data-story-step="applying"{{if eq .Progress.StepLabel "applying"}} aria-current="step"{{end}}>
+              <span class="story-progress-step-index">3</span>
+              <span class="story-progress-step-text">반영 중</span>
+            </span>
+            <span class="story-progress-step" data-story-step="ready"{{if eq .Progress.StepLabel "ready"}} aria-current="step"{{end}}>
+              <span class="story-progress-step-index">4</span>
+              <span class="story-progress-step-text">최신 턴 준비</span>
+            </span>
+          </div>
+          <p class="muted story-progress-meta" data-story-progress-meta {{if not .Progress.HasProgressMeta}}hidden{{end}}>
             <code data-story-progress-job-id>{{.Progress.ActiveJobID}}</code>
             {{if .Progress.ActiveJobType}}<span data-story-progress-job-type>{{.Progress.ActiveJobType}}</span>{{end}}
             {{if .Progress.ActiveJobStatus}}<span data-story-progress-job-status>{{.Progress.ActiveJobStatus}}</span>{{end}}
@@ -194,6 +212,13 @@ const storyRoomTemplate = `{{define "content"}}
         </div>
         {{if .CanDrive}}
         <div class="panel story-composer-panel">
+          <div class="story-composer-panel-head">
+            <div>
+              <strong>입력 덱</strong>
+              <span class="muted">선택 제출과 직접 입력을 한 곳에서 처리합니다.</span>
+            </div>
+            <span class="badge {{if .Progress.IsProcessing}}busy{{else}}ready{{end}}">{{if .Progress.IsProcessing}}처리 중{{else}}입력 가능{{end}}</span>
+          </div>
           <div class="story-choice-submit-panel">
             <div class="story-choice-submit-head">
               <strong>선택 제출</strong>
@@ -555,10 +580,18 @@ const storyRoomAssetJS = `(() => {
   });
 
   function setStep(stepLabel) {
+    const stepOrder = ['queued', 'generating', 'applying', 'ready'];
+    const activeIndex = stepOrder.indexOf(stepLabel);
     stepNodes.forEach((node) => {
       const active = node.dataset.storyStep === stepLabel;
-      node.toggleAttribute('aria-current', active);
+      const nodeIndex = stepOrder.indexOf(node.dataset.storyStep);
+      if (active) {
+        node.setAttribute('aria-current', 'step');
+      } else {
+        node.removeAttribute('aria-current');
+      }
       node.classList.toggle('is-active', active);
+      node.classList.toggle('is-complete', activeIndex >= 0 && nodeIndex >= 0 && nodeIndex < activeIndex);
     });
   }
 
@@ -674,7 +707,7 @@ const storyRoomAssetJS = `(() => {
     if (jobStatusNode) jobStatusNode.textContent = payload.active_job_status || '';
     if (turnNode) turnNode.textContent = payload.active_job_turn_id ? String(payload.active_job_turn_id) : '';
     if (pendingNode) pendingNode.textContent = payload.pending_questions ? String(payload.pending_questions.length) : '';
-    showMeta(false);
+    showMeta(hasMeta);
     setStep(payload.step_label || (payload.is_processing ? 'generating' : 'ready'));
     setBusy(Boolean(payload.is_processing));
   }

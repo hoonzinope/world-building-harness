@@ -101,11 +101,11 @@ func (s *webServer) storyRoomProgressSnapshot(id string, m storyManifest, u *aut
 			progress.NextPollMS = 2500
 			switch job.Status {
 			case "queued":
-				progress.StepIndex, progress.StepLabel, progress.ProgressMessage = 0, "queued", "작업이 대기열에 들어갔습니다. 잠시만 기다려 주세요."
+				progress.StepIndex, progress.StepLabel, progress.ProgressMessage = 0, "queued", "대기열에 들어갔습니다. 순서를 기다립니다."
 			case "running":
 				progress.StepIndex, progress.StepLabel, progress.ProgressMessage = 1, "generating", "GM이 장면을 생성 중입니다. 잠시만 기다려 주세요."
 			case "validating", "applying":
-				progress.StepIndex, progress.StepLabel, progress.ProgressMessage = 2, "applying", "생성 결과를 반영하는 중입니다."
+				progress.StepIndex, progress.StepLabel, progress.ProgressMessage = 2, "applying", "생성 결과를 반영하고 최신 턴을 준비합니다."
 			case "failed":
 				progress.StepIndex, progress.StepLabel, progress.ProgressMessage = 4, "failed", "GM 작업이 실패했습니다. 복구 또는 취소가 필요합니다."
 			default:
