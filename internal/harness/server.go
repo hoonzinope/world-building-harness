@@ -270,13 +270,17 @@ func storyLobbyPhaseLabel(phase string) string {
 }
 
 func storyLobbyUpdatedAt(updatedAt string) string {
-	updatedAt = strings.TrimSpace(updatedAt)
-	if updatedAt == "" {
-		return "업데이트 시각 확인 불가"
+	return storyTimestampKST(updatedAt, "업데이트 시각 확인 불가")
+}
+
+func storyTimestampKST(timestamp, fallback string) string {
+	timestamp = strings.TrimSpace(timestamp)
+	if timestamp == "" {
+		return fallback
 	}
-	parsed, err := time.Parse(time.RFC3339, updatedAt)
+	parsed, err := time.Parse(time.RFC3339, timestamp)
 	if err != nil {
-		return "업데이트 시각 확인 불가"
+		return fallback
 	}
 	return parsed.In(time.FixedZone("KST", 9*60*60)).Format("2006.01.02 15:04")
 }
@@ -934,9 +938,13 @@ func (s *webServer) renderStoryRoom(w http.ResponseWriter, r *http.Request, id s
 	})
 	latestTurnID := 0
 	var latestTurn any
+	previousTurns := make([]storyTurn, 0, len(displayTurns))
 	if hasTurns {
 		latestTurnID = displayTurns[0].TurnID
 		latestTurn = displayTurns[0]
+		if len(displayTurns) > 1 {
+			previousTurns = append(previousTurns, displayTurns[1:]...)
+		}
 	}
 	progress := s.storyRoomProgressSnapshot(id, m, u)
 	isProcessing := progress.IsProcessing
@@ -959,6 +967,7 @@ func (s *webServer) renderStoryRoom(w http.ResponseWriter, r *http.Request, id s
 		"Story":               m,
 		"State":               st,
 		"Turns":               displayTurns,
+		"PreviousTurns":       previousTurns,
 		"QA":                  qa,
 		"CanDrive":            canDrive,
 		"CanClaim":            canClaim,
@@ -1431,21 +1440,21 @@ func (s *webServer) storyRoomProgressSnapshot(id string, m storyManifest, u *aut
 			case "queued":
 				progress.StepIndex = 0
 				progress.StepLabel = "queued"
-				progress.ProgressMessage = fmt.Sprintf("작업이 대기열에 들어갔습니다. active job %s · 보통 10초-2분, Codex provider는 더 걸릴 수 있음", job.ID)
+				progress.ProgressMessage = "작업이 대기열에 들어갔습니다. 잠시만 기다려 주세요."
 			case "running":
 				progress.StepIndex = 1
 				progress.StepLabel = "generating"
-				progress.ProgressMessage = fmt.Sprintf("GM이 장면을 생성 중입니다. active job %s · 보통 10초-2분, Codex provider는 더 걸릴 수 있음", job.ID)
+				progress.ProgressMessage = "GM이 장면을 생성 중입니다. 잠시만 기다려 주세요."
 			case "validating", "applying":
 				progress.StepIndex = 2
 				progress.StepLabel = "applying"
-				progress.ProgressMessage = fmt.Sprintf("생성 결과를 반영하는 중입니다. active job %s · phase %s", job.ID, job.Status)
+				progress.ProgressMessage = "생성 결과를 반영하는 중입니다."
 			case "failed":
 				progress.StepIndex = 4
 				progress.StepLabel = "failed"
-				progress.ProgressMessage = fmt.Sprintf("GM 작업이 실패했습니다. active job %s", job.ID)
+				progress.ProgressMessage = "GM 작업이 실패했습니다. 복구 또는 취소가 필요합니다."
 			default:
-				progress.ProgressMessage = fmt.Sprintf("GM 작업 상태를 확인 중입니다. active job %s · phase %s", job.ID, job.Status)
+				progress.ProgressMessage = "GM 작업 상태를 확인 중입니다."
 			}
 			progress.HasProgressMeta = progress.ActiveJobID != "" || progress.ActiveJobType != "" || progress.ActiveJobStatus != "" || progress.ActiveJobTurnID > 0 || len(progress.PendingQuestions) > 0
 			return progress
@@ -1471,7 +1480,7 @@ func (s *webServer) storyRoomProgressSnapshot(id string, m storyManifest, u *aut
 			progress.StepIndex = 1
 			progress.StepLabel = "generating"
 		}
-		progress.ProgressMessage = fmt.Sprintf("질문 답변을 준비 중입니다. active job %s · 보통 10초-2분, Codex provider는 더 걸릴 수 있음", pending[0].JobID)
+		progress.ProgressMessage = "질문 답변을 준비 중입니다. 잠시만 기다려 주세요."
 		progress.HasProgressMeta = progress.ActiveJobID != "" || progress.ActiveJobType != "" || progress.ActiveJobStatus != "" || progress.ActiveJobTurnID > 0 || len(progress.PendingQuestions) > 0
 		return progress
 	}
@@ -1586,6 +1595,9 @@ func (s *webServer) render(w http.ResponseWriter, r *http.Request, title, body s
 		"sceneIndexTitle": func(turnID int, title string) string {
 			return storyTurnTitle(turnID, title, "")
 		},
+		"storyTurnTimestamp": func(timestamp string) string {
+			return storyTimestampKST(timestamp, "시각 확인 불가")
+		},
 		"friendlyStoryStatusLabel":       friendlyStoryStatusLabel,
 		"friendlyStoryPhaseLabel":        friendlyStoryPhaseLabel,
 		"storyLobbyPhaseLabel":           storyLobbyPhaseLabel,
@@ -1678,13 +1690,15 @@ button.danger { border-color:var(--accent); background:var(--accent); }
 .story-room-shell,
 .story-room-header > *,
 .story-room-grid > *,
-.journal-column > *,
+.current-turn-column > *,
+.turn-sidebar > *,
 .dossier-stack,
 .dossier-panel,
 .story-composer,
 .story-composer-panel,
 .story-progress,
-.session-rail-item,
+.turn-timeline a,
+.previous-turn,
 .choice-card,
 .choice-card-archived { min-width:0; }
 .story-room-header { display:grid; grid-template-columns:minmax(0, 1fr) auto; gap:14px; align-items:end; padding-bottom:16px; border-bottom:1px solid var(--line); }
@@ -1692,13 +1706,14 @@ button.danger { border-color:var(--accent); background:var(--accent); }
 .story-room-headline h1 { margin-bottom:0; }
 .story-room-meta { display:flex; gap:8px; flex-wrap:wrap; font-family:ui-sans-serif, system-ui, sans-serif; }
 .driver-actions { display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
-.session-rail { display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:10px; }
-.session-rail-item { border:1px solid var(--line); border-radius:6px; background:var(--panel); padding:12px 14px; min-height:78px; display:grid; gap:4px; box-shadow:0 10px 22px rgba(17,27,24,.05); }
-.session-rail-label { font:12px ui-sans-serif, system-ui, sans-serif; color:var(--muted); }
-.session-rail-value { font:700 16px ui-sans-serif, system-ui, sans-serif; color:var(--ink); word-break:keep-all; overflow-wrap:anywhere; }
-.story-room-grid { display:grid; grid-template-columns:minmax(0, 1fr) 340px; gap:24px; align-items:start; }
-.journal-column { display:grid; gap:14px; min-width:0; }
-.dossier-stack { display:grid; gap:12px; position:sticky; top:18px; }
+.story-room-grid { display:grid; grid-template-columns:240px minmax(0, 1fr) 320px; grid-template-areas:"timeline current dossier"; gap:24px; align-items:start; }
+.current-turn-column { grid-area:current; display:grid; gap:14px; min-width:0; }
+.turn-sidebar { grid-area:timeline; display:grid; gap:12px; min-width:0; position:sticky; top:18px; align-self:start; }
+.dossier-stack { grid-area:dossier; display:grid; gap:12px; position:sticky; top:18px; }
+.current-turn-panel,
+.turn-timeline-panel,
+.previous-turns-panel,
+.dossier-panel { display:grid; gap:12px; }
 .dossier-panel { display:grid; gap:10px; }
 .dossier-panel form { display:grid; gap:8px; }
 .dossier-panel label { line-height:1.35; }
@@ -1707,33 +1722,42 @@ button.danger { border-color:var(--accent); background:var(--accent); }
 .admin-action-grid button { width:100%; }
 .dossier-panel.panel,
 .story-composer-panel { margin-bottom:0; }
-.session-index { display:flex; gap:8px; flex-wrap:nowrap; overflow-x:auto; overflow-y:hidden; max-width:100%; min-width:0; margin:0; padding-bottom:2px; font-family:ui-sans-serif, system-ui, sans-serif; scroll-snap-type:x proximity; -webkit-overflow-scrolling:touch; }
-.session-index a { min-height:48px; flex:0 0 auto; display:inline-flex; align-items:flex-start; gap:6px; border:1px solid var(--line); border-left:3px solid var(--deep); border-radius:6px; padding:8px 10px; background:rgba(255,255,255,.7); text-decoration:none; color:var(--ink); box-shadow:none; max-width:180px; scroll-snap-align:start; }
-.session-index a:hover { border-color:rgba(23,59,55,.35); background:rgba(255,255,255,.92); }
-.session-index-anchor { display:grid; gap:2px; min-width:0; align-content:start; }
-.session-index-turn { font-size:11px; color:var(--muted); }
-.session-index-title { font-size:13px; font-weight:600; line-height:1.35; word-break:keep-all; overflow-wrap:anywhere; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
-.journal-page { border:1px solid var(--line); border-radius:6px; background:var(--panel); box-shadow:0 14px 30px rgba(17,27,24,.08); padding:0; scroll-margin-top:18px; }
-.journal-page:first-child { margin-top:0; }
-.journal-page summary { min-height:60px; cursor:pointer; display:flex; align-items:flex-start; justify-content:space-between; gap:12px; list-style:none; padding:16px 16px 14px; font:700 17px ui-sans-serif, system-ui, sans-serif; }
-.journal-page summary::-webkit-details-marker { display:none; }
-.journal-page summary::after { content:"열기"; color:var(--muted); font:12px ui-sans-serif, system-ui, sans-serif; border:1px solid var(--line); border-radius:999px; padding:4px 8px; flex:0 0 auto; }
-.journal-page[open] summary::after { content:"접기"; }
-.journal-page-head { display:grid; gap:6px; min-width:0; }
-.journal-page-label { display:flex; gap:8px; flex-wrap:wrap; align-items:baseline; }
-.journal-page-turn { font-size:14px; color:var(--deep); }
-.journal-page-title { font-size:18px; color:var(--ink); word-break:keep-all; overflow-wrap:anywhere; }
-.journal-page-meta { display:flex; gap:8px; flex-wrap:wrap; color:var(--muted); font:12px ui-sans-serif, system-ui, sans-serif; word-break:keep-all; overflow-wrap:anywhere; }
-.journal-page-body { display:grid; gap:14px; padding:0 16px 18px; }
-.journal-section { display:grid; gap:8px; padding-top:12px; border-top:1px solid rgba(17,27,24,.08); }
+.turn-timeline { display:grid; gap:8px; font-family:ui-sans-serif, system-ui, sans-serif; }
+.turn-timeline-link { display:grid; gap:3px; border:1px solid var(--line); border-left:3px solid var(--deep); border-radius:6px; padding:9px 10px; background:rgba(255,255,255,.72); color:var(--ink); text-decoration:none; box-shadow:none; word-break:keep-all; overflow-wrap:anywhere; }
+.turn-timeline-link:hover { border-color:rgba(23,59,55,.35); background:rgba(255,255,255,.92); }
+.turn-timeline-link[aria-current="true"] { border-color:rgba(49,95,153,.45); background:rgba(49,95,153,.08); border-left-color:var(--info); }
+.turn-timeline-turn { font-size:11px; color:var(--muted); }
+.turn-timeline-title { font-size:13px; font-weight:600; line-height:1.35; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.previous-turns { display:grid; gap:10px; }
+.previous-turn { border:1px solid var(--line); border-radius:6px; background:var(--panel); box-shadow:0 14px 30px rgba(17,27,24,.08); padding:0; scroll-margin-top:18px; }
+.previous-turn summary { min-height:60px; cursor:pointer; display:flex; align-items:flex-start; justify-content:space-between; gap:12px; list-style:none; padding:16px 16px 14px; font:700 17px ui-sans-serif, system-ui, sans-serif; }
+.previous-turn summary::-webkit-details-marker { display:none; }
+.previous-turn summary::after { content:"열기"; color:var(--muted); font:12px ui-sans-serif, system-ui, sans-serif; border:1px solid var(--line); border-radius:999px; padding:4px 8px; flex:0 0 auto; }
+.previous-turn[open] summary::after { content:"접기"; }
+.previous-turn-head { display:grid; gap:6px; min-width:0; }
+.previous-turn-label { display:flex; gap:8px; flex-wrap:wrap; align-items:baseline; }
+.previous-turn-turn { font-size:14px; color:var(--deep); }
+.previous-turn-title { font-size:18px; color:var(--ink); word-break:keep-all; overflow-wrap:anywhere; }
+.previous-turn-meta { display:flex; gap:8px; flex-wrap:wrap; color:var(--muted); font:12px ui-sans-serif, system-ui, sans-serif; word-break:keep-all; overflow-wrap:anywhere; }
+.previous-turn-body { display:grid; gap:14px; padding:0 16px 18px; }
+.current-turn-panel { border:1px solid var(--line); border-radius:6px; background:var(--panel); box-shadow:0 14px 30px rgba(17,27,24,.08); padding:18px; scroll-margin-top:18px; }
+.current-turn-header { display:grid; gap:8px; padding-bottom:12px; border-bottom:1px solid rgba(17,27,24,.08); }
+.current-turn-label { display:flex; gap:8px; flex-wrap:wrap; align-items:baseline; }
+.current-turn-turn { font-size:14px; color:var(--deep); }
+.current-turn-title { font-size:22px; color:var(--ink); word-break:keep-all; overflow-wrap:anywhere; }
+.current-turn-meta { display:flex; gap:8px; flex-wrap:wrap; color:var(--muted); font:12px ui-sans-serif, system-ui, sans-serif; word-break:keep-all; overflow-wrap:anywhere; }
+.current-turn-body { display:grid; gap:16px; padding-top:14px; }
+.current-turn-flow { display:grid; gap:14px; border-left:4px solid var(--info); background:rgba(49,95,153,.05); border-radius:6px; padding:14px 14px 14px 16px; }
+.turn-section { display:grid; gap:8px; padding-top:12px; border-top:1px solid rgba(17,27,24,.08); }
+.turn-section:first-child { padding-top:0; border-top:0; }
 .scene { white-space:pre-wrap; font-size:18px; line-height:1.86; max-width:72ch; margin:0; text-wrap:pretty; word-break:keep-all; overflow-wrap:anywhere; }
 .choice-list { display:grid; gap:10px; }
 .choice-card { display:grid; grid-template-columns:48px minmax(0, 1fr); text-align:left; justify-content:flex-start; background:var(--panel); color:var(--ink); border-color:var(--line); white-space:normal; align-items:flex-start; gap:12px; width:100%; padding:14px; }
 .choice-card:disabled { opacity:.65; }
 .choice-card-letter { width:48px; min-width:48px; height:48px; border-radius:6px; display:inline-flex; align-items:center; justify-content:center; background:rgba(23,59,55,.08); color:var(--deep); font:700 16px ui-sans-serif, system-ui, sans-serif; flex:0 0 48px; }
-.choice-card-copy { display:grid; gap:6px; min-width:0; }
+.choice-card-copy { display:grid; gap:4px; min-width:0; }
 .choice-card-copy strong { display:block; font-size:15px; line-height:1.55; word-break:keep-all; overflow-wrap:anywhere; }
-.choice-card-hint { font:12px ui-sans-serif, system-ui, sans-serif; color:var(--muted); word-break:keep-all; overflow-wrap:anywhere; }
+.choice-card-risk { font:12px ui-sans-serif, system-ui, sans-serif; color:var(--accent); word-break:keep-all; overflow-wrap:anywhere; }
 .choice-card-archived { display:grid; grid-template-columns:48px minmax(0, 1fr); gap:12px; border:1px solid var(--line); border-radius:6px; background:var(--panel); padding:14px; }
 .choice-card-archived .choice-card-copy { padding-top:2px; }
 .choice-card-archived .choice-card-letter { background:rgba(49,95,153,.08); color:var(--info); }
@@ -1753,6 +1777,7 @@ button.danger { border-color:var(--accent); background:var(--accent); }
 .story-progress { display:grid; gap:12px; margin-bottom:0; }
 .progress-loader { display:flex; align-items:center; gap:10px; padding-bottom:10px; border-bottom:1px solid rgba(17,27,24,.08); }
 .progress-loader-dot { width:12px; height:12px; border-radius:999px; border:2px solid var(--info); background:transparent; flex:0 0 auto; }
+.story-progress:not([aria-busy="true"]) .progress-loader-copy { display:none; }
 .story-progress[aria-busy="true"] .progress-loader-dot { background:var(--warn); border-color:var(--warn); box-shadow:0 0 0 0 rgba(154,100,0,.26); animation:loaderPulse 1.5s ease-in-out infinite; }
 @keyframes loaderPulse { 0% { box-shadow:0 0 0 0 rgba(154,100,0,.26); } 70% { box-shadow:0 0 0 8px rgba(154,100,0,0); } 100% { box-shadow:0 0 0 0 rgba(154,100,0,0); } }
 .progress-loader-copy { display:flex; gap:10px; align-items:center; flex-wrap:wrap; min-width:0; }
@@ -1762,10 +1787,6 @@ button.danger { border-color:var(--accent); background:var(--accent); }
 .story-progress[data-step-label="generating"] .progress-loader-copy strong { color:var(--warn); }
 .story-progress[data-step-label="applying"] .progress-loader-copy strong { color:var(--deep); }
 .story-progress[data-step-label="failed"] .progress-loader-copy strong { color:var(--accent); }
-.story-progress-steps { list-style:none; margin:0; padding:0; display:flex; flex-wrap:wrap; gap:6px; }
-.story-progress-steps li { min-height:30px; display:inline-flex; align-items:center; border:1px solid var(--line); border-radius:999px; padding:4px 10px; background:rgba(255,255,255,.96); font:12px ui-sans-serif, system-ui, sans-serif; color:var(--muted); text-transform:lowercase; }
-.story-progress-steps li.is-active { border-color:rgba(49,95,153,.35); color:var(--ink); background:rgba(49,95,153,.08); }
-.story-progress[data-step-label="failed"] .story-progress-steps li.is-active { border-color:rgba(180,63,52,.35); background:rgba(180,63,52,.08); }
 .story-progress-message { margin:0; font:15px ui-sans-serif, system-ui, sans-serif; color:var(--ink); word-break:keep-all; overflow-wrap:anywhere; }
 .story-progress-meta { margin:0; word-break:keep-all; overflow-wrap:anywhere; }
 .story-progress-actions { margin-top:0; }
@@ -1793,10 +1814,13 @@ button.danger { border-color:var(--accent); background:var(--accent); }
   .side{position:static;}
   h1{font-size:38px;}
   .story-room-header{grid-template-columns:1fr; align-items:start;}
-  .story-room-grid{grid-template-columns:1fr;}
-  .session-rail{grid-template-columns:repeat(2, minmax(0, 1fr));}
-  .story-room-grid aside{position:static;}
+  .story-room-grid{grid-template-columns:1fr; grid-template-areas:"current" "timeline" "dossier";}
+  .turn-sidebar,
+  .dossier-stack{position:static;}
   .driver-actions{justify-content:flex-start;}
+  .current-turn-body{display:flex; flex-direction:column;}
+  .current-turn-flow{order:1;}
+  .current-turn-body .scene{order:2;}
   .scene{font-size:17px; line-height:1.72;}
   .panel{padding:14px;}
   .toolbar > *, .driver-actions > *{flex:1 1 auto; min-width:0;}
@@ -1815,7 +1839,7 @@ button.danger { border-color:var(--accent); background:var(--accent); }
   .mobile-action-dock{position:fixed; left:0; right:0; bottom:0; z-index:10; display:grid; grid-template-columns:1fr 1fr; gap:8px; padding:10px 12px calc(14px + env(safe-area-inset-bottom)); background:rgba(255,255,255,.94); border-top:1px solid var(--line); box-shadow:var(--shadow); backdrop-filter:blur(12px);}
   .mobile-action-dock a{min-height:48px;}
 }
-@media (max-width:960px){ .story-room-grid{grid-template-columns:1fr;} .session-rail{grid-template-columns:repeat(2, minmax(0, 1fr));} .mode-tabs{grid-template-columns:repeat(2, minmax(0, 1fr));} .table{font-size:13px;} }
+@media (max-width:960px){ .story-room-grid{grid-template-columns:1fr; grid-template-areas:"current" "timeline" "dossier";} .turn-sidebar, .dossier-stack{position:static;} .mode-tabs{grid-template-columns:repeat(2, minmax(0, 1fr));} .table{font-size:13px;} .turn-timeline-link{max-width:100%;} }
 </style>
 </head>
 <body>
@@ -1949,6 +1973,7 @@ const storyRoomTemplate = `{{define "content"}}
         <span class="badge">{{friendlyStoryPhaseLabel .Story.Phase}}</span>
         <span class="badge">턴 {{.Story.CurrentTurn}}</span>
         <span class="badge">진행자 {{.DriverLabel}}</span>
+        <span class="badge">{{if .CanDrive}}참여 가능{{else if .CanQuestion}}질문 가능{{else}}읽기 전용{{end}}</span>
       </div>
     </div>
     <div class="driver-actions">
@@ -1956,39 +1981,33 @@ const storyRoomTemplate = `{{define "content"}}
       {{if .CanRelease}}<form method="post" action="{{.Base}}/stories/{{.Story.ID}}/driver"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><input type="hidden" name="action" value="release"><button class="secondary">진행권 내려놓기</button></form>{{end}}
     </div>
   </div>
-  <div class="session-rail" aria-label="session summary">
-    <div class="session-rail-item"><span class="session-rail-label">턴</span><span class="session-rail-value">{{.Story.CurrentTurn}}</span></div>
-    <div class="session-rail-item"><span class="session-rail-label">상태</span><span class="session-rail-value">{{friendlyStoryPhaseLabel .Story.Phase}} · {{friendlyStoryStatusLabel .Story.Status}}</span></div>
-    <div class="session-rail-item"><span class="session-rail-label">진행자</span><span class="session-rail-value">{{.DriverLabel}}</span></div>
-    <div class="session-rail-item"><span class="session-rail-label">권한/진행</span><span class="session-rail-value">{{if .CanDrive}}참여 가능{{else if .CanQuestion}}질문 가능{{else}}읽기 전용{{end}} · {{friendlyStoryProgressStepLabel .Progress.StepLabel}}</span></div>
-  </div>
-  {{if .IsProcessing}}<div class="panel status-panel"><strong>GM 생성 중</strong><p>요청 이벤트가 접수되었습니다. Codex/GM worker가 장면을 생성하는 동안 추가 진행 입력은 잠시 막힙니다.</p><p class="muted">active job: {{.Story.ActiveJobID}} · phase: {{.Story.Phase}}</p></div>{{end}}
-  {{if .FailedJob}}{{if .FailedJob.CanRecover}}<div class="panel status-panel"><strong>GM 생성 실패</strong><p>현재 job이 실패 상태입니다. 복구를 진행하거나 취소할 수 있습니다.</p><p class="muted">active job: {{.Story.ActiveJobID}} · actor: {{.FailedJob.ActorLabel}}</p><div class="toolbar"><form method="post" action="{{.Base}}/stories/{{.Story.ID}}/recover"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><input type="hidden" name="action" value="resume"><button>resume</button></form><form method="post" action="{{.Base}}/stories/{{.Story.ID}}/recover"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><input type="hidden" name="action" value="cancel"><button class="secondary">cancel</button></form></div></div>{{else}}<div class="panel status-panel"><strong>GM 생성 실패</strong><p>현재 job이 실패 상태입니다. 새 진행 입력은 실패 job 처리 후 가능합니다.</p><p class="muted">active job: {{.Story.ActiveJobID}}</p></div>{{end}}{{end}}
+  {{if .IsProcessing}}<div class="panel status-panel"><strong>GM 생성 중</strong><p>요청이 접수되었습니다. 생성이 끝나면 최신 턴이 갱신됩니다.</p></div>{{end}}
+  {{if .FailedJob}}{{if .FailedJob.CanRecover}}<div class="panel status-panel"><strong>GM 생성 실패</strong><p>현재 작업이 실패 상태입니다. 복구를 진행하거나 취소할 수 있습니다.</p><div class="toolbar"><form method="post" action="{{.Base}}/stories/{{.Story.ID}}/recover"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><input type="hidden" name="action" value="resume"><button>resume</button></form><form method="post" action="{{.Base}}/stories/{{.Story.ID}}/recover"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><input type="hidden" name="action" value="cancel"><button class="secondary">cancel</button></form></div></div>{{else}}<div class="panel status-panel"><strong>GM 생성 실패</strong><p>현재 작업이 실패 상태입니다. 새 진행 입력은 실패 작업 처리 후 가능합니다.</p></div>{{end}}{{end}}
   {{if .ExportedBundle}}<div class="panel status-panel"><strong>Export handoff</strong><p>Bundle exported to <code>{{.ExportedBundle}}</code>.</p><p class="muted">Draft creation is pending/manual via the admin writer path. An admin can now create the draft with story export-draft through the writer path.</p><p class="muted">Target draft: <code>{{.ExportDraftTarget}}</code> · status: <span class="badge">{{if .ExportedStatus}}{{.ExportedStatus}}{{else}}draft_pending{{end}}</span></p></div>{{end}}
   {{if .RecoveryStatus}}<div class="panel status-panel"><strong>Store recovery</strong><p>Recovery status: <span class="badge">{{.RecoveryStatus}}</span></p>{{if .RecoveryMessage}}<p>{{.RecoveryMessage}}</p>{{end}}<p class="muted">Checked files: {{range $i, $v := .RecoveryChecked}}{{if $i}}, {{end}}<code>{{$v}}</code>{{end}}</p>{{if .RecoveryRepaired}}<p class="muted">Repaired items: {{range $i, $v := .RecoveryRepaired}}{{if $i}}, {{end}}<code>{{$v}}</code>{{end}}</p>{{else}}<p class="muted">No file tails needed repair.</p>{{end}}{{if .RecoveryLockRemoved}}<p class="muted">Stale lock.json was removed.</p>{{end}}</div>{{end}}
   <div class="story-room-grid">
-    <div class="journal-column">
-      {{if .HasTurns}}<nav class="session-index" aria-label="turn list">
-        {{range .Turns}}<a href="#turn-{{.TurnID}}"><span class="session-index-anchor"><span class="session-index-turn">턴 {{.TurnID}}</span>{{with sceneIndexTitle .TurnID .SceneTitle}}<span class="session-index-title">{{.}}</span>{{end}}</span></a>{{end}}
-      </nav>{{end}}
-      {{range .Turns}}
-        <details class="journal-page" id="turn-{{.TurnID}}" {{if eq .TurnID $.LatestTurnID}}open{{end}}>
-          <summary>
-            <span class="journal-page-head">
-              <span class="journal-page-label"><span class="journal-page-turn">턴 {{.TurnID}}</span><span class="journal-page-title">{{sceneJournalTitle .TurnID .SceneTitle}}</span></span>
-              <span class="journal-page-meta"><span>{{.CreatedAt}}</span><span>·</span><span>{{friendlyStoryEventKindLabel .Source}}</span></span>
-            </span>
-          </summary>
-          <div class="journal-page-body">
-            <div class="scene">{{.SceneBody}}</div>
-            <div class="journal-section"><strong>현재 상황</strong><p>{{.CurrentSituation}}</p></div>
-            {{if .RevealedFacts}}<div class="journal-section"><strong>확인된 정보</strong><ul>{{range .RevealedFacts}}<li>{{.}}</li>{{end}}</ul></div>{{end}}
-            {{$turnID := .TurnID}}{{if .Choices}}<div class="journal-section"><strong>{{if eq .TurnID $.LatestTurnID}}다음 갈림길{{else}}기록된 선택지{{end}}</strong><div class="choice-list">{{range .Choices}}{{if eq $turnID $.LatestTurnID}}{{if $.IsAnonymous}}<div class="choice-card choice-card-archived"><span class="choice-card-letter">{{.ID}}</span><span class="choice-card-copy"><strong>{{.Text}}</strong>{{if .RiskHint}}<span class="choice-card-hint">{{.RiskHint}}</span>{{end}}</span></div>{{else}}<form method="post" action="{{$.Base}}/stories/{{$.Story.ID}}/input" data-story-submit data-story-submit-kind="choice"><input type="hidden" name="csrf_token" value="{{$.CSRFToken}}"><input type="hidden" name="turn_id" value="{{$.LatestTurnID}}"><input type="hidden" name="idempotency_key" value="{{idem}}"><input type="hidden" name="choice_id" value="{{.ID}}"><button class="choice-card" type="submit" {{if not $.CanDrive}}disabled{{end}}><span class="choice-card-letter">{{.ID}}</span><span class="choice-card-copy"><strong>{{.Text}}</strong>{{if .RiskHint}}<span class="choice-card-hint">{{.RiskHint}}</span>{{end}}</span></button></form>{{end}}{{else}}<div class="choice-card choice-card-archived"><span class="choice-card-letter">{{.ID}}</span><span class="choice-card-copy"><strong>{{.Text}}</strong>{{if .RiskHint}}<span class="choice-card-hint">{{.RiskHint}}</span>{{end}}</span></div>{{end}}{{end}}</div></div>{{end}}
+    <section class="current-turn-column">
+      {{with .LatestTurn}}
+      <section class="current-turn-panel" id="turn-{{.TurnID}}">
+        <div class="current-turn-header">
+          <div class="current-turn-label">
+            <span class="current-turn-turn">현재 턴 {{.TurnID}}</span>
+            <span class="current-turn-title">{{sceneJournalTitle .TurnID .SceneTitle}}</span>
           </div>
-        </details>
-      {{end}}
+          <div class="current-turn-meta"><span>{{storyTurnTimestamp .CreatedAt}}</span><span>·</span><span>{{friendlyStoryEventKindLabel .Source}}</span></div>
+        </div>
+        <div class="current-turn-body">
+          <div class="scene">{{.SceneBody}}</div>
+          <div class="current-turn-flow">
+            <div class="turn-section"><strong>현재 상황</strong><p>{{.CurrentSituation}}</p></div>
+            {{if .RevealedFacts}}<div class="turn-section"><strong>이번 턴에서 확인된 정보</strong><ul>{{range .RevealedFacts}}<li>{{.}}</li>{{end}}</ul></div>{{end}}
+            {{if .Choices}}<div class="turn-section"><strong>다음 갈림길</strong><div class="choice-list">{{range .Choices}}{{if $.IsAnonymous}}<div class="choice-card choice-card-archived"><span class="choice-card-letter">{{.ID}}</span><span class="choice-card-copy"><strong>{{.Text}}</strong>{{if .RiskHint}}<span class="choice-card-risk">위험: {{.RiskHint}}</span>{{end}}</span></div>{{else}}<form method="post" action="{{$.Base}}/stories/{{$.Story.ID}}/input" data-story-submit data-story-submit-kind="choice"><input type="hidden" name="csrf_token" value="{{$.CSRFToken}}"><input type="hidden" name="turn_id" value="{{$.LatestTurnID}}"><input type="hidden" name="idempotency_key" value="{{idem}}"><input type="hidden" name="choice_id" value="{{.ID}}"><button class="choice-card" type="submit" {{if not $.CanDrive}}disabled{{end}}><span class="choice-card-letter">{{.ID}}</span><span class="choice-card-copy"><strong>{{.Text}}</strong>{{if .RiskHint}}<span class="choice-card-risk">위험: {{.RiskHint}}</span>{{end}}</span></button></form>{{end}}{{end}}</div></div>{{end}}
+          </div>
+        </div>
+      </section>
+      {{else}}<div class="panel current-turn-panel" id="turn-0"><strong>아직 턴이 없습니다.</strong><p class="muted">최초 턴이 생성되면 여기에서 본문과 선택지가 표시됩니다.</p></div>{{end}}
       <section class="story-composer" id="input-panel" aria-busy="{{if .Progress.IsProcessing}}true{{else}}false{{end}}" data-story-input-panel>
-        <div class="panel status-panel story-progress" id="story-progress" role="status" aria-live="polite" aria-atomic="true" data-story-progress data-status-url="{{.StatusURL}}" data-step-index="{{.Progress.StepIndex}}" data-step-label="{{.Progress.StepLabel}}" data-active-job-id="{{.Progress.ActiveJobID}}" data-active-job-status="{{.Progress.ActiveJobStatus}}" data-active-job-type="{{.Progress.ActiveJobType}}" data-next-poll-ms="{{.Progress.NextPollMS}}">
+        <div class="panel status-panel story-progress" id="story-progress" role="status" aria-live="polite" aria-atomic="true" aria-busy="{{if .Progress.IsProcessing}}true{{else}}false{{end}}" data-story-progress data-status-url="{{.StatusURL}}" data-step-index="{{.Progress.StepIndex}}" data-step-label="{{.Progress.StepLabel}}" data-active-job-id="{{.Progress.ActiveJobID}}" data-active-job-status="{{.Progress.ActiveJobStatus}}" data-active-job-type="{{.Progress.ActiveJobType}}" data-next-poll-ms="{{.Progress.NextPollMS}}">
           <div class="progress-loader">
             <span class="progress-loader-dot" aria-hidden="true"></span>
             <div class="progress-loader-copy">
@@ -1996,15 +2015,8 @@ const storyRoomTemplate = `{{define "content"}}
               <span class="badge" data-story-progress-status>{{.Progress.StatusLabel}}</span>
             </div>
           </div>
-          <ol class="story-progress-steps" aria-hidden="true">
-            <li data-story-step="queued">{{friendlyStoryProgressStepLabel "queued"}}</li>
-            <li data-story-step="generating">{{friendlyStoryProgressStepLabel "generating"}}</li>
-            <li data-story-step="applying">{{friendlyStoryProgressStepLabel "applying"}}</li>
-            <li data-story-step="ready">{{friendlyStoryProgressStepLabel "ready"}}</li>
-            <li data-story-step="failed">{{friendlyStoryProgressStepLabel "failed"}}</li>
-          </ol>
           <p class="story-progress-message" data-story-progress-message>{{.Progress.ProgressMessage}}</p>
-          <p class="muted story-progress-meta" data-story-progress-meta{{if not .Progress.HasProgressMeta}} hidden{{end}}>active job: <code data-story-progress-job-id>{{.Progress.ActiveJobID}}</code>{{if .Progress.ActiveJobType}} · type: <span data-story-progress-job-type>{{.Progress.ActiveJobType}}</span>{{end}}{{if .Progress.ActiveJobStatus}} · status: <span data-story-progress-job-status>{{.Progress.ActiveJobStatus}}</span>{{end}}{{if gt .Progress.ActiveJobTurnID 0}} · turn <span data-story-progress-turn>{{.Progress.ActiveJobTurnID}}</span>{{end}}{{if .Progress.PendingQuestions}} · queued questions: <span data-story-progress-pending-count>{{len .Progress.PendingQuestions}}</span>{{end}}</p>
+          <p class="muted story-progress-meta" data-story-progress-meta hidden><code data-story-progress-job-id>{{.Progress.ActiveJobID}}</code>{{if .Progress.ActiveJobType}}<span data-story-progress-job-type>{{.Progress.ActiveJobType}}</span>{{end}}{{if .Progress.ActiveJobStatus}}<span data-story-progress-job-status>{{.Progress.ActiveJobStatus}}</span>{{end}}{{if gt .Progress.ActiveJobTurnID 0}}<span data-story-progress-turn>{{.Progress.ActiveJobTurnID}}</span>{{end}}{{if .Progress.PendingQuestions}}<span data-story-progress-pending-count>{{len .Progress.PendingQuestions}}</span>{{end}}</p>
           <div class="toolbar story-progress-actions"><button type="button" class="secondary" hidden data-story-refresh>새 내용 표시</button></div>
         </div>
         {{if .CanDrive}}
@@ -2037,9 +2049,36 @@ const storyRoomTemplate = `{{define "content"}}
           <div class="toolbar"><button class="secondary" type="submit">질문 제출</button></div>
         </form>
         {{else}}{{if .IsAnonymous}}<p class="muted">로그인하면 질문을 보낼 수 있습니다.</p>{{else}}{{if .IsProcessing}}<p class="muted">GM 생성 중에는 질문 제출도 잠시 막습니다.</p>{{else}}<p class="muted">completed/archived/deleted room에서는 새 질문을 받지 않습니다.</p>{{end}}{{end}}{{end}}{{end}}
-        {{range .QA}}<div class="panel"><div class="muted">{{.CreatedAt}} · 턴 {{.TurnID}}</div><strong>Q. {{.Question}}</strong><p>A. {{.Answer}}</p></div>{{end}}
+        {{range .QA}}<div class="panel"><div class="muted">{{storyTurnTimestamp .CreatedAt}} · 턴 {{.TurnID}}</div><strong>Q. {{.Question}}</strong><p>A. {{.Answer}}</p></div>{{end}}
       </section>
-    </div>
+    </section>
+    <aside class="turn-sidebar">
+      <section class="turn-timeline-panel panel">
+        <h2>턴 타임라인</h2>
+        {{if .Turns}}<nav class="turn-timeline" aria-label="turn timeline">
+          {{range .Turns}}<a class="turn-timeline-link" href="#turn-{{.TurnID}}"{{if eq .TurnID $.LatestTurnID}} aria-current="true"{{end}}><span class="turn-timeline-turn">턴 {{.TurnID}}</span><span class="turn-timeline-title">{{sceneIndexTitle .TurnID .SceneTitle}}</span></a>{{end}}
+        </nav>{{else}}<p class="muted">아직 턴이 없습니다.</p>{{end}}
+      </section>
+      <section class="previous-turns-panel panel">
+        <h2>이전 턴</h2>
+        {{if .PreviousTurns}}<div class="previous-turns">
+          {{range .PreviousTurns}}<details class="previous-turn" id="turn-{{.TurnID}}">
+            <summary>
+              <span class="previous-turn-head">
+                <span class="previous-turn-label"><span class="previous-turn-turn">턴 {{.TurnID}}</span><span class="previous-turn-title">{{sceneJournalTitle .TurnID .SceneTitle}}</span></span>
+                <span class="previous-turn-meta"><span>{{storyTurnTimestamp .CreatedAt}}</span><span>·</span><span>{{friendlyStoryEventKindLabel .Source}}</span></span>
+              </span>
+            </summary>
+            <div class="previous-turn-body">
+              <div class="scene">{{.SceneBody}}</div>
+              <div class="turn-section"><strong>현재 상황</strong><p>{{.CurrentSituation}}</p></div>
+              {{if .RevealedFacts}}<div class="turn-section"><strong>이번 턴에서 확인된 정보</strong><ul>{{range .RevealedFacts}}<li>{{.}}</li>{{end}}</ul></div>{{end}}
+              {{if .Choices}}<div class="turn-section"><strong>기록된 선택지</strong><div class="choice-list">{{range .Choices}}<div class="choice-card choice-card-archived"><span class="choice-card-letter">{{.ID}}</span><span class="choice-card-copy"><strong>{{.Text}}</strong>{{if .RiskHint}}<span class="choice-card-risk">위험: {{.RiskHint}}</span>{{end}}</span></div>{{end}}</div></div>{{end}}
+            </div>
+          </details>{{end}}
+        </div>{{else}}<p class="muted">아직 이전 턴이 없습니다.</p>{{end}}
+      </section>
+    </aside>
     <aside class="dossier-stack" aria-label="dossier">
       <section class="dossier-panel panel">
         <h3>위치</h3>
@@ -2050,7 +2089,7 @@ const storyRoomTemplate = `{{define "content"}}
         <div class="toolbar">{{range .State.ActiveCharacters}}<span class="badge">{{.}}</span>{{end}}</div>
       </section>
       <section class="dossier-panel panel">
-        <h3>확인된 정보</h3>
+        <h3>누적 확인 정보</h3>
         <ul>{{range .State.Facts}}<li>{{.}}</li>{{end}}</ul>
       </section>
       <section class="dossier-panel panel">
@@ -2064,7 +2103,7 @@ const storyRoomTemplate = `{{define "content"}}
       {{if .IsAdmin}}<section class="dossier-panel panel"><h3>관리</h3><form method="post" action="{{.Base}}/stories/{{.Story.ID}}/admin"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><input type="hidden" name="action" value="update"><label class="muted">상태</label><select name="status"><option value="">변경 없음</option><option value="active">진행 중</option><option value="paused">일시 정지</option><option value="completed">완료</option><option value="archived">보관됨</option></select><label class="muted">진행자 ID</label><input name="active_driver_id" placeholder="{{.DriverLabel}}"><div class="toolbar"><button>적용</button></div></form><form method="post" action="{{.Base}}/stories/{{.Story.ID}}/admin"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><input type="hidden" name="action" value="update"><input type="hidden" name="active_driver_id" value="__open__"><button class="secondary">진행자 비우기</button></form>{{if .CanAdminMutate}}{{with .LatestTurn}}<form method="post" action="{{$.Base}}/stories/{{$.Story.ID}}/admin"><input type="hidden" name="csrf_token" value="{{$.CSRFToken}}"><input type="hidden" name="action" value="edit_turn"><label class="muted">현재 턴 {{$.LatestTurnID}} 편집</label><label class="muted">장면 본문</label><textarea name="scene_body">{{.SceneBody}}</textarea><label class="muted">현재 상황</label><textarea name="current_situation">{{.CurrentSituation}}</textarea><div class="toolbar"><button class="secondary">편집 저장</button></div></form>{{end}}<form method="post" action="{{.Base}}/stories/{{.Story.ID}}/admin"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><input type="hidden" name="action" value="rollback_turn"><label class="muted">되돌릴 턴</label><select name="turn_id">{{range .Turns}}<option value="{{.TurnID}}" {{if eq .TurnID $.LatestTurnID}}selected{{end}}>턴 {{.TurnID}}</option>{{end}}</select><div class="toolbar"><button class="secondary">되돌리기</button></div></form>{{else if .IsProcessing}}<p class="muted">GM 생성 중에는 편집과 롤백을 막습니다.</p>{{end}}<div class="toolbar admin-action-grid">{{if or (eq .Story.Status "archived") (eq .Story.Status "deleted")}}<form method="post" action="{{.Base}}/stories/{{.Story.ID}}/admin"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><input type="hidden" name="action" value="restore"><button>복구</button></form>{{else}}<form method="post" action="{{.Base}}/stories/{{.Story.ID}}/admin"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><input type="hidden" name="action" value="archive"><button>보관</button></form>{{end}}{{if ne .Story.Status "deleted"}}<form method="post" action="{{.Base}}/stories/{{.Story.ID}}/admin"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><input type="hidden" name="action" value="delete"><button class="secondary">삭제</button></form>{{end}}<form method="post" action="{{.Base}}/stories/{{.Story.ID}}/admin"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><input type="hidden" name="action" value="export_bundle"><button class="secondary">번들 내보내기</button></form><form method="post" action="{{.Base}}/stories/{{.Story.ID}}/admin"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><input type="hidden" name="action" value="recover_store"><button class="secondary">저장소 복구</button></form></div></section>{{end}}
     </aside>
   </div>
-  {{if .HasTurns}}<div class="mobile-action-dock"><a class="button secondary" href="#turn-{{.LatestTurnID}}">최신 턴</a><a class="button" href="#input-panel">입력</a></div>{{else}}<div class="mobile-action-dock"><a class="button" href="#input-panel">입력</a></div>{{end}}
+  {{if .HasTurns}}<div class="mobile-action-dock"><a class="button secondary" href="#turn-{{.LatestTurnID}}">현재 턴</a><a class="button" href="#input-panel">입력/질문</a></div>{{else}}<div class="mobile-action-dock"><a class="button" href="#input-panel">입력/질문</a></div>{{end}}
   <script defer src="{{.Base}}/assets/story-room.js"></script>
 </div>
 {{end}}`
@@ -2221,7 +2260,7 @@ const storyRoomAssetJS = `(() => {
     if (jobStatusNode) jobStatusNode.textContent = payload.active_job_status || '';
     if (turnNode) turnNode.textContent = payload.active_job_turn_id ? String(payload.active_job_turn_id) : '';
     if (pendingNode) pendingNode.textContent = payload.pending_questions ? String(payload.pending_questions.length) : '';
-    showMeta(hasMeta);
+    showMeta(false);
     setStep(payload.step_label || (payload.is_processing ? 'generating' : 'ready'));
     setBusy(Boolean(payload.is_processing));
   }

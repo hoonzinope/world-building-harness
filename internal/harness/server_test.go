@@ -598,10 +598,16 @@ func TestStoryRoomFormsWireCSRFAndUniqueIdempotencyKeys(t *testing.T) {
 	for _, want := range []string{
 		`data-story-room`,
 		`story-room-shell`,
-		`session-rail`,
-		`session-index`,
-		`journal-page`,
+		`story-room-grid`,
+		`current-turn-panel`,
+		`current-turn-body`,
+		`current-turn-flow`,
+		`turn-sidebar`,
+		`turn-timeline`,
+		`previous-turns`,
+		`previous-turn`,
 		`choice-card`,
+		`choice-card-risk`,
 		`dossier-stack`,
 		`dossier-panel`,
 		`story-composer`,
@@ -621,16 +627,18 @@ func TestStoryRoomFormsWireCSRFAndUniqueIdempotencyKeys(t *testing.T) {
 		`data-story-progress-meta hidden`,
 		`[hidden] { display:none !important; }`,
 		`<strong data-story-progress-label>입력 가능</strong>`,
-		`<li data-story-step="queued">대기열</li>`,
-		`<li data-story-step="generating">생성 중</li>`,
-		`<li data-story-step="applying">반영 중</li>`,
-		`<li data-story-step="ready">입력 가능</li>`,
-		`<li data-story-step="failed">실패</li>`,
 		`data-step-label="ready"`,
+		`이번 턴에서 확인된 정보`,
+		`누적 확인 정보`,
+		`현재 턴`,
+		`입력/질문`,
 	} {
 		if !strings.Contains(htmlOpen, want) {
 			t.Fatalf("missing %q in rendered story room", want)
 		}
+	}
+	if strings.Contains(htmlOpen, `story-progress-steps`) {
+		t.Fatalf("unexpected visible progress step list in rendered story room")
 	}
 	for _, forbidden := range []string{
 		`>ready<`,
@@ -640,6 +648,7 @@ func TestStoryRoomFormsWireCSRFAndUniqueIdempotencyKeys(t *testing.T) {
 		`>failed<`,
 		`>custom<`,
 		`>setup<`,
+		`session-rail`,
 		`open으로`,
 	} {
 		if strings.Contains(htmlOpen, forbidden) {
@@ -650,23 +659,36 @@ func TestStoryRoomFormsWireCSRFAndUniqueIdempotencyKeys(t *testing.T) {
 		`.story-room-shell,`,
 		`.story-room-header > *,`,
 		`.story-room-grid > *,`,
-		`.journal-column > *,`,
+		`.current-turn-column > *,`,
+		`.turn-sidebar > *,`,
 		`.dossier-stack,`,
 		`.dossier-panel,`,
 		`.story-composer,`,
 		`.story-composer-panel,`,
 		`.story-progress,`,
-		`.session-rail-item,`,
+		`.turn-timeline a,`,
+		`.previous-turn,`,
 		`.choice-card,`,
 		`.choice-card-archived { min-width:0; }`,
-		`.session-index { display:flex; gap:8px; flex-wrap:nowrap; overflow-x:auto; overflow-y:hidden; max-width:100%; min-width:0;`,
-		`overflow-wrap:anywhere;`,
-		`.session-rail-value { font:700 16px ui-sans-serif, system-ui, sans-serif; color:var(--ink); word-break:keep-all; overflow-wrap:anywhere; }`,
+		`.story-room-grid { display:grid; grid-template-columns:240px minmax(0, 1fr) 320px; grid-template-areas:"timeline current dossier"; gap:24px; align-items:start; }`,
+		`.current-turn-panel { border:1px solid var(--line); border-radius:6px; background:var(--panel); box-shadow:0 14px 30px rgba(17,27,24,.08); padding:18px; scroll-margin-top:18px; }`,
+		`.current-turn-flow { display:grid; gap:14px; border-left:4px solid var(--info); background:rgba(49,95,153,.05); border-radius:6px; padding:14px 14px 14px 16px; }`,
+		`.turn-timeline-link { display:grid; gap:3px; border:1px solid var(--line); border-left:3px solid var(--deep); border-radius:6px; padding:9px 10px; background:rgba(255,255,255,.72); color:var(--ink); text-decoration:none; box-shadow:none; word-break:keep-all; overflow-wrap:anywhere; }`,
+		`.previous-turn summary::after { content:"열기";`,
+		`.choice-card-risk { font:12px ui-sans-serif, system-ui, sans-serif; color:var(--accent); word-break:keep-all; overflow-wrap:anywhere; }`,
 		`.story-progress-message { margin:0; font:15px ui-sans-serif, system-ui, sans-serif; color:var(--ink); word-break:keep-all; overflow-wrap:anywhere; }`,
+		`.story-progress:not([aria-busy="true"]) .progress-loader-copy { display:none; }`,
+		`@media (max-width:820px){`,
+		`.current-turn-body{display:flex; flex-direction:column;}`,
+		`.current-turn-flow{order:1;}`,
+		`.current-turn-body .scene{order:2;}`,
 	} {
 		if !strings.Contains(htmlOpen, want) {
 			t.Fatalf("missing css safeguard %q in rendered story room", want)
 		}
+	}
+	if !strings.Contains(htmlOpen, `id="story-progress" role="status" aria-live="polite" aria-atomic="true" aria-busy="false"`) {
+		t.Fatalf("missing idle aria-busy=false on story progress in rendered story room")
 	}
 	for _, forbidden := range []string{
 		`async function submitForm(form)`,
@@ -680,6 +702,7 @@ func TestStoryRoomFormsWireCSRFAndUniqueIdempotencyKeys(t *testing.T) {
 	for _, want := range []string{
 		`data-story-submit-kind="input"`,
 		`data-story-custom-textarea`,
+		`참여 가능`,
 		`name="mode" value="action"`,
 		`name="mode" value="dialogue"`,
 		`name="mode" value="question"`,
@@ -713,7 +736,6 @@ func TestStoryRoomFormsWireCSRFAndUniqueIdempotencyKeys(t *testing.T) {
 		`턴`,
 		`상태`,
 		`진행자`,
-		`권한/진행`,
 	} {
 		if !strings.Contains(htmlOpen, want) {
 			t.Fatalf("missing localized label %q in rendered story room", want)
@@ -828,8 +850,9 @@ func TestStoryRoomHectorImportOmitsDuplicatedTurnTitles(t *testing.T) {
 		t.Fatalf("missing fallback session title for duplicated Hector turn")
 	}
 	for _, want := range []string{
-		`session-index-title">Turn 19`,
-		`journal-page-title">Turn 19`,
+		`turn-timeline-title">Turn 19`,
+		`current-turn-title">Turn 19`,
+		`previous-turn-title">Turn 19`,
 	} {
 		if strings.Contains(html, want) {
 			t.Fatalf("unexpected duplicated Hector title fragment %q", want)
@@ -859,15 +882,21 @@ func TestStoryRoomProcessingStateOmitsMetaRefreshAndShowsBusyProgress(t *testing
 		`id="story-room"`,
 		`data-story-input-panel`,
 		`aria-busy="true"`,
+		`id="story-progress" role="status" aria-live="polite" aria-atomic="true" aria-busy="true"`,
 		`data-story-progress`,
 		`GM 생성 중`,
 		`완료되면 새 내용 표시 버튼으로 최신 턴을 갱신할 수 있습니다.`,
-		`보통 10초-2분`,
-		`active job:`,
+		`잠시만 기다려 주세요.`,
 	} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("missing %q in processing story room", want)
 		}
+	}
+	if strings.Contains(html, `active job:`) {
+		t.Fatalf("unexpected active job copy in processing story room")
+	}
+	if strings.Contains(html, `story-progress-steps`) {
+		t.Fatalf("unexpected progress step list in processing story room")
 	}
 }
 
@@ -1449,16 +1478,62 @@ func TestStoryRoomShowsLatestTurnFirst(t *testing.T) {
 	srv := &webServer{stories: store}
 	html := renderStoryRoomHTML(t, srv, id, &authUser{ID: "user_admin", Role: "admin"}, "")
 
-	firstLatest := strings.Index(html, `details class="journal-page" id="turn-2"`)
-	firstOlder := strings.Index(html, `details class="journal-page" id="turn-1"`)
-	if firstLatest == -1 || firstOlder == -1 {
-		t.Fatalf("missing turn cards in story room: turn-2=%d turn-1=%d", firstLatest, firstOlder)
+	firstCurrent := strings.Index(html, `class="current-turn-panel" id="turn-2"`)
+	firstPrevious := strings.Index(html, `class="previous-turns-panel panel"`)
+	firstOlder := strings.Index(html, `class="previous-turn" id="turn-1"`)
+	if firstCurrent == -1 || firstPrevious == -1 || firstOlder == -1 {
+		t.Fatalf("missing turn sections in story room: current=%d previous=%d old=%d", firstCurrent, firstPrevious, firstOlder)
 	}
-	if firstLatest > firstOlder {
-		t.Fatalf("expected latest turn first, got turn-2 at %d after turn-1 at %d", firstLatest, firstOlder)
+	if firstCurrent > firstPrevious {
+		t.Fatalf("expected current turn before previous turns, got current at %d after previous section at %d", firstCurrent, firstPrevious)
 	}
-	if !strings.Contains(html, `details class="journal-page" id="turn-2" open`) {
-		t.Fatalf("latest turn is not rendered open")
+	if strings.Contains(html, `class="previous-turn" id="turn-2"`) {
+		t.Fatalf("latest turn should not be rendered inside previous turns")
+	}
+	if strings.Contains(html, `class="previous-turn" id="turn-1" open`) {
+		t.Fatalf("previous turn should be collapsed by default")
+	}
+	if rawISO := regexp.MustCompile(`\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}`); rawISO.MatchString(html) {
+		t.Fatal("unexpected raw ISO timestamp in rendered story room")
+	}
+	formattedKST := regexp.MustCompile(`\d{4}\.\d{2}\.\d{2} \d{2}:\d{2}`)
+	if got := len(formattedKST.FindAllString(html, -1)); got < 2 {
+		t.Fatalf("expected localized timestamps for current and previous turns, got %d matches", got)
+	}
+}
+
+func TestStoryRoomFormatsQuestionAndTurnTimestampsInKST(t *testing.T) {
+	root := t.TempDir()
+	storyRoot := filepath.Join(root, "stories")
+	packRoot := filepath.Join(root, "packs")
+	store, err := openStoryStore(storyRoot, packRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := store.createDemoStory("user_admin", "르네의 이야기", "생존극", "르네", "루세라의 간호사")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.processOneGMJob(context.Background(), mockGMProvider{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.submitStoryInput(id, &authUser{ID: "user_admin", Role: "admin"}, 1, "input-idem-create", "A", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.processOneGMJob(context.Background(), mockGMProvider{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.askQuestion(id, &authUser{ID: "user_admin", Role: "admin"}, "루세라는 어디야?"); err != nil {
+		t.Fatal(err)
+	}
+
+	html := renderStoryRoomHTML(t, &webServer{stories: store}, id, &authUser{ID: "user_admin", Role: "admin"}, "")
+	if rawISO := regexp.MustCompile(`\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}`); rawISO.MatchString(html) {
+		t.Fatal("unexpected raw ISO timestamp in rendered story room")
+	}
+	formattedKST := regexp.MustCompile(`\d{4}\.\d{2}\.\d{2} \d{2}:\d{2}`)
+	if got := len(formattedKST.FindAllString(html, -1)); got < 3 {
+		t.Fatalf("expected localized timestamps for current, previous, and QA entries, got %d matches", got)
 	}
 }
 
