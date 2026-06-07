@@ -33,22 +33,26 @@ type storyTaskResponse struct {
 }
 
 type storyStatusResponse struct {
-	StoryID          string                      `json:"story_id"`
-	Status           string                      `json:"status"`
-	Phase            string                      `json:"phase"`
-	CurrentTurn      int                         `json:"current_turn"`
-	ActiveJobID      string                      `json:"active_job_id"`
-	ActiveJobType    string                      `json:"active_job_type"`
-	ActiveJobStatus  string                      `json:"active_job_status"`
-	IsProcessing     bool                        `json:"is_processing"`
-	CanDrive         bool                        `json:"can_drive"`
-	CanQuestion      bool                        `json:"can_question"`
-	StatusLabel      string                      `json:"status_label"`
-	ProgressMessage  string                      `json:"progress_message"`
-	StepIndex        int                         `json:"step_index"`
-	StepLabel        string                      `json:"step_label"`
-	NextPollMS       int                         `json:"next_poll_ms"`
-	PendingQuestions []storyProgressQuestionView `json:"pending_questions"`
+	StoryID                string                      `json:"story_id"`
+	Status                 string                      `json:"status"`
+	Phase                  string                      `json:"phase"`
+	CurrentTurn            int                         `json:"current_turn"`
+	ActiveJobID            string                      `json:"active_job_id"`
+	ActiveJobType          string                      `json:"active_job_type"`
+	ActiveJobStatus        string                      `json:"active_job_status"`
+	LastCompletedJobID     string                      `json:"last_completed_job_id"`
+	LastCompletedJobType   string                      `json:"last_completed_job_type"`
+	LastCompletedJobTurnID int                         `json:"last_completed_job_turn_id"`
+	LastCompletedJobStatus string                      `json:"last_completed_job_status"`
+	IsProcessing           bool                        `json:"is_processing"`
+	CanDrive               bool                        `json:"can_drive"`
+	CanQuestion            bool                        `json:"can_question"`
+	StatusLabel            string                      `json:"status_label"`
+	ProgressMessage        string                      `json:"progress_message"`
+	StepIndex              int                         `json:"step_index"`
+	StepLabel              string                      `json:"step_label"`
+	NextPollMS             int                         `json:"next_poll_ms"`
+	PendingQuestions       []storyProgressQuestionView `json:"pending_questions"`
 }
 
 func renderStoryRoomHTML(t *testing.T, s *webServer, id string, u *authUser, query string) string {
@@ -923,11 +927,14 @@ func TestStoryRoomAssetRouteServed(t *testing.T) {
 		`setStep('queued');`,
 		`제출 응답을 JSON으로 받지 못했습니다`,
 		`fetch(activeTask.status_url`,
-		`function getReloadTarget(payload)`,
-		`function scheduleStoryReload(payload)`,
+		`function getReloadTarget(payload, task)`,
+		`function scheduleStoryReload(payload, task)`,
 		`window.history.replaceState(null, '', target);`,
 		`window.location.reload()`,
 		`새 내용이 준비되었습니다. 자동으로 최신 화면을 불러옵니다.`,
+		`payload.last_completed_job_type`,
+		`payload.last_completed_job_turn_id`,
+		`completedType === 'story_turn'`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("missing %q in story-room.js asset", want)
@@ -998,6 +1005,53 @@ func TestStoryInputReturnsJSONAndStatus(t *testing.T) {
 	}
 	if !status.IsProcessing || status.ActiveJobID == "" || status.ActiveJobType != "story_turn" || status.StepLabel == "" {
 		t.Fatalf("unexpected status payload: %#v", status)
+	}
+}
+
+func TestStoryInputCompletionStatusIncludesCompletedJob(t *testing.T) {
+	root := t.TempDir()
+	storyRoot := filepath.Join(root, "stories")
+	packRoot := filepath.Join(root, "packs")
+	store, err := openStoryStore(storyRoot, packRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := store.createDemoStory("user_admin", "르네의 이야기", "생존극", "르네", "루세라의 간호사")
+	if err != nil {
+		t.Fatal(err)
+	}
+	turns, err := store.readTurns(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	choiceID := turns[0].Choices[0].ID
+
+	if _, err := store.submitStoryInput(id, &authUser{ID: "user_admin", Role: "admin"}, 1, "input-complete-idem", choiceID, "action", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.processOneGMJob(context.Background(), mockGMProvider{}); err != nil {
+		t.Fatal(err)
+	}
+
+	statusReq := httptest.NewRequest(http.MethodGet, "/stories/"+id+"/status", nil)
+	statusReq = withUser(statusReq, &authUser{ID: "user_admin", Role: "admin"})
+	statusRec := httptest.NewRecorder()
+	(&webServer{stories: store}).handleStoryStatus(statusRec, statusReq, id)
+	if statusRec.Code != http.StatusOK {
+		t.Fatalf("unexpected status response code %d: %s", statusRec.Code, statusRec.Body.String())
+	}
+	var status storyStatusResponse
+	if err := json.Unmarshal(statusRec.Body.Bytes(), &status); err != nil {
+		t.Fatal(err)
+	}
+	if status.IsProcessing {
+		t.Fatalf("expected completed status, got %#v", status)
+	}
+	if status.CurrentTurn != 2 {
+		t.Fatalf("expected current turn to advance, got %#v", status)
+	}
+	if status.LastCompletedJobID == "" || status.LastCompletedJobType != "story_turn" || status.LastCompletedJobTurnID != 2 || status.LastCompletedJobStatus != "completed" {
+		t.Fatalf("unexpected completed job payload: %#v", status)
 	}
 }
 

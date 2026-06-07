@@ -55,6 +55,31 @@ func (s *webServer) storyRoomProgressSnapshot(id string, m storyManifest, u *aut
 	if progress.CanQuestion && !progress.CanDrive {
 		progress.ProgressMessage = "질문은 현재 턴에 대해 보낼 수 있습니다."
 	}
+	attachLastCompletedJob := func() {
+		jobs, err := s.stories.listJobs(id)
+		if err != nil {
+			return
+		}
+		var latest *gmJob
+		for i := range jobs {
+			job := jobs[i]
+			if job.Status != "completed" {
+				continue
+			}
+			if latest == nil || job.CompletedAt > latest.CompletedAt || (job.CompletedAt == latest.CompletedAt && job.ID > latest.ID) {
+				jobCopy := job
+				latest = &jobCopy
+			}
+		}
+		if latest == nil {
+			return
+		}
+		progress.LastCompletedJobID = latest.ID
+		progress.LastCompletedJobType = latest.JobType
+		progress.LastCompletedJobTurnID = latest.TurnID
+		progress.LastCompletedJobStatus = latest.Status
+		progress.LastCompletedJobCompletedAt = latest.CompletedAt
+	}
 	if m.Phase == "failed_waiting_retry" && m.ActiveJobID != "" {
 		progress.HasProgressMeta = true
 		if job, err := s.stories.readJob(id, m.ActiveJobID); err == nil {
@@ -64,6 +89,7 @@ func (s *webServer) storyRoomProgressSnapshot(id string, m storyManifest, u *aut
 			progress.StepIndex, progress.StepLabel = 4, "failed"
 		}
 		progress.HasProgressMeta = progress.ActiveJobID != "" || progress.ActiveJobType != "" || progress.ActiveJobStatus != "" || progress.ActiveJobTurnID > 0 || len(progress.PendingQuestions) > 0
+		attachLastCompletedJob()
 		return progress
 	}
 	if m.ActiveJobID != "" {
@@ -86,6 +112,7 @@ func (s *webServer) storyRoomProgressSnapshot(id string, m storyManifest, u *aut
 				progress.ProgressMessage = "GM 작업 상태를 확인 중입니다."
 			}
 			progress.HasProgressMeta = progress.ActiveJobID != "" || progress.ActiveJobType != "" || progress.ActiveJobStatus != "" || progress.ActiveJobTurnID > 0 || len(progress.PendingQuestions) > 0
+			attachLastCompletedJob()
 			return progress
 		}
 	}
@@ -105,6 +132,9 @@ func (s *webServer) storyRoomProgressSnapshot(id string, m storyManifest, u *aut
 		progress.ProgressMessage = "질문 답변을 준비 중입니다. 잠시만 기다려 주세요."
 		progress.HasProgressMeta = progress.ActiveJobID != "" || progress.ActiveJobType != "" || progress.ActiveJobStatus != "" || progress.ActiveJobTurnID > 0 || len(progress.PendingQuestions) > 0
 	}
+	if m.Phase == "waiting_for_choice" && m.ActiveJobID == "" {
+		attachLastCompletedJob()
+	}
 	return progress
 }
 
@@ -116,21 +146,26 @@ func storyTaskErrorPayload(message string) map[string]any {
 
 func storyTaskAcceptedPayload(base, storyID, jobType string, turnID int, jobID string, progress storyProgressView) map[string]any {
 	return map[string]any{
-		"story_id":          storyID,
-		"job_id":            jobID,
-		"job_type":          jobType,
-		"turn_id":           firstNonZero(progress.ActiveJobTurnID, turnID),
-		"status_url":        base + "/stories/" + url.PathEscape(storyID) + "/status",
-		"next_poll_ms":      progress.NextPollMS,
-		"status_label":      progress.StatusLabel,
-		"progress_message":  progress.ProgressMessage,
-		"step_index":        progress.StepIndex,
-		"step_label":        progress.StepLabel,
-		"is_processing":     progress.IsProcessing,
-		"active_job_id":     progress.ActiveJobID,
-		"active_job_type":   progress.ActiveJobType,
-		"active_job_status": progress.ActiveJobStatus,
-		"current_turn":      progress.CurrentTurn,
+		"story_id":                        storyID,
+		"job_id":                          jobID,
+		"job_type":                        jobType,
+		"turn_id":                         firstNonZero(progress.ActiveJobTurnID, turnID),
+		"status_url":                      base + "/stories/" + url.PathEscape(storyID) + "/status",
+		"next_poll_ms":                    progress.NextPollMS,
+		"status_label":                    progress.StatusLabel,
+		"progress_message":                progress.ProgressMessage,
+		"step_index":                      progress.StepIndex,
+		"step_label":                      progress.StepLabel,
+		"is_processing":                   progress.IsProcessing,
+		"active_job_id":                   progress.ActiveJobID,
+		"active_job_type":                 progress.ActiveJobType,
+		"active_job_status":               progress.ActiveJobStatus,
+		"current_turn":                    progress.CurrentTurn,
+		"last_completed_job_id":           progress.LastCompletedJobID,
+		"last_completed_job_type":         progress.LastCompletedJobType,
+		"last_completed_job_turn_id":      progress.LastCompletedJobTurnID,
+		"last_completed_job_status":       progress.LastCompletedJobStatus,
+		"last_completed_job_completed_at": progress.LastCompletedJobCompletedAt,
 	}
 }
 

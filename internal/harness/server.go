@@ -63,28 +63,33 @@ type storyProgressQuestionView struct {
 }
 
 type storyProgressView struct {
-	StoryID          string                      `json:"story_id"`
-	Status           string                      `json:"status"`
-	Phase            string                      `json:"phase"`
-	CurrentTurn      int                         `json:"current_turn"`
-	ActiveJobID      string                      `json:"active_job_id,omitempty"`
-	ActiveJobType    string                      `json:"active_job_type,omitempty"`
-	ActiveJobStatus  string                      `json:"active_job_status,omitempty"`
-	ActiveJobTurnID  int                         `json:"active_job_turn_id,omitempty"`
-	IsProcessing     bool                        `json:"is_processing"`
-	CanDrive         bool                        `json:"can_drive"`
-	CanQuestion      bool                        `json:"can_question"`
-	StatusLabel      string                      `json:"status_label"`
-	ProgressMessage  string                      `json:"progress_message"`
-	StepIndex        int                         `json:"step_index"`
-	StepLabel        string                      `json:"step_label"`
-	NextPollMS       int                         `json:"next_poll_ms"`
-	JobStartedAt     string                      `json:"job_started_at,omitempty"`
-	JobCompletedAt   string                      `json:"job_completed_at,omitempty"`
-	JobErrorCode     string                      `json:"job_error_code,omitempty"`
-	JobErrorMessage  string                      `json:"job_error_message,omitempty"`
-	PendingQuestions []storyProgressQuestionView `json:"pending_questions,omitempty"`
-	HasProgressMeta  bool                        `json:"-"`
+	StoryID                     string                      `json:"story_id"`
+	Status                      string                      `json:"status"`
+	Phase                       string                      `json:"phase"`
+	CurrentTurn                 int                         `json:"current_turn"`
+	ActiveJobID                 string                      `json:"active_job_id,omitempty"`
+	ActiveJobType               string                      `json:"active_job_type,omitempty"`
+	ActiveJobStatus             string                      `json:"active_job_status,omitempty"`
+	ActiveJobTurnID             int                         `json:"active_job_turn_id,omitempty"`
+	LastCompletedJobID          string                      `json:"last_completed_job_id,omitempty"`
+	LastCompletedJobType        string                      `json:"last_completed_job_type,omitempty"`
+	LastCompletedJobTurnID      int                         `json:"last_completed_job_turn_id,omitempty"`
+	LastCompletedJobStatus      string                      `json:"last_completed_job_status,omitempty"`
+	LastCompletedJobCompletedAt string                      `json:"last_completed_job_completed_at,omitempty"`
+	IsProcessing                bool                        `json:"is_processing"`
+	CanDrive                    bool                        `json:"can_drive"`
+	CanQuestion                 bool                        `json:"can_question"`
+	StatusLabel                 string                      `json:"status_label"`
+	ProgressMessage             string                      `json:"progress_message"`
+	StepIndex                   int                         `json:"step_index"`
+	StepLabel                   string                      `json:"step_label"`
+	NextPollMS                  int                         `json:"next_poll_ms"`
+	JobStartedAt                string                      `json:"job_started_at,omitempty"`
+	JobCompletedAt              string                      `json:"job_completed_at,omitempty"`
+	JobErrorCode                string                      `json:"job_error_code,omitempty"`
+	JobErrorMessage             string                      `json:"job_error_message,omitempty"`
+	PendingQuestions            []storyProgressQuestionView `json:"pending_questions,omitempty"`
+	HasProgressMeta             bool                        `json:"-"`
 }
 
 func runServe(args []string) int {
