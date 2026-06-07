@@ -1,152 +1,190 @@
-# world-building-harness
+# world-harness
 
-OpenCrabs를 세계관 빌딩 하네스이자 오케스트레이터로 사용하기 위한 문서/도구 설계 레포다.
+Markdown 세계관 팩을 관리하고, 비공개 스토리 룸을 운영하며, draft/canon 변경을 `world-tool` CLI로 검증/승인/반영하는 Go 기반 하네스다.
 
-이 문서 세트는 **구현 전 설계 기준**이다. 아직 Go CLI, OpenCrabs skill, dynamic tools, sample world root는 이 레포에 구현되어 있지 않다. 이 문서들은 그 구현을 위한 제품 경계와 명령 계약을 고정한다.
+현재 레포는 설계 문서만 있는 상태가 아니다. 아래 기능이 구현되어 있다.
 
-## 목표
-- OpenCrabs 대화에서 세계관 설정을 draft로 생성한다.
-- `world-tool` Go CLI가 validation, diff, accept/reject, audit log를 deterministic하게 수행한다.
-- `content/` Markdown을 canon source of truth로 유지한다.
-- `content/` 변경은 원칙적으로 사용자 승인 후 `world_accept_draft` 경로에서만 허용한다. `force accept`는 오퍼레이터가 명시적으로 승인한 예외 경로일 뿐이며, 정상 validation/policy guardrail을 약화시키는 일반 우회로가 아니다.
-- 모든 tool output은 JSON 계약을 따른다.
+- `world-tool` Go CLI: world registry, draft, validation, diff, approval, run, story recovery, server, admin, Telegram 명령
+- 공개 읽기용 pack/wiki 웹 UI
+- 로그인 사용자는 진행 가능하고, 비로그인 사용자는 읽기만 가능한 story room 웹 UI
+- Telegram pack 검색, idea 저장, draft 생성, 명시적 Codex 요청
+- `packs/lumen-federation/` 샘플/실사용 세계관 팩
 
-## 문서 읽는 순서
-1. [docs/prd.md](docs/prd.md): 제품 경계와 MVP 목표
-2. [docs/system-design.md](docs/system-design.md): 전체 컴포넌트와 workflow
-3. [docs/architecture.md](docs/architecture.md): 구현 구조와 설계 기준
-4. [docs/workflow.md](docs/workflow.md): 작업 흐름과 승인 흐름
-5. [docs/commands.md](docs/commands.md): `world-tool` CLI와 JSON 계약
-6. [docs/schema.md](docs/schema.md): Markdown frontmatter와 relationship schema
-7. [docs/validation-rules.md](docs/validation-rules.md): validator 규칙과 accept 차단 정책
-8. [docs/security-boundary.md](docs/security-boundary.md): path, secret, Docker 보안 경계
-9. [docs/opencrabs-integration.md](docs/opencrabs-integration.md): OpenCrabs 연동 경계와 책임
-10. [docs/implementation-plan.md](docs/implementation-plan.md): 구현 milestone과 완료 기준
-11. [docs/roadmap.md](docs/roadmap.md): 후속 확장 우선순위와 범위
+## 빠른 실행
 
-## 구현 예정 산출물
-```text
-cmd/world-tool/                    Go CLI entrypoint
-internal/{world,docs,drafts,...}/  deterministic implementation
-opencrabs/skills/world-building/   OpenCrabs skill
-opencrabs/tools/world-tools.toml   OpenCrabs dynamic tools
-schema/                            machine-readable schemas
-examples/worlds/                   sample world roots and fixtures
-```
-
-## MVP vertical slice
-```text
-world-tool world init
-world-tool registry add
-world-tool world list
-world-tool world status
-world-tool input stage  # title
-world-tool input stage  # body
-world-tool draft create
-world-tool draft validate
-world-tool draft diff
-world-tool input stage  # reason
-explicit approval checkpoint  # diff binding + staged reason file/hash
-world-tool approval attest
-world-tool draft accept
-```
-
-## 구현 후 Quickstart 목표
-아래는 CLI가 구현된 뒤 통과해야 하는 첫 성공 경로다.
-`approval attest` 단계는 OpenCrabs trusted wrapper/session metadata로부터 생성된 `auth_context_file`/`auth_context_hash`를 사용하며, 이 파일은 OpenCrabs trusted wrapper가 생성한다. production 경로에서는 configured wrapper-owned auth-context boundary의 normalized regular file 또는 trusted request-file/FD mechanism을 먼저 만족하고, traversal/symlink/selected world root/runtime-owned run dir/staged inbox를 hash/parse/signature/MAC/trust-material 검증 전에 거부한 뒤, 그 다음 issuer/audience/scope/expiry policy를 만족해야 한다. 로컬 CLI 테스트에서는 명시적인 test fixture/mock auth context만 사용하는 test-only location exception을 둔다. 운영 provenance로는 취급하지 않는다. prompt, model output, staged files는 신뢰하지 않는다.
-`draft create`는 명시적 `--id`를 입력으로 받고, update/deprecate draft 생성은 `world-tool draft create --change-type update|deprecate --target-id ...`를 사용한다. `world-tool draft update`는 이미 생성된 active draft의 본문 수정용이다. 별도의 `world-tool draft deprecate` 명령은 없다. create에서 나온 id로 파생된 `draft_path`를 기준으로 validate, diff, approval attestation, accept가 이어진다. create diff의 JSON은 `target_exists: false`, `target_base_hash: null`이고, create 경로의 `approval attest`와 `draft accept`는 `--target-base-hash none`을 사용한다. update/deprecate만 sha256 `target_base_hash`를 사용한다.
-Quickstart는 아직 CLI 구현 후의 목표 예시다. `jq`와 `python3`가 필요하며, 아래 스크립트는 JSON 출력에서 값을 추출해 그대로 이어 붙이는 smoke test 형태다.
+공개 pack/wiki UI:
 
 ```bash
-set -euo pipefail
-
-WORLD_ID="ashen-continent"
-WORLD_ROOT=$(mktemp -d -t world-root.XXXXXX)
-APPROVER_ID="oc-user-01"
-APPROVAL_CHANNEL="OpenCrabs-chat"
-AUTHENTICATED_ACTOR="oc-user-01"
-AUTH_ISSUER="opencrabs-trusted-wrapper"
-AUTH_AUDIENCE="$WORLD_ID"
-REGISTRY_FILE=$(mktemp -t world-registry.XXXXXX)
-AUTH_CONTEXT_FILE=$(mktemp -t opencrabs-auth-context.XXXXXX)
-cleanup() {
-  rm -rf "$WORLD_ROOT"
-  rm -f "$REGISTRY_FILE"
-  if [[ -n "${AUTH_CONTEXT_FILE:-}" ]]; then
-    rm -f "$AUTH_CONTEXT_FILE"
-  fi
-}
-trap cleanup EXIT
-export WORLD_TOOL_REGISTRY="$REGISTRY_FILE"
-issued_at=$(python3 -c 'from datetime import datetime, timedelta, timezone; now=datetime.now(timezone.utc).replace(microsecond=0); print(now.isoformat().replace("+00:00", "Z"))')
-expires_at=$(python3 -c 'from datetime import datetime, timedelta, timezone; now=datetime.now(timezone.utc).replace(microsecond=0) + timedelta(hours=1); print(now.isoformat().replace("+00:00", "Z"))')
-
-world_init_json=$(world-tool world init --root "$WORLD_ROOT" --world-id "$WORLD_ID" --json)
-registry_json=$(world-tool registry add --registry "$REGISTRY_FILE" --world "$WORLD_ID" --root "$WORLD_ROOT" --title "잿빛 대륙" --json)
-world_list_json=$(world-tool world list --registry "$REGISTRY_FILE" --json)
-jq -e --arg world_id "$WORLD_ID" '.ok == true and any(.data.worlds[]?; . == $world_id or .world_id == $world_id or .id == $world_id)' <<<"$world_list_json" >/dev/null
-world_status_json=$(world-tool world status --world "$WORLD_ID" --json)
-jq -e --arg world_id "$WORLD_ID" '.ok == true and .data.world_id == $world_id' <<<"$world_status_json" >/dev/null
-
-title_json=$(printf '%s\n' '잿빛 대륙' | world-tool input stage --world "$WORLD_ID" --kind title --stdin --json)
-title_file=$(jq -r '.data.input_path' <<<"$title_json")
-title_hash=$(jq -r '.data.input_hash' <<<"$title_json")
-
-body_json=$(printf '%s\n' '북부의 제국은 얼어붙은 해협과 고대 관문의 통제권으로 유지된다.' | world-tool input stage --world "$WORLD_ID" --kind body --stdin --json)
-body_file=$(jq -r '.data.input_path' <<<"$body_json")
-body_hash=$(jq -r '.data.input_hash' <<<"$body_json")
-
-draft_create_json=$(world-tool draft create --world "$WORLD_ID" --change-type create --type nation --id nation_ashen_empire --title-file "$title_file" --title-hash "$title_hash" --body-file "$body_file" --body-hash "$body_hash" --json)
-draft_path=$(jq -r '.data.draft_path' <<<"$draft_create_json")
-
-validate_json=$(world-tool draft validate --world "$WORLD_ID" --draft "$draft_path" --json)
-jq -e '.ok == true and .command_status == "completed" and (.data.validation_status == "pass" or .data.validation_status == "warning")' <<<"$validate_json" >/dev/null
-
-diff_json=$(world-tool draft diff --world "$WORLD_ID" --draft "$draft_path" --json)
-jq -e '.ok == true and .command_status == "completed" and .data.target_exists == false and .data.target_base_hash == null' <<<"$diff_json" >/dev/null
-diff_run_id=$(jq -r '.data.diff_run_id' <<<"$diff_json")
-draft_hash=$(jq -r '.data.draft_hash' <<<"$diff_json")
-target_base_hash=$(jq -r '.data.target_base_hash // "none"' <<<"$diff_json")
-patch_hash=$(jq -r '.data.patch_hash' <<<"$diff_json")
-
-reason_json=$(printf '%s\n' '제국 설정을 처음 반영하고, 승인을 위한 변경 사유를 남긴다.' | world-tool input stage --world "$WORLD_ID" --kind reason --stdin --json)
-reason_file=$(jq -r '.data.input_path' <<<"$reason_json")
-reason_hash=$(jq -r '.data.input_hash' <<<"$reason_json")
-jq -e --arg reason_file "$reason_file" --arg reason_hash "$reason_hash" '.ok == true and .data.input_path == $reason_file and .data.input_hash == $reason_hash' <<<"$reason_json" >/dev/null
-
-# explicit approval checkpoint: only continue after the user has reviewed the diff binding
-# and the staged reason file/hash, then set APPROVAL_CONFIRMED=true manually.
-: "${APPROVAL_CONFIRMED:?explicit approval required after diff and staged reason review}"
-
-cat > "$AUTH_CONTEXT_FILE" <<JSON
-{
-  "world_id": "$WORLD_ID",
-  "allowed_actions": ["world_create_approval_attestation", "world_accept_draft"],
-  "issuer": "$AUTH_ISSUER",
-  "audience": "$AUTH_AUDIENCE",
-  "session_id": "sess_123456",
-  "authenticated_actor": "$AUTHENTICATED_ACTOR",
-  "approval_channel": "$APPROVAL_CHANNEL",
-  "downstream_action": "world_accept_draft",
-  "issued_at": "$issued_at",
-  "expires_at": "$expires_at",
-  "fixture_mode": true
-}
-JSON
-auth_context_hash=$(python3 -c 'import hashlib, pathlib, sys; print("sha256:" + hashlib.sha256(pathlib.Path(sys.argv[1]).read_bytes()).hexdigest())' "$AUTH_CONTEXT_FILE")
-
-approval_attest_json=$(WORLD_TOOL_TEST_AUTH_CONTEXT=1 world-tool approval attest --world "$WORLD_ID" --diff-run-id "$diff_run_id" --draft-hash "$draft_hash" --target-base-hash "$target_base_hash" --patch-hash "$patch_hash" --approver-id "$APPROVER_ID" --approval-channel "$APPROVAL_CHANNEL" --downstream-action world_accept_draft --authenticated-actor "$AUTHENTICATED_ACTOR" --auth-context-file "$AUTH_CONTEXT_FILE" --auth-context-hash "$auth_context_hash" --reason-hash "$reason_hash" --json)
-jq -e '.ok == true and .command_status == "completed" and .data.downstream_action == "world_accept_draft" and .data.target_base_hash == null' <<<"$approval_attest_json" >/dev/null
-approval_attestation_file=$(jq -r '.data.approval_attestation_file' <<<"$approval_attest_json")
-approval_attestation_hash=$(jq -r '.data.approval_attestation_hash' <<<"$approval_attest_json")
-
-accept_json=$(world-tool draft accept --world "$WORLD_ID" --draft "$draft_path" --diff-run-id "$diff_run_id" --draft-hash "$draft_hash" --target-base-hash "$target_base_hash" --patch-hash "$patch_hash" --approver-id "$APPROVER_ID" --approval-channel "$APPROVAL_CHANNEL" --approval-attestation-file "$approval_attestation_file" --approval-attestation-hash "$approval_attestation_hash" --authenticated-actor "$AUTHENTICATED_ACTOR" --reason-file "$reason_file" --reason-hash "$reason_hash" --json)
-jq -e --arg reason_file "$reason_file" --arg reason_hash "$reason_hash" --arg approval_attestation_file "$approval_attestation_file" --arg approval_attestation_hash "$approval_attestation_hash" '.ok == true and .command_status == "completed" and .data.approval.downstream_action == "world_accept_draft" and .data.approval.reason_file == $reason_file and .data.approval.reason_hash == $reason_hash and .data.approval.approval_attestation_file == $approval_attestation_file and .data.approval.approval_attestation_hash == $approval_attestation_hash' <<<"$accept_json" >/dev/null
+docker compose up -d --build world-harness
+curl -fsS http://127.0.0.1:8097/health
 ```
-로컬 CLI 테스트용 auth context는 world root 밖의 임시 파일을 쓰는 local fixture/mock 전용 test-only location exception이며, 운영 provenance가 아니다.
 
-## 현재 주의점
-- 이 레포의 현재 파일은 문서뿐이다.
-- `cmd/`, `internal/`, `opencrabs/`, `schema/`, `examples/`는 목표 구조다.
-- 문서의 canonical command와 JSON 계약은 [docs/commands.md](docs/commands.md)를 우선한다.
-- schema/validation 세부 계약은 [docs/schema.md](docs/schema.md)와 [docs/validation-rules.md](docs/validation-rules.md)를 우선한다.
+접속:
+
+```text
+http://127.0.0.1:8097/world/
+```
+
+story room UI:
+
+```bash
+cp .env.example .env
+# 실제 관리자 계정이나 GM provider가 필요하면 .env를 수정한다.
+docker compose up -d --build world-harness-story
+curl -fsS http://127.0.0.1:8098/health
+```
+
+접속:
+
+```text
+http://127.0.0.1:8098/world-story/stories
+```
+
+비로그인 사용자는 story lobby/story room을 볼 수 있지만 선택 제출, 질문, 진행자 변경, 관리자 액션은 할 수 없다.
+
+## CLI
+
+Docker 이미지에는 `world-tool`이 들어간다. 로컬 개발에서는 아래처럼 실행한다.
+
+```bash
+go run ./cmd/world-tool --help
+```
+
+자주 쓰는 읽기 명령:
+
+```bash
+go run ./cmd/world-tool world list --json
+go run ./cmd/world-tool world status --world lumen-federation --json
+go run ./cmd/world-tool doc list --world lumen-federation --json
+go run ./cmd/world-tool doc search --world lumen-federation --query lucera --json
+go run ./cmd/world-tool draft list --world lumen-federation --json
+```
+
+쓰기 경로는 staged input, validation, diff, approval attestation, accept/reject 흐름을 사용한다. 자세한 CLI/JSON 계약은 [docs/commands.md](docs/commands.md)를 기준으로 본다.
+
+## Docker 서비스
+
+| 서비스 | 역할 | 호스트 URL |
+| --- | --- | --- |
+| `world-harness` | 공개 pack/wiki UI | `http://127.0.0.1:8097/world/` |
+| `world-harness-story` | 인증 액션이 있는 story room UI | `http://127.0.0.1:8098/world-story/` |
+| `world-harness-telegram` | Telegram bot, `telegram` profile로 실행 | HTTP 포트 없음 |
+
+운영 명령:
+
+```bash
+docker compose ps
+docker compose logs -f world-harness-story
+docker compose up -d --build world-harness-story
+docker compose --profile telegram up -d --build world-harness-telegram
+```
+
+Telegram은 `TELEGRAM_BOT_TOKEN`이 있어야 동작한다. 안전하게 쓰려면 `TELEGRAM_ALLOWED_CHAT_ID`도 설정한다.
+
+## 레포 구조
+
+```text
+cmd/world-tool/                  CLI entrypoint
+internal/harness/                얇은 public facade: Run(args)
+internal/harness/auth/           사용자, 세션, CSRF, auth store
+internal/harness/cli/            world-tool 명령 dispatcher와 CLI handler
+internal/harness/core/           공통 envelope, hash, id, file helper
+internal/harness/server/         HTTP server, route, handler, view model
+internal/harness/story/          Story store, GM job, import, recovery, export
+internal/harness/telegram/       Telegram bot command와 transport
+internal/harness/ui/             HTML template, CSS, story room JS asset
+internal/harness/world/          Pack/world/document/validation/run domain logic
+packs/lumen-federation/          활성 세계관 팩
+docs/                            제품/아키텍처/workflow/command 문서
+schema/                          schema reference
+opencrabs/                       OpenCrabs skill/tool 연동 자산
+```
+
+새 코드는 책임을 가진 패키지에 둔다. 서버 핸들러는 요청 해석, 권한 확인, 데이터 준비, 템플릿 호출에 집중한다. 스토리 런타임은 `story`, 문서/세계관 로직은 `world`, 저수준 공통 유틸은 `core`, 화면 템플릿과 스타일은 `ui`에 둔다.
+
+## Pack 구조
+
+활성 pack은 `packs/<pack-id>/` 아래에 둔다.
+
+```text
+packs/lumen-federation/
+├── content/      # canon Markdown 문서
+├── drafts/       # pending draft 문서
+├── ideas/        # Telegram/plain idea inbox
+├── raw/          # 보존된 원본 자료
+├── resources/    # legacy/reference resource
+├── runs/         # command run artifact와 recovery file
+├── archive/      # accepted/rejected/deprecated draft
+└── harness.yaml
+```
+
+`content/`는 canon source of truth다. 생성물이나 변경 후보는 먼저 `drafts/`에 들어가고, validation/diff/approval을 거쳐 accept될 때 canon에 반영된다.
+
+## Story UI
+
+story 서비스의 런타임 데이터는 Docker volume `world_harness_story_data`에 저장되고 컨테이너 내부 `/app/data`로 마운트된다.
+
+주요 route:
+
+```text
+/world-story/login
+/world-story/stories
+/world-story/stories/new
+/world-story/stories/<story-id>
+```
+
+지원 기능:
+
+- 공개 읽기용 story lobby/story room
+- 로그인 사용자의 선택/custom 입력 제출
+- 활성 story 질문 제출
+- 진행자 claim/release
+- 관리자 story lifecycle control
+- Hector story import, recovery, export flow
+
+GM provider는 `WORLD_HARNESS_GM_PROVIDER`로 설정한다. 로컬 deterministic 테스트는 `mock`, 컨테이너에서 Codex home을 마운트해 실제 생성을 돌릴 때는 `codex_cli`를 사용한다.
+
+## Telegram
+
+지원 명령:
+
+```text
+/packs
+/status [pack]
+/search [pack] <query>
+/ideas [pack]
+/draft [pack] <type> <id> | <title> | <body>
+/codex [pack] <request>
+```
+
+`/`로 시작하지 않는 일반 메시지는 idea로 저장되며 Codex를 실행하지 않는다. 모델 토큰을 사용해 draft/story 작업을 요청할 때만 `/codex`를 명시적으로 쓴다.
+
+## 개발 검증
+
+커밋 전 기본 검증:
+
+```bash
+go test -count=1 ./...
+go build ./...
+git diff --check
+```
+
+frontend/story UI를 바꾼 경우 story 컨테이너도 다시 확인한다.
+
+```bash
+docker compose up -d --build world-harness-story
+curl -fsS http://127.0.0.1:8098/health
+```
+
+## 참고 문서
+
+- [AGENTS.md](AGENTS.md): 에이전트 작업 절차와 완료 기준
+- [docs/prd.md](docs/prd.md): 제품 요구사항
+- [docs/system-design.md](docs/system-design.md): 시스템 설계
+- [docs/architecture.md](docs/architecture.md): 아키텍처 메모
+- [docs/workflow.md](docs/workflow.md): draft/approval workflow
+- [docs/commands.md](docs/commands.md): CLI command와 JSON contract
+- [docs/schema.md](docs/schema.md): Markdown frontmatter schema
+- [docs/validation-rules.md](docs/validation-rules.md): validation rule
+- [docs/security-boundary.md](docs/security-boundary.md): 보안 경계
+- [docs/operations.md](docs/operations.md): 운영 메모
