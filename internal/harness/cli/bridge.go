@@ -1,9 +1,8 @@
 package cli
 
 import (
-	"flag"
 	"encoding/json"
-	"fmt"
+	"flag"
 	"os"
 
 	"github.com/hoonzi/world-harness/internal/harness/auth"
@@ -49,12 +48,14 @@ func failEnvelope(command string, ctx any, code, message string, details any) En
 	return core.FailEnvelope(command, worldID(ctx), registryRoot(ctx), rootPath(ctx), code, message, details)
 }
 
-func emit(env Envelope) int { return core.Emit(env) }
-func sha256Bytes(b []byte) string { return core.Sha256Bytes(b) }
+func emit(env Envelope) int                  { return core.Emit(env) }
+func sha256Bytes(b []byte) string            { return core.Sha256Bytes(b) }
 func sha256File(path string) (string, error) { return core.Sha256File(path) }
-func nowDate() string { return core.NowDate() }
-func writeJSON(path string, v any) error { return core.WriteJSON(path, v) }
-func writeFileAtomic(path string, b []byte, perm os.FileMode) error { return core.WriteFileAtomic(path, b, perm) }
+func nowDate() string                        { return core.NowDate() }
+func writeJSON(path string, v any) error     { return core.WriteJSON(path, v) }
+func writeFileAtomic(path string, b []byte, perm os.FileMode) error {
+	return core.WriteFileAtomic(path, b, perm)
+}
 func firstNonEmpty(values ...string) string { return core.FirstNonEmpty(values...) }
 func flagSet(name string) *flag.FlagSet {
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
@@ -67,7 +68,7 @@ func envDefault(key, def string) string {
 	}
 	return def
 }
-func ensureDir(path string) error { return core.EnsureDir(path) }
+func ensureDir(path string) error                 { return core.EnsureDir(path) }
 func documentSummary(doc Document) map[string]any { return world.DocumentSummary(doc) }
 func readJSON(path string, v any) error {
 	b, err := os.ReadFile(path)
@@ -120,33 +121,51 @@ func resolveWorld(c commonFlags, _ string) (*WorldContext, *ToolError) {
 }
 
 func initWorld(root, worldID string) (*WorldContext, error) { return world.Init(root, worldID) }
-func worldStatus(ctx *WorldContext) map[string]any { return world.Status(ctx) }
-func safeRel(root, rel string) (string, string, error) { return world.SafeRel(root, rel) }
-func readDocument(ctx *WorldContext, rel string) (Document, error) { return world.ReadDocument(ctx, rel) }
-func listDocuments(ctx *WorldContext, scope string) ([]Document, error) { return world.ListDocuments(ctx, scope) }
+func worldStatus(ctx *WorldContext) map[string]any          { return world.Status(ctx) }
+func safeRel(root, rel string) (string, string, error)      { return world.SafeRel(root, rel) }
+func readDocument(ctx *WorldContext, rel string) (Document, error) {
+	return world.ReadDocument(ctx, rel)
+}
+func listDocuments(ctx *WorldContext, scope string) ([]Document, error) {
+	return world.ListDocuments(ctx, scope)
+}
 func searchDocuments(ctx *WorldContext, scope, query string) ([]map[string]any, error) {
 	return world.SearchDocuments(ctx, scope, query)
 }
 func validateDocument(ctx *WorldContext, doc Document, acceptMode bool) (string, []Issue) {
 	return world.ValidateDocument(ctx, doc, acceptMode)
 }
-func draftPath(docType, id string) (string, error) { return world.DraftPath(docType, id) }
+func draftPath(docType, id string) (string, error)   { return world.DraftPath(docType, id) }
 func contentPath(docType, id string) (string, error) { return world.ContentPath(docType, id) }
-func createRun(ctx *WorldContext, command string) (string, string, error) { return world.CreateRun(ctx, command) }
-func acquireWorldLock(ctx *WorldContext, command string) (func(), error) { return world.AcquireWorldLock(ctx, command) }
-func unresolvedRecovery(ctx *WorldContext) (string, bool) { return world.UnresolvedRecovery(ctx) }
+func createRun(ctx *WorldContext, command string) (string, string, error) {
+	return world.CreateRun(ctx, command)
+}
+func acquireWorldLock(ctx *WorldContext, command string) (func(), error) {
+	return world.AcquireWorldLock(ctx, command)
+}
+func unresolvedRecovery(ctx *WorldContext) (string, bool)     { return world.UnresolvedRecovery(ctx) }
 func loadRegistry(flagValue string) (Registry, string, error) { return world.LoadRegistry(flagValue) }
-func registryWorldList(reg Registry) []map[string]any { return world.RegistryWorldList(reg) }
-func normalizeRoot(path string, mustExist bool) (string, error) { return world.NormalizeRoot(path, mustExist) }
+func registryWorldList(reg Registry) []map[string]any         { return world.RegistryWorldList(reg) }
+func normalizeRoot(path string, mustExist bool) (string, error) {
+	return world.NormalizeRoot(path, mustExist)
+}
 func parseMarkdown(rel string, b []byte) (Document, error) { return world.ParseMarkdown(rel, b) }
-func buildMarkdown(meta map[string]any, body string) ([]byte, error) { return world.BuildMarkdown(meta, body) }
-func metaString(meta map[string]any, key string) string { return world.MetaString(meta, key) }
+func buildMarkdown(meta map[string]any, body string) ([]byte, error) {
+	return world.BuildMarkdown(meta, body)
+}
+func metaString(meta map[string]any, key string) string       { return world.MetaString(meta, key) }
 func metaStringList(meta map[string]any, key string) []string { return world.MetaStringList(meta, key) }
-func findContentByID(ctx *WorldContext, id string) (Document, bool) { return world.FindContentByID(ctx, id) }
-func idExists(ctx *WorldContext, id string, includeDrafts bool) bool { return world.IDExists(ctx, id, includeDrafts) }
-func validationStatus(issues []Issue) string { return world.ValidationStatus(issues) }
+func findContentByID(ctx *WorldContext, id string) (Document, bool) {
+	return world.FindContentByID(ctx, id)
+}
+func idExists(ctx *WorldContext, id string, includeDrafts bool) bool {
+	return world.IDExists(ctx, id, includeDrafts)
+}
+func validationStatus(issues []Issue) string   { return world.ValidationStatus(issues) }
 func validationActions(status string) []string { return world.ValidationActions(status) }
-func SaveRegistry(flagValue string, reg Registry) (string, error) { return world.SaveRegistry(flagValue, reg) }
+func SaveRegistry(flagValue string, reg Registry) (string, error) {
+	return world.SaveRegistry(flagValue, reg)
+}
 
 func worldID(ctx any) any {
 	if c, ok := ctx.(*WorldContext); ok && c != nil {
@@ -168,5 +187,3 @@ func rootPath(ctx any) any {
 	}
 	return nil
 }
-
-func init() { fmt.Sprint("") }

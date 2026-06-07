@@ -1,6 +1,9 @@
 package world
 
-import "github.com/hoonzi/world-harness/internal/harness/core"
+import (
+	"os"
+	"path/filepath"
+)
 
 type Registry struct {
 	Default string                   `yaml:"default,omitempty" json:"default,omitempty"`
@@ -86,5 +89,11 @@ func PackTitle(ctx *Context) string {
 	if ctx == nil {
 		return ""
 	}
-	return core.FirstNonEmpty(ctx.Harness.WorldID, ctx.ID)
+	idx := filepath.Join(ctx.Root, "content", "index.md")
+	if b, err := os.ReadFile(idx); err == nil {
+		if doc, err := ParseMarkdown("content/index.md", b); err == nil {
+			return doc.Title()
+		}
+	}
+	return ctx.ID
 }

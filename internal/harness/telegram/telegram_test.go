@@ -72,3 +72,54 @@ func TestTelegramUnknownSlashCommandDoesNotStoreIdea(t *testing.T) {
 		t.Fatalf("expected no idea files, got %d", len(files))
 	}
 }
+
+func TestTelegramDraftCreatesPackDraftWithSourceRunID(t *testing.T) {
+	packsRoot := t.TempDir()
+	ctx, err := initWorld(filepath.Join(packsRoot, "lumen-federation"), "lumen-federation")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bot := &telegramBot{packsRoot: packsRoot, defaultPack: "lumen-federation"}
+
+	var update telegramUpdate
+	update.Message.Text = "/draft character aria | Aria Prime | First draft body"
+	reply := bot.handle(update)
+	if !strings.Contains(reply, "draft 생성 요청을 처리했습니다") {
+		t.Fatalf("expected draft success reply, got %q", reply)
+	}
+
+	files, err := filepath.Glob(filepath.Join(ctx.Root, "drafts", "characters", "*.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 1 {
+		t.Fatalf("expected one draft file, got %d", len(files))
+	}
+	doc, err := parseMarkdown("drafts/characters/"+filepath.Base(files[0]), mustReadFile(t, files[0]))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := doc.Meta["title"].(string); got != "Aria Prime" {
+		t.Fatalf("expected title from input, got %q", got)
+	}
+	if got, _ := doc.Meta["source_run_id"].(string); strings.TrimSpace(got) == "" {
+		t.Fatal("expected non-empty source_run_id")
+	}
+	if !strings.Contains(doc.Body, "# Aria Prime") || !strings.Contains(doc.Body, "First draft body") {
+		t.Fatalf("expected preserved legacy body format, got %q", doc.Body)
+	}
+	runID, _ := doc.Meta["source_run_id"].(string)
+	summaryPath := filepath.Join(ctx.Root, "runs", runID, "summary.json")
+	if _, err := os.Stat(summaryPath); err != nil {
+		t.Fatalf("expected run summary to exist at %s: %v", summaryPath, err)
+	}
+}
+
+func mustReadFile(t *testing.T, path string) []byte {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
+}

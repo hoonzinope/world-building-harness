@@ -1,7 +1,6 @@
 package telegram
 
 import (
-	"fmt"
 	"os"
 
 	"github.com/hoonzi/world-harness/internal/harness/core"
@@ -16,12 +15,21 @@ func searchDocuments(ctx *WorldContext, scope, query string) ([]map[string]any, 
 	return world.SearchDocuments(ctx, scope, query)
 }
 func worldStatus(ctx *WorldContext) map[string]any { return world.Status(ctx) }
-func createRun(ctx *WorldContext, command string) (string, string, error) { return world.CreateRun(ctx, command) }
-func writeFileAtomic(path string, b []byte, perm os.FileMode) error { return core.WriteFileAtomic(path, b, perm) }
+func createRun(ctx *WorldContext, command string) (string, string, error) {
+	return world.CreateRun(ctx, command)
+}
+func writeJSON(path string, v any) error { return core.WriteJSON(path, v) }
+func writeFileAtomic(path string, b []byte, perm os.FileMode) error {
+	return core.WriteFileAtomic(path, b, perm)
+}
 func sha256Bytes(b []byte) string { return core.Sha256Bytes(b) }
-func readDocument(ctx *WorldContext, rel string) (Document, error) { return world.ReadDocument(ctx, rel) }
+func readDocument(ctx *WorldContext, rel string) (Document, error) {
+	return world.ReadDocument(ctx, rel)
+}
 func parseMarkdown(rel string, b []byte) (Document, error) { return world.ParseMarkdown(rel, b) }
-func buildMarkdown(meta map[string]any, body string) ([]byte, error) { return world.BuildMarkdown(meta, body) }
+func buildMarkdown(meta map[string]any, body string) ([]byte, error) {
+	return world.BuildMarkdown(meta, body)
+}
 func firstNonEmpty(values ...string) string { return core.FirstNonEmpty(values...) }
 func envDefault(key, def string) string {
 	if v := os.Getenv(key); v != "" {
@@ -29,10 +37,10 @@ func envDefault(key, def string) string {
 	}
 	return def
 }
-func normalizeRoot(path string, mustExist bool) (string, error) { return world.NormalizeRoot(path, mustExist) }
-func Packs(root string) ([]map[string]any, error) { return world.Packs(root) }
-func PackContext(root, pack string) (*WorldContext, error) { return world.PackContext(root, pack) }
-func draftPath(docType, id string) (string, error) { return world.DraftPath(docType, id) }
+func normalizeRoot(path string, mustExist bool) (string, error) {
+	return world.NormalizeRoot(path, mustExist)
+}
+func Packs(root string) ([]map[string]any, error)           { return world.Packs(root) }
+func PackContext(root, pack string) (*WorldContext, error)  { return world.PackContext(root, pack) }
+func draftPath(docType, id string) (string, error)          { return world.DraftPath(docType, id) }
 func initWorld(root, worldID string) (*WorldContext, error) { return world.Init(root, worldID) }
-
-func init() { fmt.Sprint("") }

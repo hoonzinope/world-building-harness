@@ -180,39 +180,32 @@ func (b *telegramBot) cmdDraft(arg string) string {
 	if err != nil {
 		return "pack을 찾을 수 없습니다: " + pack
 	}
-	titlePath, _, err := stageText(ctx, "title", strings.TrimSpace(parts[1]))
+	runID, runDir, err := createRun(ctx, "draft.create")
 	if err != nil {
 		return err.Error()
 	}
-	bodyPath, _, err := stageText(ctx, "body", strings.TrimSpace(parts[2]))
-	if err != nil {
-		return err.Error()
-	}
-	titleBytes, err := os.ReadFile(titlePath)
-	if err != nil {
-		return err.Error()
-	}
-	bodyBytes, err := os.ReadFile(bodyPath)
-	if err != nil {
-		return err.Error()
+	title := strings.TrimSpace(parts[1])
+	body := strings.TrimSpace(parts[2])
+	if !strings.HasPrefix(body, "# ") {
+		body = "# " + title + "\n\n" + body
 	}
 	meta := map[string]any{
 		"schema_version": core.DocSchemaVersion,
 		"id":             left[1],
 		"type":           left[0],
 		"status":         "draft",
-		"title":          strings.TrimSpace(string(titleBytes)),
+		"title":          title,
 		"tags":           []string{},
 		"created_at":     core.NowDate(),
 		"updated_at":     core.NowDate(),
 		"related":        []string{},
 		"relationships":  []any{},
-		"source_run_id":  "",
+		"source_run_id":  runID,
 		"change_type":    "create",
 		"target_id":      nil,
 		"retcon_reason":  nil,
 	}
-	out, err := buildMarkdown(meta, strings.TrimSpace(string(bodyBytes)))
+	out, err := buildMarkdown(meta, body)
 	if err != nil {
 		return err.Error()
 	}
@@ -227,5 +220,10 @@ func (b *telegramBot) cmdDraft(arg string) string {
 	if err := writeFileAtomic(targetAbs, out, 0o644); err != nil {
 		return err.Error()
 	}
+	_ = writeJSON(filepath.Join(runDir, "summary.json"), map[string]any{
+		"id":         left[1],
+		"draft_path": targetRel,
+		"draft_hash": sha256Bytes(out),
+	})
 	return fmt.Sprintf("draft 생성 요청을 처리했습니다: %s / %s", pack, left[1])
 }

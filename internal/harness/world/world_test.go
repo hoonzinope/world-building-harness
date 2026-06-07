@@ -44,3 +44,18 @@ func TestUnresolvedRecoveryDetection(t *testing.T) {
 		t.Fatalf("did not expect recovery, got %q", rid)
 	}
 }
+
+func TestPackTitleReadsContentIndexTitle(t *testing.T) {
+	root := t.TempDir()
+	ctx := &Context{ID: "world-id", Root: root, RegistryRoot: root}
+	if err := core.EnsureDir(filepath.Join(root, "content")); err != nil {
+		t.Fatal(err)
+	}
+	body := "---\ntitle: Harbor Atlas\n---\n\n# fallback\n"
+	if err := os.WriteFile(filepath.Join(root, "content", "index.md"), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := PackTitle(ctx); got != "Harbor Atlas" {
+		t.Fatalf("expected content index title, got %q", got)
+	}
+}
