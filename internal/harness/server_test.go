@@ -944,6 +944,8 @@ func TestStoryRoomAssetRouteServed(t *testing.T) {
 		`submitForm(form, event.submitter || null);`,
 		`if (submitter && submitter.name) {`,
 		`data.set(submitter.name, submitter.value);`,
+		`data.delete('custom_text');`,
+		`data.delete('mode');`,
 		`data-story-submit`,
 		`WeakMap`,
 		`captureInitialControlState`,

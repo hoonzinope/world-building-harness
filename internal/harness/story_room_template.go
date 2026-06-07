@@ -359,6 +359,10 @@ const storyRoomAssetJS = `(() => {
     if (submitter && submitter.name) {
       data.set(submitter.name, submitter.value);
     }
+    if (submitter && submitter.hasAttribute && submitter.hasAttribute('data-story-choice-button')) {
+      data.delete('custom_text');
+      data.delete('mode');
+    }
     const requestPayload = Object.fromEntries(data.entries());
     const actionURL = new URL(form.action, window.location.href);
     const requestURL = actionURL.origin === window.location.origin ? actionURL.pathname + actionURL.search : form.action;
