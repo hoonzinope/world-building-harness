@@ -194,7 +194,7 @@ func (s *webServer) addSecurityHeaders(w http.ResponseWriter) {
 }
 
 func canDriveStory(m storyManifest, u *authUser) bool {
-	return m.Status == "active" && m.Phase == "waiting_for_choice" && (u.Role == "admin" || u.ID == m.ActiveDriverID)
+	return u != nil && m.Status == "active" && m.Phase == "waiting_for_choice" && (u.Role == "admin" || u.ID == m.ActiveDriverID)
 }
 
 func canQuestionStory(m storyManifest) bool {
@@ -233,7 +233,7 @@ func friendlyPermissionLabel(m storyManifest, u *authUser) string {
 		return "종료"
 	case canDriveStory(m, u):
 		return "진행 가능"
-	case canQuestionStory(m):
+	case u != nil && canQuestionStory(m):
 		return "질문 가능"
 	case m.Status == "active" || m.Status == "paused":
 		return "관전 가능"
@@ -480,17 +480,17 @@ func (s *webServer) handle(w http.ResponseWriter, r *http.Request) {
 		s.handleStoryRoomAsset(w, r)
 		return
 	}
-	var u *authUser
-	if s.authRequired || strings.HasPrefix(path, "/stories") || strings.HasPrefix(path, "/admin") || path == "/logout" {
+	if s.pathRequiresAuth(path) {
 		if s.auth == nil {
 			http.NotFound(w, r)
 			return
 		}
-		var ok bool
-		u, ok = s.requireAuth(w, r)
+		u, ok := s.requireAuth(w, r)
 		if !ok {
 			return
 		}
+		r = withUser(r, u)
+	} else if u, ok := s.userFromRequest(r); ok {
 		r = withUser(r, u)
 	}
 	switch {
@@ -537,15 +537,62 @@ func (s *webServer) handle(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *webServer) requireAuth(w http.ResponseWriter, r *http.Request) (*authUser, bool) {
+func (s *webServer) pathRequiresAuth(path string) bool {
+	switch path {
+	case "/stories/new", "/stories/import/hector", "/admin/users", "/logout":
+		return true
+	}
+	if strings.HasPrefix(path, "/stories/") {
+		rest := strings.Trim(strings.TrimPrefix(path, "/stories/"), "/")
+		if rest == "" {
+			return false
+		}
+		parts := strings.Split(rest, "/")
+		if len(parts) < 2 {
+			return false
+		}
+		switch parts[1] {
+		case "input", "question", "driver", "admin", "recover":
+			return true
+		}
+	}
+	return false
+}
+
+func (s *webServer) userFromRequest(r *http.Request) (*authUser, bool) {
+	if s.auth == nil {
+		return nil, false
+	}
 	c, err := r.Cookie(sessionCookieName)
 	if err == nil && c.Value != "" {
 		if u, err := s.auth.userForToken(c.Value); err == nil {
 			return u, true
 		}
 	}
+	return nil, false
+}
+
+func (s *webServer) requireAuth(w http.ResponseWriter, r *http.Request) (*authUser, bool) {
+	if u, ok := s.userFromRequest(r); ok {
+		return u, true
+	}
 	http.Redirect(w, r, s.base(r)+"/login", http.StatusSeeOther)
 	return nil, false
+}
+
+func (s *webServer) requireLoggedInUser(w http.ResponseWriter, r *http.Request) (*authUser, bool) {
+	if u := currentUser(r); u != nil {
+		return u, true
+	}
+	if s.auth == nil {
+		http.NotFound(w, r)
+		return nil, false
+	}
+	return s.requireAuth(w, r)
+}
+
+func isAdminUser(u *authUser) bool {
+	return u != nil && u.Role == "admin"
 }
 
 func (s *webServer) handleLogin(w http.ResponseWriter, r *http.Request) {
@@ -579,6 +626,9 @@ func (s *webServer) handleLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *webServer) handleLogout(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.requireLoggedInUser(w, r); !ok {
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -731,7 +781,7 @@ func (s *webServer) renderStoryLobby(w http.ResponseWriter, r *http.Request) {
 			Summary:     m.LatestSummary,
 			Updated:     m.UpdatedAt,
 			Imported:    m.SourceDraftPath != "",
-			IsMine:      m.CreatedBy == u.ID || m.ActiveDriverID == u.ID,
+			IsMine:      u != nil && (m.CreatedBy == u.ID || m.ActiveDriverID == u.ID),
 			IsWatch:     (m.Status == "active" || m.Status == "paused") && !canDriveStory(m, u),
 			IsArchived:  m.Status == "completed" || m.Status == "archived" || m.Status == "deleted",
 			IsActive:    m.Status == "active",
@@ -745,11 +795,14 @@ func (s *webServer) renderStoryLobby(w http.ResponseWriter, r *http.Request) {
 		}
 		rows = append(rows, row)
 	}
-	s.render(w, r, "스토리", storyLobbyTemplate, map[string]any{"Base": s.base(r), "User": u, "Stories": rows, "Filter": filter, "CSRFToken": mustCSRFToken(w, r)})
+	s.render(w, r, "스토리", storyLobbyTemplate, map[string]any{"Base": s.base(r), "User": u, "IsAnonymous": u == nil, "Stories": rows, "Filter": filter, "CSRFToken": mustCSRFToken(w, r)})
 }
 
 func (s *webServer) handleNewStory(w http.ResponseWriter, r *http.Request) {
-	u := currentUser(r)
+	u, ok := s.requireLoggedInUser(w, r)
+	if !ok {
+		return
+	}
 	if r.Method == http.MethodGet {
 		s.render(w, r, "새 스토리", newStoryTemplate, map[string]any{"Base": s.base(r), "User": u, "CSRFToken": mustCSRFToken(w, r)})
 		return
@@ -774,6 +827,10 @@ func (s *webServer) handleNewStory(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *webServer) handleImportHector(w http.ResponseWriter, r *http.Request) {
+	u, ok := s.requireLoggedInUser(w, r)
+	if !ok {
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -781,7 +838,7 @@ func (s *webServer) handleImportHector(w http.ResponseWriter, r *http.Request) {
 	if !s.requireCSRF(w, r) {
 		return
 	}
-	id, _, err := s.stories.importHector(currentUser(r).ID)
+	id, _, err := s.stories.importHector(u.ID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -844,20 +901,21 @@ func (s *webServer) renderStoryRoom(w http.ResponseWriter, r *http.Request, id s
 	progress := s.storyRoomProgressSnapshot(id, m, u)
 	isProcessing := progress.IsProcessing
 	canDrive := canDriveStory(m, u) && !isProcessing
-	canClaim := m.ActiveDriverID == "" && m.Status == "active" && m.Phase == "waiting_for_choice" && !isProcessing
-	canRelease := (u.Role == "admin" || u.ID == m.ActiveDriverID) && m.ActiveDriverID != "" && m.Status == "active" && m.Phase == "waiting_for_choice" && !isProcessing
-	canQuestion := canQuestionStory(m) && !isProcessing
-	canAdminMutate := u.Role == "admin" && hasTurns && !isProcessing
+	canClaim := u != nil && m.ActiveDriverID == "" && m.Status == "active" && m.Phase == "waiting_for_choice" && !isProcessing
+	canRelease := u != nil && (u.Role == "admin" || u.ID == m.ActiveDriverID) && m.ActiveDriverID != "" && m.Status == "active" && m.Phase == "waiting_for_choice" && !isProcessing
+	canQuestion := u != nil && canQuestionStory(m) && !isProcessing
+	canAdminMutate := isAdminUser(u) && hasTurns && !isProcessing
 	driverLabel := friendlyDriverLabel(m, u)
 	var failedJob *failedJobView
 	if m.Phase == "failed_waiting_retry" && m.ActiveJobID != "" {
 		if job, err := s.stories.readJob(id, m.ActiveJobID); err == nil {
-			failedJob = &failedJobView{Job: job, CanRecover: u.Role == "admin" || u.ID == job.ActorID, ActorLabel: job.ActorID}
+			failedJob = &failedJobView{Job: job, CanRecover: isAdminUser(u) || (u != nil && u.ID == job.ActorID), ActorLabel: job.ActorID}
 		}
 	}
 	data := map[string]any{
 		"Base":                s.base(r),
 		"User":                u,
+		"IsAnonymous":         u == nil,
 		"Story":               m,
 		"State":               st,
 		"Turns":               displayTurns,
@@ -866,7 +924,7 @@ func (s *webServer) renderStoryRoom(w http.ResponseWriter, r *http.Request, id s
 		"CanClaim":            canClaim,
 		"CanRelease":          canRelease,
 		"CanQuestion":         canQuestion,
-		"IsAdmin":             u.Role == "admin",
+		"IsAdmin":             isAdminUser(u),
 		"CanAdminMutate":      canAdminMutate,
 		"LatestTurnID":        latestTurnID,
 		"LatestTurn":          latestTurn,
@@ -890,6 +948,10 @@ func (s *webServer) renderStoryRoom(w http.ResponseWriter, r *http.Request, id s
 }
 
 func (s *webServer) handleStoryInput(w http.ResponseWriter, r *http.Request, id string) {
+	u, ok := s.requireLoggedInUser(w, r)
+	if !ok {
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -901,7 +963,6 @@ func (s *webServer) handleStoryInput(w http.ResponseWriter, r *http.Request, id 
 	if !s.requireStoryTaskCSRF(w, r) {
 		return
 	}
-	u := currentUser(r)
 	mode := strings.TrimSpace(r.FormValue("mode"))
 	turnID := parseFormInt(r.FormValue("turn_id"))
 	idem := strings.TrimSpace(r.FormValue("idempotency_key"))
@@ -940,6 +1001,10 @@ func (s *webServer) handleStoryInput(w http.ResponseWriter, r *http.Request, id 
 }
 
 func (s *webServer) handleStoryQuestion(w http.ResponseWriter, r *http.Request, id string) {
+	u, ok := s.requireLoggedInUser(w, r)
+	if !ok {
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -958,13 +1023,12 @@ func (s *webServer) handleStoryQuestion(w http.ResponseWriter, r *http.Request, 
 		}
 	}
 	question := firstNonEmpty(strings.TrimSpace(r.FormValue("question")), strings.TrimSpace(r.FormValue("custom_text")))
-	jobID, err := s.stories.submitQuestionJob(id, currentUser(r), turnID, strings.TrimSpace(r.FormValue("idempotency_key")), question)
+	jobID, err := s.stories.submitQuestionJob(id, u, turnID, strings.TrimSpace(r.FormValue("idempotency_key")), question)
 	if err != nil {
 		s.writeStoryTaskError(w, r, err.Error(), http.StatusForbidden)
 		return
 	}
 	if wantsJSONResponse(r) {
-		u := currentUser(r)
 		m, readErr := s.stories.readManifest(id)
 		if readErr != nil {
 			s.writeStoryTaskError(w, r, readErr.Error(), http.StatusInternalServerError)
@@ -993,6 +1057,10 @@ func (s *webServer) handleStoryStatus(w http.ResponseWriter, r *http.Request, id
 }
 
 func (s *webServer) handleStoryDriver(w http.ResponseWriter, r *http.Request, id string) {
+	u, ok := s.requireLoggedInUser(w, r)
+	if !ok {
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -1004,7 +1072,7 @@ func (s *webServer) handleStoryDriver(w http.ResponseWriter, r *http.Request, id
 	if !s.requireCSRF(w, r) {
 		return
 	}
-	if err := s.stories.updateDriver(id, currentUser(r), r.FormValue("action")); err != nil {
+	if err := s.stories.updateDriver(id, u, r.FormValue("action")); err != nil {
 		http.Error(w, err.Error(), http.StatusForbidden)
 		return
 	}
@@ -1012,6 +1080,10 @@ func (s *webServer) handleStoryDriver(w http.ResponseWriter, r *http.Request, id
 }
 
 func (s *webServer) handleStoryAdmin(w http.ResponseWriter, r *http.Request, id string) {
+	u, ok := s.requireLoggedInUser(w, r)
+	if !ok {
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -1023,10 +1095,9 @@ func (s *webServer) handleStoryAdmin(w http.ResponseWriter, r *http.Request, id 
 	if !s.requireCSRF(w, r) {
 		return
 	}
-	u := currentUser(r)
 	switch r.FormValue("action") {
 	case "update":
-		if u.Role != "admin" {
+		if !isAdminUser(u) {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
@@ -1036,7 +1107,7 @@ func (s *webServer) handleStoryAdmin(w http.ResponseWriter, r *http.Request, id 
 		}
 		http.Redirect(w, r, s.base(r)+"/stories/"+url.PathEscape(id), http.StatusSeeOther)
 	case "edit_turn":
-		if u.Role != "admin" {
+		if !isAdminUser(u) {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
@@ -1046,7 +1117,7 @@ func (s *webServer) handleStoryAdmin(w http.ResponseWriter, r *http.Request, id 
 		}
 		http.Redirect(w, r, s.base(r)+"/stories/"+url.PathEscape(id), http.StatusSeeOther)
 	case "rollback_turn":
-		if u.Role != "admin" {
+		if !isAdminUser(u) {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
@@ -1061,7 +1132,7 @@ func (s *webServer) handleStoryAdmin(w http.ResponseWriter, r *http.Request, id 
 		}
 		http.Redirect(w, r, s.base(r)+"/stories/"+url.PathEscape(id), http.StatusSeeOther)
 	case "archive":
-		if u.Role != "admin" {
+		if !isAdminUser(u) {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
@@ -1071,7 +1142,7 @@ func (s *webServer) handleStoryAdmin(w http.ResponseWriter, r *http.Request, id 
 		}
 		http.Redirect(w, r, s.base(r)+"/stories/"+url.PathEscape(id), http.StatusSeeOther)
 	case "restore":
-		if u.Role != "admin" {
+		if !isAdminUser(u) {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
@@ -1081,7 +1152,7 @@ func (s *webServer) handleStoryAdmin(w http.ResponseWriter, r *http.Request, id 
 		}
 		http.Redirect(w, r, s.base(r)+"/stories/"+url.PathEscape(id), http.StatusSeeOther)
 	case "delete":
-		if u.Role != "admin" {
+		if !isAdminUser(u) {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
@@ -1091,7 +1162,7 @@ func (s *webServer) handleStoryAdmin(w http.ResponseWriter, r *http.Request, id 
 		}
 		http.Redirect(w, r, s.base(r)+"/stories/"+url.PathEscape(id), http.StatusSeeOther)
 	case "export_bundle":
-		if u.Role != "admin" {
+		if !isAdminUser(u) {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
@@ -1104,7 +1175,7 @@ func (s *webServer) handleStoryAdmin(w http.ResponseWriter, r *http.Request, id 
 		redirectURL := s.base(r) + "/stories/" + url.PathEscape(id) + "?exported=" + url.QueryEscape(bundlePath) + "&export_status=" + url.QueryEscape("draft_pending") + "&export_draft_target=" + url.QueryEscape(draftTarget)
 		http.Redirect(w, r, redirectURL, http.StatusSeeOther)
 	case "recover_store":
-		if u.Role != "admin" {
+		if !isAdminUser(u) {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
@@ -1126,6 +1197,10 @@ func (s *webServer) handleStoryAdmin(w http.ResponseWriter, r *http.Request, id 
 }
 
 func (s *webServer) handleStoryRecovery(w http.ResponseWriter, r *http.Request, id string) {
+	u, ok := s.requireLoggedInUser(w, r)
+	if !ok {
+		return
+	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -1137,7 +1212,6 @@ func (s *webServer) handleStoryRecovery(w http.ResponseWriter, r *http.Request, 
 	if !s.requireCSRF(w, r) {
 		return
 	}
-	u := currentUser(r)
 	switch r.FormValue("action") {
 	case "resume":
 		if _, err := s.stories.resumeFailedJob(id, u); err != nil {
@@ -1166,8 +1240,11 @@ func (s *webServer) handleStoryRoomAsset(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *webServer) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
-	u := currentUser(r)
-	if u.Role != "admin" {
+	u, ok := s.requireLoggedInUser(w, r)
+	if !ok {
+		return
+	}
+	if !isAdminUser(u) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
@@ -1265,13 +1342,17 @@ func (s *webServer) storyRoomProgressSnapshot(id string, m storyManifest, u *aut
 		Phase:       m.Phase,
 		CurrentTurn: m.CurrentTurn,
 		CanDrive:    canDriveStory(m, u),
-		CanQuestion: canQuestionStory(m),
+		CanQuestion: u != nil && canQuestionStory(m),
 		StatusLabel: friendlyStatusLabel(m),
 		StepIndex:   3,
 		StepLabel:   "ready",
 		NextPollMS:  0,
 	}
-	progress.ProgressMessage = "대기 중입니다. 새 입력을 제출할 수 있는 상태입니다."
+	if u == nil {
+		progress.ProgressMessage = "로그인하면 진행, 질문, 진행권, 관리 기능을 사용할 수 있습니다."
+	} else {
+		progress.ProgressMessage = "대기 중입니다. 새 입력을 제출할 수 있는 상태입니다."
+	}
 	if progress.CanQuestion && !progress.CanDrive {
 		progress.ProgressMessage = "질문은 현재 턴에 대해 보낼 수 있습니다."
 	}
@@ -1448,6 +1529,7 @@ func (s *webServer) render(w http.ResponseWriter, r *http.Request, title, body s
 	}
 	data["PageTitle"] = title
 	data["StoryEnabled"] = s.storyEnabled
+	data["AuthEnabled"] = s.auth != nil
 	t, err := template.New("page").Funcs(template.FuncMap{
 		"docURL": func(base, pack, path string) string {
 			return fmt.Sprintf("%s/packs/%s/doc?path=%s", base, url.PathEscape(pack), url.QueryEscape(path))
@@ -1689,7 +1771,7 @@ button.danger { border-color:var(--accent); background:var(--accent); }
 </head>
 <body>
 <main class="shell">
-<div class="top"><a class="brand" href="{{.Base}}/">World Harness</a><div class="nav">{{if .StoryEnabled}}<a href="{{.Base}}/stories">스토리</a>{{end}}<a href="{{.Base}}/packs/lumen-federation/">세계관</a>{{with .User}}{{if eq .Role "admin"}}<a href="{{$.Base}}/admin/users">Admin</a>{{end}}<form class="nav-form" method="post" action="{{$.Base}}/logout"><input type="hidden" name="csrf_token" value="{{$.CSRFToken}}"><button class="link-button" type="submit">Logout</button></form>{{else}}<span>{{$.PageTitle}}</span>{{end}}</div></div>
+<div class="top"><a class="brand" href="{{.Base}}/">World Harness</a><div class="nav">{{if .StoryEnabled}}<a href="{{.Base}}/stories">스토리</a>{{end}}<a href="{{.Base}}/packs/lumen-federation/">세계관</a>{{with .User}}{{if eq .Role "admin"}}<a href="{{$.Base}}/admin/users">Admin</a>{{end}}<form class="nav-form" method="post" action="{{$.Base}}/logout"><input type="hidden" name="csrf_token" value="{{$.CSRFToken}}"><button class="link-button" type="submit">Logout</button></form>{{else}}{{if .AuthEnabled}}<a href="{{.Base}}/login">로그인</a>{{end}}<span>{{$.PageTitle}}</span>{{end}}</div></div>
 {{template "content" .}}
 </main>
 </body>
@@ -1751,9 +1833,10 @@ const storyLobbyTemplate = `{{define "content"}}
 <h1>스토리</h1>
 <p class="lede">세계관 문서를 읽고, 실시간 스토리 룸에서 장면 단위로 진행합니다.</p>
 <div class="toolbar">
-  <a class="button" href="{{.Base}}/stories/new">새 스토리</a>
+  {{if .User}}<a class="button" href="{{.Base}}/stories/new">새 스토리</a>{{else if .AuthEnabled}}<a class="button" href="{{.Base}}/login">로그인</a>{{end}}
   <a class="button secondary" href="{{.Base}}/stories">새로고침</a>
 </div>
+{{if .IsAnonymous}}<p class="muted">로그인하지 않아도 스토리 목록과 세계관은 읽을 수 있습니다. 새 스토리 생성과 진행은 로그인 후 가능합니다.</p>{{end}}
 <div class="filter-bar" role="tablist" aria-label="스토리 필터">
   <a class="filter-link" href="{{.Base}}/stories" {{if eq .Filter "all"}}aria-current="page"{{end}}>전체</a>
   <a class="filter-link" href="{{.Base}}/stories?filter=active" {{if eq .Filter "active"}}aria-current="page"{{end}}>진행 중</a>
@@ -1801,6 +1884,7 @@ const newStoryTemplate = `{{define "content"}}
 
 const storyRoomTemplate = `{{define "content"}}
 <div id="story-room" class="story-room-shell" data-story-room data-story-id="{{.Story.ID}}" data-status-url="{{.StatusURL}}" data-current-turn="{{.Story.CurrentTurn}}" data-initial-processing="{{if .IsProcessing}}true{{else}}false{{end}}">
+  {{if .IsAnonymous}}<div class="panel status-panel"><strong>읽기 전용</strong><p>로그인하면 진행, 질문, 진행권, 관리 기능을 사용할 수 있습니다.</p></div>{{end}}
   <div class="story-room-header">
     <div class="story-room-headline">
       <h1>{{.Story.Title}}</h1>
@@ -1843,7 +1927,7 @@ const storyRoomTemplate = `{{define "content"}}
             <div class="scene">{{.SceneBody}}</div>
             <div class="journal-section"><strong>현재 상황</strong><p>{{.CurrentSituation}}</p></div>
             {{if .RevealedFacts}}<div class="journal-section"><strong>확인된 정보</strong><ul>{{range .RevealedFacts}}<li>{{.}}</li>{{end}}</ul></div>{{end}}
-            {{$turnID := .TurnID}}{{if .Choices}}<div class="journal-section"><strong>{{if eq .TurnID $.LatestTurnID}}다음 갈림길{{else}}기록된 선택지{{end}}</strong><div class="choice-list">{{range .Choices}}{{if eq $turnID $.LatestTurnID}}<form method="post" action="{{$.Base}}/stories/{{$.Story.ID}}/input" data-story-submit data-story-submit-kind="choice"><input type="hidden" name="csrf_token" value="{{$.CSRFToken}}"><input type="hidden" name="turn_id" value="{{$.LatestTurnID}}"><input type="hidden" name="idempotency_key" value="{{idem}}"><input type="hidden" name="choice_id" value="{{.ID}}"><button class="choice-card" type="submit" {{if not $.CanDrive}}disabled{{end}}><span class="choice-card-letter">{{.ID}}</span><span class="choice-card-copy"><strong>{{.Text}}</strong>{{if .RiskHint}}<span class="choice-card-hint">{{.RiskHint}}</span>{{end}}</span></button></form>{{else}}<div class="choice-card choice-card-archived"><span class="choice-card-letter">{{.ID}}</span><span class="choice-card-copy"><strong>{{.Text}}</strong>{{if .RiskHint}}<span class="choice-card-hint">{{.RiskHint}}</span>{{end}}</span></div>{{end}}{{end}}</div></div>{{end}}
+            {{$turnID := .TurnID}}{{if .Choices}}<div class="journal-section"><strong>{{if eq .TurnID $.LatestTurnID}}다음 갈림길{{else}}기록된 선택지{{end}}</strong><div class="choice-list">{{range .Choices}}{{if eq $turnID $.LatestTurnID}}{{if $.IsAnonymous}}<div class="choice-card choice-card-archived"><span class="choice-card-letter">{{.ID}}</span><span class="choice-card-copy"><strong>{{.Text}}</strong>{{if .RiskHint}}<span class="choice-card-hint">{{.RiskHint}}</span>{{end}}</span></div>{{else}}<form method="post" action="{{$.Base}}/stories/{{$.Story.ID}}/input" data-story-submit data-story-submit-kind="choice"><input type="hidden" name="csrf_token" value="{{$.CSRFToken}}"><input type="hidden" name="turn_id" value="{{$.LatestTurnID}}"><input type="hidden" name="idempotency_key" value="{{idem}}"><input type="hidden" name="choice_id" value="{{.ID}}"><button class="choice-card" type="submit" {{if not $.CanDrive}}disabled{{end}}><span class="choice-card-letter">{{.ID}}</span><span class="choice-card-copy"><strong>{{.Text}}</strong>{{if .RiskHint}}<span class="choice-card-hint">{{.RiskHint}}</span>{{end}}</span></button></form>{{end}}{{else}}<div class="choice-card choice-card-archived"><span class="choice-card-letter">{{.ID}}</span><span class="choice-card-copy"><strong>{{.Text}}</strong>{{if .RiskHint}}<span class="choice-card-hint">{{.RiskHint}}</span>{{end}}</span></div>{{end}}{{end}}</div></div>{{end}}
           </div>
         </details>
       {{end}}
@@ -1886,7 +1970,7 @@ const storyRoomTemplate = `{{define "content"}}
           <textarea name="custom_text" data-story-custom-textarea placeholder="플레이어 캐릭터가 시도하는 행동/대사/서술/질문"></textarea>
           <div class="toolbar"><button type="submit">제출</button></div>
         </form>
-        {{else}}{{if .IsProcessing}}<p class="muted">GM 생성 중입니다. 완료되면 새 내용 표시 버튼으로 최신 턴을 갱신할 수 있습니다.</p>{{else}}{{if .CanClaim}}<p class="muted">현재 진행권이 비어 있습니다. 진행권을 받은 뒤 입력할 수 있습니다.</p>{{else}}<p class="muted">현재 {{.DriverLabel}}가 진행 중입니다. 진행 입력은 비활성화되어 있습니다.</p>{{end}}{{end}}{{end}}
+        {{else}}{{if .IsAnonymous}}<p class="muted">로그인하면 진행권을 받고 직접 입력할 수 있습니다.</p>{{else}}{{if .IsProcessing}}<p class="muted">GM 생성 중입니다. 완료되면 새 내용 표시 버튼으로 최신 턴을 갱신할 수 있습니다.</p>{{else}}{{if .CanClaim}}<p class="muted">현재 진행권이 비어 있습니다. 진행권을 받은 뒤 입력할 수 있습니다.</p>{{else}}<p class="muted">현재 {{.DriverLabel}}가 진행 중입니다. 진행 입력은 비활성화되어 있습니다.</p>{{end}}{{end}}{{end}}{{end}}
         <h2 id="qa">질문</h2>
         {{if .CanDrive}}<p class="muted">질문은 직접 입력에서 question 모드를 선택해 제출할 수 있습니다.</p>{{else}}{{if .CanQuestion}}
         <form method="post" action="{{.Base}}/stories/{{.Story.ID}}/question" class="panel story-composer-panel" data-story-submit data-story-submit-kind="question">
@@ -1896,7 +1980,7 @@ const storyRoomTemplate = `{{define "content"}}
           <textarea name="question" data-story-question-textarea placeholder="현재 상황, 인물, 단서, 설정, 선택지 의미를 묻는 비진행 질문"></textarea>
           <div class="toolbar"><button class="secondary" type="submit">질문 제출</button></div>
         </form>
-        {{else}}{{if .IsProcessing}}<p class="muted">GM 생성 중에는 질문 제출도 잠시 막습니다.</p>{{else}}<p class="muted">completed/archived/deleted room에서는 새 질문을 받지 않습니다.</p>{{end}}{{end}}{{end}}
+        {{else}}{{if .IsAnonymous}}<p class="muted">로그인하면 질문을 보낼 수 있습니다.</p>{{else}}{{if .IsProcessing}}<p class="muted">GM 생성 중에는 질문 제출도 잠시 막습니다.</p>{{else}}<p class="muted">completed/archived/deleted room에서는 새 질문을 받지 않습니다.</p>{{end}}{{end}}{{end}}{{end}}
         {{range .QA}}<div class="panel"><div class="muted">{{.CreatedAt}} · 턴 {{.TurnID}}</div><strong>Q. {{.Question}}</strong><p>A. {{.Answer}}</p></div>{{end}}
       </section>
     </div>
