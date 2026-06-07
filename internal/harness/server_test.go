@@ -171,7 +171,6 @@ func TestStoryLobbyAndNewStoryUseLocalizedLabels(t *testing.T) {
 	lobbyHTML := renderStoryLobbyHTML(t, srv, &authUser{ID: "user_admin", Role: "admin"}, "")
 	for _, want := range []string{
 		`<h1>스토리</h1>`,
-		`헥터 가져오기`,
 		`<th class="story-lobby-turn">턴</th>`,
 		`가져온 스토리`,
 	} {
@@ -180,6 +179,8 @@ func TestStoryLobbyAndNewStoryUseLocalizedLabels(t *testing.T) {
 		}
 	}
 	for _, forbidden := range []string{
+		`헥터 가져오기`,
+		`/stories/import/hector`,
 		`>Stories<`,
 		`>New Story<`,
 		`>World<`,

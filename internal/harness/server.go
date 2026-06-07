@@ -1753,7 +1753,6 @@ const storyLobbyTemplate = `{{define "content"}}
 <div class="toolbar">
   <a class="button" href="{{.Base}}/stories/new">새 스토리</a>
   <a class="button secondary" href="{{.Base}}/stories">새로고침</a>
-  <form class="nav-form" method="post" action="{{.Base}}/stories/import/hector"><input type="hidden" name="csrf_token" value="{{.CSRFToken}}"><button class="secondary" type="submit">헥터 가져오기</button></form>
 </div>
 <div class="filter-bar" role="tablist" aria-label="스토리 필터">
   <a class="filter-link" href="{{.Base}}/stories" {{if eq .Filter "all"}}aria-current="page"{{end}}>전체</a>
