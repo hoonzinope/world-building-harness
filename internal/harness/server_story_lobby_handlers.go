@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/hoonzi/world-harness/internal/harness/ui"
 )
 
 func (s *webServer) renderStoryLobby(w http.ResponseWriter, r *http.Request) {
@@ -26,7 +28,7 @@ func (s *webServer) renderStoryLobby(w http.ResponseWriter, r *http.Request) {
 		rows = append(rows, row)
 	}
 	data := storyLobbyTemplateData(s.base(r), u, filter, rows, mustCSRFToken(w, r))
-	s.render(w, r, "스토리", storyLobbyTemplate, data)
+	s.render(w, r, "스토리", ui.StoryLobbyTemplate, data)
 }
 
 func (s *webServer) handleNewStory(w http.ResponseWriter, r *http.Request) {
@@ -35,7 +37,7 @@ func (s *webServer) handleNewStory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method == http.MethodGet {
-		s.render(w, r, "새 스토리", newStoryTemplate, map[string]any{"Base": s.base(r), "User": u, "CSRFToken": mustCSRFToken(w, r)})
+		s.render(w, r, "새 스토리", ui.NewStoryTemplate, map[string]any{"Base": s.base(r), "User": u, "CSRFToken": mustCSRFToken(w, r)})
 		return
 	}
 	if r.Method != http.MethodPost {

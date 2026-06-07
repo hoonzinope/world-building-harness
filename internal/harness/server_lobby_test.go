@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/hoonzi/world-harness/internal/harness/ui"
 )
 
 func TestFriendlyStoryLabels(t *testing.T) {
@@ -160,7 +162,7 @@ func TestStoryLobbyAndNewStoryUseLocalizedLabels(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/stories/new", nil)
 	req = withUser(req, &authUser{ID: "user_admin", Role: "admin"})
 	rec := httptest.NewRecorder()
-	srv.render(rec, req, "새 스토리", newStoryTemplate, map[string]any{
+	srv.render(rec, req, "새 스토리", ui.NewStoryTemplate, map[string]any{
 		"Base":      "",
 		"User":      &authUser{ID: "user_admin", Role: "admin"},
 		"CSRFToken": "csrf-test",

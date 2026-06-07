@@ -12,6 +12,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/hoonzi/world-harness/internal/harness/ui"
 )
 
 var markdownLinkPattern = regexp.MustCompile(`\]\(([^)#][^)]+?\.md)(#[^)]+)?\)`)
@@ -26,7 +28,7 @@ func (s *webServer) base(r *http.Request) string {
 func (s *webServer) renderIndex(w http.ResponseWriter, r *http.Request) {
 	packs := s.packs()
 	data := map[string]any{"Title": "World Harness", "Base": s.base(r), "Packs": packs}
-	s.render(w, r, "World Harness", indexTemplate, data)
+	s.render(w, r, "World Harness", ui.IndexTemplate, data)
 }
 
 func (s *webServer) renderPackRoute(w http.ResponseWriter, r *http.Request, rest string) {
@@ -70,7 +72,7 @@ func (s *webServer) renderPack(w http.ResponseWriter, r *http.Request, ctx *Worl
 	}
 	sort.Strings(keys)
 	data := map[string]any{"Title": ctx.ID, "Base": s.base(r), "Pack": ctx.ID, "Summary": worldStatus(ctx)["summary"], "Groups": groups, "Types": keys, "Query": query}
-	s.render(w, r, ctx.ID, packTemplate, data)
+	s.render(w, r, ctx.ID, ui.PackTemplate, data)
 }
 
 func (s *webServer) renderDoc(w http.ResponseWriter, r *http.Request, ctx *WorldContext) {
@@ -90,7 +92,7 @@ func (s *webServer) renderDoc(w http.ResponseWriter, r *http.Request, ctx *World
 		return
 	}
 	data := map[string]any{"Title": doc.Title(), "Base": s.base(r), "Pack": ctx.ID, "Doc": documentSummary(doc), "Frontmatter": doc.Meta, "BodyHTML": template.HTML(htmlBuf.String())}
-	s.render(w, r, doc.Title(), docTemplate, data)
+	s.render(w, r, doc.Title(), ui.DocTemplate, data)
 }
 
 func rewriteMarkdownLinks(body, currentPath, pack, base string) string {

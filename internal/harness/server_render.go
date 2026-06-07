@@ -5,6 +5,8 @@ import (
 	"html/template"
 	"net/http"
 	"net/url"
+
+	"github.com/hoonzi/world-harness/internal/harness/ui"
 )
 
 func (s *webServer) render(w http.ResponseWriter, r *http.Request, title, body string, data map[string]any) {
@@ -15,8 +17,8 @@ func (s *webServer) render(w http.ResponseWriter, r *http.Request, title, body s
 	data["PageTitle"] = title
 	data["StoryEnabled"] = s.storyEnabled
 	data["AuthEnabled"] = s.auth != nil
-	data["BaseStyles"] = template.CSS(baseStyles)
-	t, err := template.New("page").Funcs(templateFuncMap()).Parse(layoutTemplate + body)
+	data["BaseStyles"] = template.CSS(ui.BaseStyles)
+	t, err := template.New("page").Funcs(templateFuncMap()).Parse(ui.LayoutTemplate + body)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

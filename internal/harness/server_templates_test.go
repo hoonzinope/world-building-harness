@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/hoonzi/world-harness/internal/harness/ui"
 )
 
 func TestAdminUsersTemplateWiresCSRF(t *testing.T) {
@@ -25,7 +27,7 @@ func TestAdminUsersTemplateWiresCSRF(t *testing.T) {
 			"id":              "user_alice",
 		},
 	}
-	srv.render(rec, req, "Admin Users", adminUsersTemplate, map[string]any{
+	srv.render(rec, req, "Admin Users", ui.AdminUsersTemplate, map[string]any{
 		"Base":      "",
 		"User":      &authUser{ID: "user_admin", Role: "admin"},
 		"Users":     users,
@@ -60,7 +62,7 @@ func TestLayoutTemplateProvidesSkipLinkAndMainLandmark(t *testing.T) {
 	srv := &webServer{}
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
-	srv.render(rec, req, "World Packs", indexTemplate, map[string]any{
+	srv.render(rec, req, "World Packs", ui.IndexTemplate, map[string]any{
 		"Base":  "",
 		"Packs": []any{},
 	})
@@ -79,7 +81,7 @@ func TestPackAndDocTemplatesUseAccessibleNavigationAndSearch(t *testing.T) {
 	srv := &webServer{}
 	req := httptest.NewRequest(http.MethodGet, "/packs/lumen-federation", nil)
 	rec := httptest.NewRecorder()
-	srv.render(rec, req, "Lumen Federation", packTemplate, map[string]any{
+	srv.render(rec, req, "Lumen Federation", ui.PackTemplate, map[string]any{
 		"Base":    "",
 		"Title":   "Lumen Federation",
 		"Query":   "",
@@ -100,7 +102,7 @@ func TestPackAndDocTemplatesUseAccessibleNavigationAndSearch(t *testing.T) {
 
 	docReq := httptest.NewRequest(http.MethodGet, "/packs/lumen-federation/doc", nil)
 	docRec := httptest.NewRecorder()
-	srv.render(docRec, docReq, "Doc", docTemplate, map[string]any{
+	srv.render(docRec, docReq, "Doc", ui.DocTemplate, map[string]any{
 		"Base":     "",
 		"Pack":     "lumen-federation",
 		"Doc":      map[string]any{"title": "Test", "type": "canon", "status": "draft", "path": "foo.md"},
@@ -116,7 +118,7 @@ func TestLoginTemplateUsesAccessibleFormStructure(t *testing.T) {
 	srv := &webServer{}
 	req := httptest.NewRequest(http.MethodGet, "/login", nil)
 	rec := httptest.NewRecorder()
-	srv.render(rec, req, "Login", loginTemplate, map[string]any{
+	srv.render(rec, req, "Login", ui.LoginTemplate, map[string]any{
 		"Base":      "",
 		"CSRFToken": "csrf-test",
 		"Error":     "로그인 정보를 확인할 수 없습니다.",

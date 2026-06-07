@@ -80,7 +80,7 @@ func cmdAdminRevokeSessions(args []string) int {
 		return 1
 	}
 	var id string
-	if err := store.db.QueryRow(`SELECT id FROM users WHERE username=?`, *username).Scan(&id); err != nil {
+	if err := store.Store.DB().QueryRow(`SELECT id FROM users WHERE username=?`, *username).Scan(&id); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}

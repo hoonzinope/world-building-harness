@@ -6,6 +6,8 @@ import (
 	"net/url"
 	"path/filepath"
 	"strings"
+
+	"github.com/hoonzi/world-harness/internal/harness/ui"
 )
 
 func (s *webServer) handleStoryAdmin(w http.ResponseWriter, r *http.Request, id string) {
@@ -173,7 +175,7 @@ func (s *webServer) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data := adminUsersTemplateData(s.base(r), u, users, mustCSRFToken(w, r))
-	s.render(w, r, "Admin Users", adminUsersTemplate, data)
+	s.render(w, r, "Admin Users", ui.AdminUsersTemplate, data)
 }
 
 func adminUsersTemplateData(base string, u *authUser, users any, csrf string) map[string]any {

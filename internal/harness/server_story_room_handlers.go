@@ -5,6 +5,8 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+
+	"github.com/hoonzi/world-harness/internal/harness/ui"
 )
 
 func (s *webServer) handleStoryRoute(w http.ResponseWriter, r *http.Request, rest string) {
@@ -100,7 +102,7 @@ func (s *webServer) renderStoryRoom(w http.ResponseWriter, r *http.Request, id s
 		r.URL.Query(),
 		mustCSRFToken(w, r),
 	)
-	s.render(w, r, m.Title, storyRoomTemplate, data)
+	s.render(w, r, m.Title, ui.StoryRoomTemplate, data)
 }
 
 func storyRoomTemplateData(base, id string, u *authUser, m storyManifest, st storyState, displayTurns, previousTurns []storyTurn, qa []storyQuestion, canDrive, canClaim, canRelease, canQuestion, isAdmin, canAdminMutate bool, latestTurnID int, latestTurn any, hasTurns bool, driverLabel string, isProcessing bool, progress storyProgressView, failedJob *failedJobView, query url.Values, csrf string) map[string]any {
@@ -145,5 +147,5 @@ func (s *webServer) handleStoryRoomAsset(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
-	_, _ = w.Write([]byte(storyRoomAssetJS))
+	_, _ = w.Write([]byte(ui.StoryRoomAssetJS))
 }

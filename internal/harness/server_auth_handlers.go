@@ -3,6 +3,8 @@ package harness
 import (
 	"net/http"
 	"strings"
+
+	"github.com/hoonzi/world-harness/internal/harness/ui"
 )
 
 func (s *webServer) addSecurityHeaders(w http.ResponseWriter) {
@@ -82,7 +84,7 @@ func isAdminUser(u *authUser) bool { return u != nil && u.Role == "admin" }
 
 func (s *webServer) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
-		s.render(w, r, "Login", loginTemplate, map[string]any{"Base": s.base(r), "CSRFToken": mustCSRFToken(w, r)})
+		s.render(w, r, "Login", ui.LoginTemplate, map[string]any{"Base": s.base(r), "CSRFToken": mustCSRFToken(w, r)})
 		return
 	}
 	if r.Method != http.MethodPost {
@@ -98,7 +100,7 @@ func (s *webServer) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	u, err := s.auth.authenticate(strings.TrimSpace(r.FormValue("username")), r.FormValue("password"))
 	if err != nil {
-		s.render(w, r, "Login", loginTemplate, map[string]any{"Base": s.base(r), "Error": "로그인 정보를 확인할 수 없습니다.", "CSRFToken": mustCSRFToken(w, r)})
+		s.render(w, r, "Login", ui.LoginTemplate, map[string]any{"Base": s.base(r), "Error": "로그인 정보를 확인할 수 없습니다.", "CSRFToken": mustCSRFToken(w, r)})
 		return
 	}
 	token, expires, err := s.auth.createSession(u.ID)

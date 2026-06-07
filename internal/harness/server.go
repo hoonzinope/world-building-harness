@@ -121,7 +121,7 @@ func runServe(args []string) int {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
 		}
-		adminID, err := auth.firstActiveAdminID()
+		adminID, err := auth.FirstActiveAdminID()
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
