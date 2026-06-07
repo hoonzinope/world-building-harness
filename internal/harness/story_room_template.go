@@ -94,7 +94,7 @@ const storyRoomTemplate = `{{define "content"}}
             </form>
           </div>
         </div>
-        {{else}}{{if .IsAnonymous}}<p class="muted">로그인하면 진행권을 받고 직접 입력할 수 있습니다.</p>{{else}}{{if .IsProcessing}}<p class="muted">GM 생성 중입니다. 완료되면 새 내용 표시 버튼으로 최신 턴을 갱신할 수 있습니다.</p>{{else}}{{if .CanClaim}}<p class="muted">현재 진행권이 비어 있습니다. 진행권을 받은 뒤 입력할 수 있습니다.</p>{{else}}<p class="muted">현재 {{.DriverLabel}}가 진행 중입니다. 진행 입력은 비활성화되어 있습니다.</p>{{end}}{{end}}{{end}}{{end}}
+        {{else}}{{if .IsAnonymous}}<p class="muted">로그인하면 진행권을 받고 직접 입력할 수 있습니다.</p>{{else}}{{if .IsProcessing}}<p class="muted">GM 생성 중입니다. 완료되면 자동으로 최신 턴이 갱신됩니다.</p>{{else}}{{if .CanClaim}}<p class="muted">현재 진행권이 비어 있습니다. 진행권을 받은 뒤 입력할 수 있습니다.</p>{{else}}<p class="muted">현재 {{.DriverLabel}}가 진행 중입니다. 진행 입력은 비활성화되어 있습니다.</p>{{end}}{{end}}{{end}}{{end}}
         <h2 id="qa">질문</h2>
         {{if .CanDrive}}<p class="muted">질문은 직접 입력에서 question 모드를 선택해 제출할 수 있습니다.</p>{{else}}{{if .CanQuestion}}
         <form method="post" action="{{.Base}}/stories/{{.Story.ID}}/question" class="panel story-composer-panel" data-story-submit data-story-submit-kind="question">
@@ -188,6 +188,7 @@ const storyRoomAssetJS = `(() => {
   const initialControlState = new WeakMap();
   let pollTimer = null;
   let activeTask = null;
+  let reloadTimer = null;
 
   function captureInitialControlState(control) {
     if (!control || control.type === 'hidden') return;
@@ -280,6 +281,28 @@ const storyRoomAssetJS = `(() => {
     metaNode.hidden = !visible;
   }
 
+  function getReloadTarget(payload) {
+    const payloadTurn = Number(payload && payload.current_turn ? payload.current_turn : 0);
+    const activeTurn = Number(payload && payload.active_job_turn_id ? payload.active_job_turn_id : 0);
+    const nextTurn = Math.max(storyTurn, payloadTurn, activeTurn);
+    if ((payload && payload.active_job_type) === 'question_answer' || nextTurn <= storyTurn) {
+      return '#qa';
+    }
+    return '#turn-' + nextTurn;
+  }
+
+  function scheduleStoryReload(payload) {
+    if (reloadTimer) {
+      window.clearTimeout(reloadTimer);
+      reloadTimer = null;
+    }
+    const target = getReloadTarget(payload);
+    if (window.location.hash !== target) {
+      window.history.replaceState(null, '', target);
+    }
+    reloadTimer = window.setTimeout(() => window.location.reload(), 420);
+  }
+
   async function readErrorMessage(response) {
     const contentType = (response.headers.get('content-type') || '').toLowerCase();
     if (contentType.includes('application/json')) {
@@ -343,8 +366,9 @@ const storyRoomAssetJS = `(() => {
       }
       activeTask = null;
       showRefresh(true);
-      if (payload.current_turn > storyTurn || payload.active_job_status === 'completed' || payload.step_label === 'ready') {
-        if (messageNode) messageNode.textContent = payload.progress_message || '새 내용이 준비되었습니다. 새 내용 표시를 눌러 갱신하세요.';
+      if (payload.active_job_status !== 'failed') {
+        if (messageNode) messageNode.textContent = payload.progress_message || '새 내용이 준비되었습니다. 자동으로 최신 화면을 불러옵니다.';
+        scheduleStoryReload(payload);
       }
     } catch (error) {
       if (messageNode) messageNode.textContent = '상태를 다시 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.';

@@ -920,7 +920,7 @@ func TestStoryRoomProcessingStateOmitsMetaRefreshAndShowsBusyProgress(t *testing
 		`id="story-progress" role="status" aria-live="polite" aria-atomic="true" aria-busy="true"`,
 		`data-story-progress`,
 		`GM 생성 중`,
-		`완료되면 새 내용 표시 버튼으로 최신 턴을 갱신할 수 있습니다.`,
+		`완료되면 자동으로 최신 턴이 갱신됩니다.`,
 		`잠시만 기다려 주세요.`,
 	} {
 		if !strings.Contains(html, want) {
@@ -977,7 +977,11 @@ func TestStoryRoomAssetRouteServed(t *testing.T) {
 		`setStep('queued');`,
 		`제출 응답을 JSON으로 받지 못했습니다`,
 		`fetch(activeTask.status_url`,
-		`새 내용 표시`,
+		`function getReloadTarget(payload)`,
+		`function scheduleStoryReload(payload)`,
+		`window.history.replaceState(null, '', target);`,
+		`window.location.reload()`,
+		`새 내용이 준비되었습니다. 자동으로 최신 화면을 불러옵니다.`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("missing %q in story-room.js asset", want)
