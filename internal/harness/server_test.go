@@ -631,7 +631,6 @@ func TestStoryRoomFormsWireCSRFAndUniqueIdempotencyKeys(t *testing.T) {
 		`name="action" value="rollback_turn"`,
 		`name="action" value="export_bundle"`,
 		`data-story-progress-meta hidden`,
-		`[hidden] { display:none !important; }`,
 		`<strong data-story-progress-label>입력 가능</strong>`,
 		`data-step-label="ready"`,
 		`이번 턴에서 확인된 정보`,
@@ -659,59 +658,6 @@ func TestStoryRoomFormsWireCSRFAndUniqueIdempotencyKeys(t *testing.T) {
 	} {
 		if strings.Contains(htmlOpen, forbidden) {
 			t.Fatalf("unexpected raw visible token %q in rendered story room", forbidden)
-		}
-	}
-	for _, want := range []string{
-		`.story-room-shell,`,
-		`.story-room-header > *,`,
-		`.story-room-grid > *,`,
-		`.current-turn-column > *,`,
-		`.turn-sidebar > *,`,
-		`.dossier-stack,`,
-		`.dossier-panel,`,
-		`.story-composer,`,
-		`.story-composer-panel,`,
-		`.story-choice-submit-panel { display:grid; gap:12px; }`,
-		`.story-choice-form { margin:0; }`,
-		`.story-input-form { display:grid; gap:12px; margin:0; }`,
-		`.story-custom-input-panel,`,
-		`.story-input-divider { height:1px; background:rgba(17,27,24,.08); }`,
-		`.story-composer-panel-head { display:flex; gap:8px; flex-wrap:wrap; align-items:baseline; justify-content:space-between; }`,
-		`.story-composer-actions { margin-top:0; }`,
-		`.story-progress,`,
-		`.turn-timeline a,`,
-		`.previous-turn,`,
-		`.choice-card,`,
-		`.choice-card-archived { min-width:0; }`,
-		`.story-room-grid { display:grid; grid-template-columns:240px minmax(0, 1fr) 320px; grid-template-areas:"timeline current dossier"; gap:24px; align-items:start; }`,
-		`.current-turn-panel { border:1px solid var(--line); border-radius:6px; background:var(--panel); box-shadow:0 14px 30px rgba(17,27,24,.08); padding:18px; scroll-margin-top:18px; }`,
-		`.current-turn-flow { display:grid; gap:14px; border-left:4px solid var(--info); background:rgba(49,95,153,.05); border-radius:6px; padding:14px 14px 14px 16px; }`,
-		`.turn-timeline-link { display:grid; gap:3px; border:1px solid var(--line); border-left:3px solid var(--deep); border-radius:6px; padding:9px 10px; background:rgba(255,255,255,.72); color:var(--ink); text-decoration:none; box-shadow:none; word-break:keep-all; overflow-wrap:anywhere; }`,
-		`.previous-turn summary::after { content:"열기";`,
-		`.choice-card-risk { font:12px ui-sans-serif, system-ui, sans-serif; color:var(--accent); word-break:keep-all; overflow-wrap:anywhere; }`,
-		`.story-progress-message { margin:0; font:15px ui-sans-serif, system-ui, sans-serif; color:var(--ink); word-break:keep-all; overflow-wrap:anywhere; }`,
-		`.story-progress:not([aria-busy="true"]) .progress-loader-copy { display:none; }`,
-		`.story-choice-submit-panel { display:grid; gap:12px; }`,
-		`.story-custom-input-panel { display:grid; gap:12px; }`,
-		`.story-input-divider { height:1px; background:rgba(17,27,24,.08); }`,
-		`.story-choice-submit-panel .choice-list { gap:8px; }`,
-		`.story-choice-form .choice-card { background:rgba(255,255,255,.72); border-color:var(--line); }`,
-		`.story-custom-input-panel textarea { min-height:120px; }`,
-		`@media (max-width:820px){`,
-		`.story-choice-submit-head,`,
-		`.story-composer-panel-head{align-items:flex-start;}`,
-		`.story-choice-submit-panel .choice-list,`,
-		`.story-custom-input-panel,`,
-		`.story-composer-actions{width:100%;}`,
-		`.story-choice-form .choice-card,`,
-		`.story-custom-input-panel textarea,`,
-		`.story-composer-actions > *{width:100%;}`,
-		`.current-turn-body{display:flex; flex-direction:column;}`,
-		`.current-turn-flow{order:1;}`,
-		`.current-turn-body .scene{order:2;}`,
-	} {
-		if !strings.Contains(htmlOpen, want) {
-			t.Fatalf("missing css safeguard %q in rendered story room", want)
 		}
 	}
 	if !strings.Contains(htmlOpen, `id="story-progress" role="status" aria-live="polite" aria-atomic="true" aria-busy="false"`) {

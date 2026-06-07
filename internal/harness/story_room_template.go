@@ -1,6 +1,7 @@
 package harness
 
 const storyRoomTemplate = `{{define "content"}}
+<style>{{.BaseStyles}}</style>
 <div id="story-room" class="story-room-shell" data-story-room data-story-id="{{.Story.ID}}" data-status-url="{{.StatusURL}}" data-current-turn="{{.Story.CurrentTurn}}" data-initial-processing="{{if .IsProcessing}}true{{else}}false{{end}}">
   {{if .IsAnonymous}}<div class="panel status-panel"><strong>읽기 전용</strong><p>로그인하면 진행, 질문, 진행권, 관리 기능을 사용할 수 있습니다.</p></div>{{end}}
   <div class="story-room-header">
