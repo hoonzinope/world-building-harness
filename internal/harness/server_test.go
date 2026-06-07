@@ -536,7 +536,7 @@ func TestAuthenticatedStoryProgressionStillWorks(t *testing.T) {
 	if getRec.Code != http.StatusOK {
 		t.Fatalf("unexpected GET status %d: %s", getRec.Code, getRec.Body.String())
 	}
-	if !strings.Contains(getRec.Body.String(), `data-story-submit-kind="choice"`) {
+	if !strings.Contains(getRec.Body.String(), `data-story-submit-kind="input"`) {
 		t.Fatalf("missing input form in authenticated story room")
 	}
 
@@ -611,6 +611,8 @@ func TestStoryRoomFormsWireCSRFAndUniqueIdempotencyKeys(t *testing.T) {
 		`story-choice-submit-panel`,
 		`story-input-divider`,
 		`story-custom-input-panel`,
+		`story-composer-panel-head`,
+		`story-composer-actions`,
 		`dossier-stack`,
 		`dossier-panel`,
 		`story-composer`,
@@ -668,6 +670,11 @@ func TestStoryRoomFormsWireCSRFAndUniqueIdempotencyKeys(t *testing.T) {
 		`.dossier-panel,`,
 		`.story-composer,`,
 		`.story-composer-panel,`,
+		`.story-choice-submit-panel { display:grid; gap:12px; }`,
+		`.story-custom-input-panel,`,
+		`.story-input-divider { height:1px; background:rgba(17,27,24,.08); }`,
+		`.story-composer-panel-head { display:flex; gap:8px; flex-wrap:wrap; align-items:baseline; justify-content:space-between; }`,
+		`.story-composer-actions { margin-top:0; }`,
 		`.story-progress,`,
 		`.turn-timeline a,`,
 		`.previous-turn,`,
@@ -681,7 +688,20 @@ func TestStoryRoomFormsWireCSRFAndUniqueIdempotencyKeys(t *testing.T) {
 		`.choice-card-risk { font:12px ui-sans-serif, system-ui, sans-serif; color:var(--accent); word-break:keep-all; overflow-wrap:anywhere; }`,
 		`.story-progress-message { margin:0; font:15px ui-sans-serif, system-ui, sans-serif; color:var(--ink); word-break:keep-all; overflow-wrap:anywhere; }`,
 		`.story-progress:not([aria-busy="true"]) .progress-loader-copy { display:none; }`,
+		`.story-choice-submit-panel { display:grid; gap:12px; }`,
+		`.story-custom-input-panel { display:grid; gap:12px; }`,
+		`.story-input-divider { height:1px; background:rgba(17,27,24,.08); }`,
+		`.story-choice-submit-panel .choice-list { gap:8px; }`,
+		`.story-custom-input-panel textarea { min-height:120px; }`,
 		`@media (max-width:820px){`,
+		`.story-choice-submit-head,`,
+		`.story-composer-panel-head{align-items:flex-start;}`,
+		`.story-choice-submit-panel .choice-list,`,
+		`.story-custom-input-panel,`,
+		`.story-composer-actions{width:100%;}`,
+		`.story-choice-submit-panel .choice-card,`,
+		`.story-custom-input-panel textarea,`,
+		`.story-composer-actions > *{width:100%;}`,
 		`.current-turn-body{display:flex; flex-direction:column;}`,
 		`.current-turn-flow{order:1;}`,
 		`.current-turn-body .scene{order:2;}`,
@@ -695,6 +715,8 @@ func TestStoryRoomFormsWireCSRFAndUniqueIdempotencyKeys(t *testing.T) {
 	}
 	for _, forbidden := range []string{
 		`async function submitForm(form)`,
+		`submitForm(form, event.submitter || null);`,
+		`new FormData(form);`,
 		`const actionURL = new URL(form.action, window.location.href);`,
 		`fetch(activeTask.status_url`,
 	} {
@@ -703,7 +725,8 @@ func TestStoryRoomFormsWireCSRFAndUniqueIdempotencyKeys(t *testing.T) {
 		}
 	}
 	for _, want := range []string{
-		`data-story-submit-kind="choice"`,
+		`data-story-submit-kind="input"`,
+		`data-story-choice-button`,
 		`A/B/C/D를 바로 보낼 수 있습니다.`,
 		`data-story-custom-textarea`,
 		`참여 가능`,
@@ -917,7 +940,10 @@ func TestStoryRoomAssetRouteServed(t *testing.T) {
 	}
 	body := rec.Body.String()
 	for _, want := range []string{
-		`async function submitForm(form)`,
+		`async function submitForm(form, submitter)`,
+		`submitForm(form, event.submitter || null);`,
+		`if (submitter && submitter.name) {`,
+		`data.set(submitter.name, submitter.value);`,
 		`data-story-submit`,
 		`WeakMap`,
 		`captureInitialControlState`,

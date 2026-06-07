@@ -58,7 +58,7 @@ const storyRoomTemplate = `{{define "content"}}
           <div class="toolbar story-progress-actions"><button type="button" class="secondary" hidden data-story-refresh>새 내용 표시</button></div>
         </div>
         {{if .CanDrive}}
-        <form method="post" action="{{.Base}}/stories/{{.Story.ID}}/input" class="panel story-composer-panel" data-story-submit data-story-submit-kind="choice">
+        <form method="post" action="{{.Base}}/stories/{{.Story.ID}}/input" class="panel story-composer-panel" data-story-submit data-story-submit-kind="input">
           <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
           <input type="hidden" name="turn_id" value="{{.LatestTurnID}}">
           <input type="hidden" name="idempotency_key" value="{{idem}}">
@@ -67,7 +67,7 @@ const storyRoomTemplate = `{{define "content"}}
               <strong>선택 제출</strong>
               <span class="muted">A/B/C/D를 바로 보낼 수 있습니다.</span>
             </div>
-            <div class="choice-list">{{range .Choices}}{{if .}}<button class="choice-card" type="submit" name="choice_id" value="{{.ID}}" {{if $.Progress.IsProcessing}}disabled{{end}}><span class="choice-card-letter">{{.ID}}</span><span class="choice-card-copy"><strong>{{.Text}}</strong>{{if .RiskHint}}<span class="choice-card-risk">위험: {{.RiskHint}}</span>{{end}}</span></button>{{end}}{{end}}</div>
+            <div class="choice-list">{{with .LatestTurn}}{{range .Choices}}{{if .}}<button class="choice-card" type="submit" data-story-choice-button name="choice_id" value="{{.ID}}" {{if $.Progress.IsProcessing}}disabled{{end}}><span class="choice-card-letter">{{.ID}}</span><span class="choice-card-copy"><strong>{{.Text}}</strong>{{if .RiskHint}}<span class="choice-card-risk">위험: {{.RiskHint}}</span>{{end}}</span></button>{{end}}{{end}}{{end}}</div>
           </div>
           <div class="story-input-divider" aria-hidden="true"></div>
           <div class="story-custom-input-panel">
@@ -257,7 +257,7 @@ const storyRoomAssetJS = `(() => {
         if (busy) {
           control.disabled = true;
           control.setAttribute('aria-disabled', 'true');
-          if (control.tagName === 'BUTTON' && form.dataset.storySubmitKind !== 'choice') {
+          if (control.tagName === 'BUTTON' && !control.hasAttribute('data-story-choice-button')) {
             if (!control.dataset.storyOriginalHtml) control.dataset.storyOriginalHtml = control.innerHTML;
             control.innerHTML = '처리 중...';
           }
@@ -350,12 +350,15 @@ const storyRoomAssetJS = `(() => {
     }
   }
 
-  async function submitForm(form) {
+  async function submitForm(form, submitter) {
     if (pollTimer) {
       window.clearTimeout(pollTimer);
       pollTimer = null;
     }
     const data = new FormData(form);
+    if (submitter && submitter.name) {
+      data.set(submitter.name, submitter.value);
+    }
     const requestPayload = Object.fromEntries(data.entries());
     const actionURL = new URL(form.action, window.location.href);
     const requestURL = actionURL.origin === window.location.origin ? actionURL.pathname + actionURL.search : form.action;
@@ -415,7 +418,7 @@ const storyRoomAssetJS = `(() => {
     const form = event.target.closest('form[data-story-submit]');
     if (!form) return;
     event.preventDefault();
-    submitForm(form);
+    submitForm(form, event.submitter || null);
   });
 
   if (refreshButton) {
