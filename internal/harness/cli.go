@@ -23,6 +23,9 @@ func Run(args []string) int {
 	if args[0] == "telegram" {
 		return runTelegram(args[1:])
 	}
+	if args[0] == "admin" {
+		return runAdmin(args[1:])
+	}
 	if len(args) < 2 {
 		return emit(failEnvelope("unknown", nil, "INVALID_ARGUMENT", "resource and action are required", nil))
 	}

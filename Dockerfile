@@ -14,6 +14,7 @@ RUN apt-get update \
   && npm install -g @openai/codex@0.128.0
 
 WORKDIR /app
+RUN mkdir -p /app/data && chown -R node:node /app/data
 COPY --from=build /out/world-tool /usr/local/bin/world-tool
 COPY README.md go.mod go.sum ./
 COPY docs ./docs
@@ -28,5 +29,6 @@ USER node
 ENV WORLD_HARNESS_ADDR=:8097
 ENV WORLD_HARNESS_PACKS_ROOT=/app/packs
 ENV WORLD_HARNESS_REPO_ROOT=/app
+ENV WORLD_HARNESS_DATA_ROOT=/app/data
 
 CMD ["world-tool", "serve", "--addr", ":8097", "--packs-root", "/app/packs"]
