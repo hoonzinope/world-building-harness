@@ -9,7 +9,8 @@ const layoutTemplate = `<!doctype html>
 <style>{{.BaseStyles}}</style>
 </head>
 <body>
-<main class="shell">
+<a class="skip-link" href="#main-content">본문으로 건너뛰기</a>
+<main class="shell" id="main-content" tabindex="-1">
   <div class="top">
     <a class="brand" href="{{.Base}}/">World Harness</a>
     <div class="nav">
@@ -60,8 +61,9 @@ const packTemplate = `{{define "content"}}
 <h1>{{.Title}}</h1>
 <p class="lede">{{index .Summary "content_documents"}} canon documents, {{index .Summary "active_drafts"}} active drafts.</p>
   <form class="search" method="get">
-    <input name="q" value="{{.Query}}" placeholder="문서 검색">
-    <button>Search</button>
+    <label class="sr-only" for="pack-search">문서 검색</label>
+    <input id="pack-search" name="q" value="{{.Query}}" placeholder="문서 검색">
+    <button type="submit">검색</button>
   </form>
 {{range .Types}}
   <h2>{{.}}</h2>
@@ -83,7 +85,7 @@ const docTemplate = `{{define "content"}}
     <div><strong>{{index .Doc "title"}}</strong></div>
     <div>{{index .Doc "type"}} · {{index .Doc "status"}}</div>
     <div>{{index .Doc "path"}}</div>
-    <p><a href="{{packURL .Base .Pack}}">Back to pack</a></p>
+    <p><a href="{{packURL .Base .Pack}}">세계관 목록으로 돌아가기</a></p>
   </aside>
 </div>
 {{end}}`
@@ -173,11 +175,11 @@ const newStoryTemplate = `{{define "content"}}
 <form method="post" class="panel">
   <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
   <div class="form-grid">
-    <div><label class="muted">세계관</label><input value="lumen-federation" disabled></div>
-    <div><label class="muted">제목</label><input name="title" placeholder="새 스토리"></div>
+    <div><label class="muted" for="new-story-world">세계관</label><input id="new-story-world" value="lumen-federation" disabled></div>
+    <div><label class="muted" for="new-story-title">제목</label><input id="new-story-title" name="title" placeholder="새 스토리"></div>
     <div>
-      <label class="muted">스타일</label>
-      <select name="style">
+      <label class="muted" for="new-story-style">스타일</label>
+      <select id="new-story-style" name="style">
         <option value="조사극">조사극</option>
         <option value="생존극">생존극</option>
         <option value="행정/법정극">행정/법정극</option>
@@ -185,10 +187,10 @@ const newStoryTemplate = `{{define "content"}}
         <option value="자유">자유</option>
       </select>
     </div>
-    <div><label class="muted">캐릭터 이름</label><input name="character_name" placeholder="캐릭터 이름"></div>
+    <div><label class="muted" for="new-story-character-name">캐릭터 이름</label><input id="new-story-character-name" name="character_name" placeholder="캐릭터 이름"></div>
   </div>
-  <label class="muted">특징 / 취향</label>
-  <textarea name="traits" placeholder="캐릭터 특징, 보고 싶은 장면 압력, 피하고 싶은 톤"></textarea>
+  <label class="muted" for="new-story-traits">특징 / 취향</label>
+  <textarea id="new-story-traits" name="traits" placeholder="캐릭터 특징, 보고 싶은 장면 압력, 피하고 싶은 톤"></textarea>
   <div class="toolbar"><button>프롤로그 생성</button><a class="button secondary" href="{{.Base}}/stories">취소</a></div>
 </form>
 {{end}}`
@@ -200,13 +202,13 @@ const adminUsersTemplate = `{{define "content"}}
   <form method="post" class="form-grid">
     <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
     <input type="hidden" name="action" value="create">
-    <input name="username" placeholder="username" required>
-    <input name="display_name" placeholder="display name">
-    <select name="role">
+    <div class="field"><label class="field-label" for="admin-create-username">Username</label><input id="admin-create-username" name="username" placeholder="username" required></div>
+    <div class="field"><label class="field-label" for="admin-create-display-name">Display name</label><input id="admin-create-display-name" name="display_name" placeholder="display name"></div>
+    <div class="field"><label class="field-label" for="admin-create-role">Role</label><select id="admin-create-role" name="role">
       <option>friend</option>
       <option>admin</option>
-    </select>
-    <input name="password" type="password" placeholder="temporary password" required>
+    </select></div>
+    <div class="field"><label class="field-label" for="admin-create-password">Temporary password</label><input id="admin-create-password" name="password" type="password" placeholder="temporary password" required></div>
     <button>create</button>
   </form>
 </div>
@@ -239,11 +241,11 @@ const adminUsersTemplate = `{{define "content"}}
             <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
             <input type="hidden" name="action" value="update">
             <input type="hidden" name="id" value="{{.id}}">
-            <select name="role">
+            <select name="role" aria-label="{{.username}} role">
               <option {{if eq .role "friend"}}selected{{end}}>friend</option>
               <option {{if eq .role "admin"}}selected{{end}}>admin</option>
             </select>
-            <select name="status">
+            <select name="status" aria-label="{{.username}} status">
               <option {{if eq .status "active"}}selected{{end}}>active</option>
               <option {{if eq .status "disabled"}}selected{{end}}>disabled</option>
             </select>
@@ -253,7 +255,7 @@ const adminUsersTemplate = `{{define "content"}}
             <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
             <input type="hidden" name="action" value="reset">
             <input type="hidden" name="id" value="{{.id}}">
-            <input name="password" type="password" placeholder="new password">
+            <input name="password" type="password" placeholder="new password" aria-label="{{.username}} new password">
             <button>reset</button>
           </form>
           <form method="post">

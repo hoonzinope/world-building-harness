@@ -32,6 +32,38 @@ body {
   line-height:1.65;
 }
 
+.skip-link {
+  position:absolute;
+  left:16px;
+  top:12px;
+  transform:translateY(-180%);
+  padding:10px 14px;
+  background:var(--panel);
+  border:2px solid var(--deep);
+  border-radius:6px;
+  color:var(--deep);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size:14px;
+  z-index:20;
+}
+
+.skip-link:focus,
+.skip-link:focus-visible {
+  transform:translateY(0);
+}
+
+.sr-only {
+  position:absolute;
+  width:1px;
+  height:1px;
+  padding:0;
+  margin:-1px;
+  overflow:hidden;
+  clip:rect(0, 0, 0, 0);
+  white-space:nowrap;
+  border:0;
+}
+
 a {
   color:var(--deep);
   text-decoration-thickness:1px;

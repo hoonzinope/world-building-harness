@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -323,10 +324,16 @@ func TestStoryLobbyAndNewStoryUseLocalizedLabels(t *testing.T) {
 	newStoryHTML := rec.Body.String()
 	for _, want := range []string{
 		`<h1>새 스토리</h1>`,
-		`<label class="muted">세계관</label>`,
-		`<label class="muted">제목</label>`,
-		`<label class="muted">스타일</label>`,
-		`<label class="muted">캐릭터 이름</label>`,
+		`<label class="muted" for="new-story-world">세계관</label>`,
+		`id="new-story-world"`,
+		`<label class="muted" for="new-story-title">제목</label>`,
+		`id="new-story-title"`,
+		`<label class="muted" for="new-story-style">스타일</label>`,
+		`id="new-story-style"`,
+		`<label class="muted" for="new-story-character-name">캐릭터 이름</label>`,
+		`id="new-story-character-name"`,
+		`<label class="muted" for="new-story-traits">특징 / 취향</label>`,
+		`id="new-story-traits"`,
 		`<option value="조사극">조사극</option>`,
 	} {
 		if !strings.Contains(newStoryHTML, want) {
@@ -1607,15 +1614,82 @@ func TestAdminUsersTemplateWiresCSRF(t *testing.T) {
 	})
 	html := rec.Body.String()
 	for _, want := range []string{
+		`for="admin-create-username"`,
+		`id="admin-create-username"`,
+		`for="admin-create-display-name"`,
+		`id="admin-create-display-name"`,
+		`for="admin-create-role"`,
+		`id="admin-create-role"`,
+		`for="admin-create-password"`,
+		`id="admin-create-password"`,
 		`name="csrf_token" value="csrf-test"`,
 		`name="action" value="create"`,
 		`name="action" value="update"`,
 		`name="action" value="reset"`,
 		`name="action" value="revoke"`,
+		`aria-label="alice role"`,
+		`aria-label="alice status"`,
+		`aria-label="alice new password"`,
 	} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("missing %q in admin users template", want)
 		}
+	}
+}
+
+func TestLayoutTemplateProvidesSkipLinkAndMainLandmark(t *testing.T) {
+	srv := &webServer{}
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+	srv.render(rec, req, "World Packs", indexTemplate, map[string]any{
+		"Base":  "",
+		"Packs": []any{},
+	})
+	html := rec.Body.String()
+	for _, want := range []string{
+		`<a class="skip-link" href="#main-content">본문으로 건너뛰기</a>`,
+		`<main class="shell" id="main-content" tabindex="-1">`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("missing %q in layout", want)
+		}
+	}
+}
+
+func TestPackAndDocTemplatesUseAccessibleNavigationAndSearch(t *testing.T) {
+	srv := &webServer{}
+	req := httptest.NewRequest(http.MethodGet, "/packs/lumen-federation", nil)
+	rec := httptest.NewRecorder()
+	srv.render(rec, req, "Lumen Federation", packTemplate, map[string]any{
+		"Base":    "",
+		"Title":   "Lumen Federation",
+		"Query":   "",
+		"Summary": map[string]any{"content_documents": 1, "active_drafts": 0},
+		"Types":   []string{},
+		"Groups":  map[string][]any{},
+	})
+	html := rec.Body.String()
+	for _, want := range []string{
+		`<label class="sr-only" for="pack-search">문서 검색</label>`,
+		`id="pack-search"`,
+		`button type="submit">검색</button>`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("missing %q in pack template", want)
+		}
+	}
+
+	docReq := httptest.NewRequest(http.MethodGet, "/packs/lumen-federation/doc", nil)
+	docRec := httptest.NewRecorder()
+	srv.render(docRec, docReq, "Doc", docTemplate, map[string]any{
+		"Base":     "",
+		"Pack":     "lumen-federation",
+		"Doc":      map[string]any{"title": "Test", "type": "canon", "status": "draft", "path": "foo.md"},
+		"BodyHTML": template.HTML("<p>body</p>"),
+	})
+	docHTML := docRec.Body.String()
+	if !strings.Contains(docHTML, `세계관 목록으로 돌아가기`) {
+		t.Fatal("missing localized back link in doc template")
 	}
 }
 
