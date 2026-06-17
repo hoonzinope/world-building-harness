@@ -67,7 +67,7 @@ Embedded context JSON:
 
 Do not advance the story. Do not change choices, state, summary, canon, or files.
 
-Keep Lucera / Lumen Federation specifics visible when they are already established in the world seed: public recovery, civic repair, low-intensity procedures, resource allocation, and admin/ledger friction.
+%s
 
 Return exactly one JSON object. Do not use Markdown fences. Do not include explanations outside JSON.
 
@@ -76,7 +76,7 @@ Required schema:
   "schema_version": "story-question-answer.v1",
   "story_id": %q,
   "answer": "Korean answer, concise but useful"
-}`, contextPath, req.WorldContext, string(contextJSON), req.Job.StoryID)
+}`, contextPath, req.WorldContext, string(contextJSON), gmQuestionWorldContextGuidance(req), req.Job.StoryID)
 	}
 	inputID := ""
 	source := outputSourceForJob(req.Job)
@@ -93,7 +93,7 @@ Use the embedded context below as authoritative. A copy also exists at %s, but d
 World context seed:
 %s
 
-Use the world context seed as a required story anchor, not optional flavor. For prologues and subsequent turns, keep Lucera / Lumen Federation specifics visible when the story lives there: public recovery, civic repair, low-intensity procedures, low-fog operations, resource allocation, and admin/ledger friction.
+%s
 
 Current player input:
 %s
@@ -147,11 +147,13 @@ Rules:
 - If selected_choice_id is set, resolve it against the latest turn choices and depict that choice.
 - Never write that prior context is unavailable if recent_turns is non-empty.
 - Do not expose job_id, input_id, schema details, or implementation metadata as revealed facts.
+%s
+- revealed_facts must contain only newly discovered facts from this turn. Do not copy baseline worldbuilding that already exists in state.facts, recent_turns.revealed_facts, or the world context seed.
 - Make the scene goal, conflict, turning point, and consequence explicit in separate fields and keep them aligned with the prose.
 - Ensure every choice has a distinct intent and a meaningful risk hint; do not leave them generic or empty.
 - Use the state patch to carry forward concrete state updates, not only prose summary changes.
 - Validate your final answer as complete JSON before returning it.
-- The output should be interactive literary Korean prose, 1500-3000 Korean characters when possible. Do not change canon or files.`, contextPath, req.WorldContext, inputSummary, string(contextJSON), req.Job.StoryID, req.Job.TurnID, req.Job.ParentTurnID, inputID, req.Job.ID, source)
+- The output should be interactive literary Korean prose, 1500-3000 Korean characters when possible. Do not change canon or files.`, contextPath, req.WorldContext, gmWorldContextGuidance(req), inputSummary, string(contextJSON), req.Job.StoryID, req.Job.TurnID, req.Job.ParentTurnID, inputID, req.Job.ID, source, gmAntiRepetitionRule(req))
 }
 
 func outputSourceForJob(job GMJob) string {
@@ -165,10 +167,42 @@ func outputSourceForJob(job GMJob) string {
 }
 
 func StoryWorldContextSeedForRequest(m Manifest, st State, job GMJob) string {
-	if m.WorldID == "lumen-federation" || job.JobType == "prologue" || strings.Contains(strings.ToLower(st.Location), "루세라") {
+	if job.JobType == "prologue" && m.WorldID == "lumen-federation" {
+		return luceraWorldContextSeed()
+	}
+	if isLuceraLocation(st.Location) {
 		return luceraWorldContextSeed()
 	}
 	return ""
+}
+
+func gmWorldContextGuidance(req GMRequest) string {
+	if strings.TrimSpace(req.WorldContext) == "" {
+		return "No extra world context seed is present for this request. Use only state, recent_turns, and current player input for established world details."
+	}
+	if req.Job.JobType == "prologue" {
+		return "Use the world context seed as a prologue anchor. Establish the Lucera / Lumen Federation baseline once enough to ground the opening scene, then move into the character's immediate action, conflict, and consequence."
+	}
+	return "Use the world context seed as established context constraints, not as narration to restate. Do not repeat already established Lucera / Lumen Federation baseline explanations; apply public recovery, civic repair, low-intensity procedures, low-fog operations, resource allocation, and admin/ledger friction only through the new action, conflict, and consequence."
+}
+
+func gmQuestionWorldContextGuidance(req GMRequest) string {
+	if strings.TrimSpace(req.WorldContext) == "" {
+		return "Use only world details already present in current story state and recent turns. Do not introduce baseline setting background that is not established there."
+	}
+	return "Use Lucera / Lumen Federation specifics only when they are already established or directly relevant to the user's question. Do not reintroduce the baseline setting unless the question asks for that explanation."
+}
+
+func gmAntiRepetitionRule(req GMRequest) string {
+	if strings.TrimSpace(req.WorldContext) == "" {
+		return "- Do not repeat already established baseline world explanations from state or recent_turns; reflect them only through new action, conflict, and consequence."
+	}
+	return "- Do not repeat already established Lucera / Lumen Federation baseline explanations from state, recent_turns, or the world context seed; reflect them only through new action, conflict, and consequence."
+}
+
+func isLuceraLocation(location string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(location))
+	return strings.Contains(normalized, "루세라") || strings.Contains(normalized, "lucera")
 }
 
 func summarizeGMInput(req GMRequest) string {

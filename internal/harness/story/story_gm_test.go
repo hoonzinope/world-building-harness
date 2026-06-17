@@ -141,6 +141,146 @@ func TestBuildCodexGMPromptUsesFlatStatePatchContract(t *testing.T) {
 	}
 }
 
+func TestStoryWorldContextSeedRequiresPrologueOrLuceraLocation(t *testing.T) {
+	storyTurn := GMJob{ID: "job_turn", StoryID: "story_1", JobType: "story_turn", TurnID: 2, ParentTurnID: 1, Input: &Input{ID: "input_1"}}
+	if got := StoryWorldContextSeedForRequest(Manifest{WorldID: "lumen-federation"}, State{Location: "베이르 중앙역"}, storyTurn); got != "" {
+		t.Fatalf("generic lumen-federation follow-up should not inject Lucera seed, got %q", got)
+	}
+
+	tests := []struct {
+		name string
+		m    Manifest
+		st   State
+		job  GMJob
+	}{
+		{
+			name: "prologue in lumen federation",
+			m:    Manifest{WorldID: "lumen-federation"},
+			st:   State{Location: "미정"},
+			job:  GMJob{ID: "job_prologue", StoryID: "story_1", JobType: "prologue", TurnID: 1},
+		},
+		{
+			name: "korean lucera location",
+			m:    Manifest{WorldID: "lumen-federation"},
+			st:   State{Location: "루세라 야간 진료동"},
+			job:  storyTurn,
+		},
+		{
+			name: "english lucera location",
+			m:    Manifest{WorldID: "lumen-federation"},
+			st:   State{Location: "Lucera night clinic"},
+			job:  storyTurn,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := StoryWorldContextSeedForRequest(tt.m, tt.st, tt.job)
+			if !strings.Contains(got, "루멘 연방의 루세라") || !strings.Contains(got, "회복 공공재") {
+				t.Fatalf("expected Lucera anchor seed, got %q", got)
+			}
+		})
+	}
+}
+
+func TestBuildCodexGMPromptReducesLuceraRepetitionOnFollowup(t *testing.T) {
+	req := GMRequest{
+		Job:      GMJob{ID: "job_2", StoryID: "story_1", JobType: "story_turn", TurnID: 2, ParentTurnID: 1, Input: &Input{ID: "input_1", SelectedChoiceID: "A"}},
+		Manifest: Manifest{WorldID: "lumen-federation"},
+		State: State{
+			Location: "루세라 야간 진료동",
+			Facts: []string{
+				"루멘 연방의 루세라는 병원, 약, 수면을 맡는 의료 도시다.",
+				"병동 불빛은 회복 공공재이지만 저안개 차단과 낮은 절차로 다뤄야 한다.",
+			},
+		},
+		Turns: []Turn{{
+			TurnID:        1,
+			BranchID:      "branch_main",
+			Source:        "setup",
+			SceneBody:     "루세라 야간 진료동에서 공공 수선과 행정 장부의 마찰이 이미 소개되었다.",
+			RevealedFacts: []string{"루멘 연방의 루세라는 병원, 약, 수면을 맡는 의료 도시다."},
+			Choices:       []Choice{{ID: "A", Text: "새 환자를 확인한다.", Intent: "위험을 먼저 본다.", RiskHint: "기존 처치가 늦어진다."}},
+		}},
+	}
+	req.WorldContext = StoryWorldContextSeedForRequest(req.Manifest, req.State, req.Job)
+	if req.WorldContext == "" {
+		t.Fatal("Lucera location should keep a world context anchor")
+	}
+	prompt := buildCodexGMPrompt(req, "/tmp/context.json")
+	for _, banned := range []string{
+		"For prologues and subsequent turns",
+		"keep Lucera / Lumen Federation specifics visible",
+		"required story anchor, not optional flavor",
+	} {
+		if strings.Contains(prompt, banned) {
+			t.Fatalf("follow-up prompt still contains strong repeat guidance %q: %s", banned, prompt)
+		}
+	}
+	for _, want := range []string{
+		"Do not repeat already established Lucera / Lumen Federation baseline explanations",
+		"revealed_facts must contain only newly discovered facts",
+		"new action, conflict, and consequence",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("follow-up prompt missing anti-repetition rule %q: %s", want, prompt)
+		}
+	}
+}
+
+func TestBuildCodexGMPromptDoesNotMentionLuceraWithoutWorldContext(t *testing.T) {
+	req := GMRequest{
+		Job:      GMJob{ID: "job_2", StoryID: "story_1", JobType: "story_turn", TurnID: 2, ParentTurnID: 1, Input: &Input{ID: "input_1"}},
+		Manifest: Manifest{WorldID: "lumen-federation"},
+		State:    State{Location: "베이르 중앙역", Facts: []string{"베이르의 철도 운행이 지연되고 있다."}},
+		Turns:    []Turn{{TurnID: 1, SceneBody: "베이르 중앙역의 지연이 이미 확인되었다."}},
+	}
+	req.WorldContext = StoryWorldContextSeedForRequest(req.Manifest, req.State, req.Job)
+	if req.WorldContext != "" {
+		t.Fatalf("non-Lucera follow-up should not have world context seed, got %q", req.WorldContext)
+	}
+	prompt := buildCodexGMPrompt(req, "/tmp/context.json")
+	for _, banned := range []string{"Lucera", "루세라"} {
+		if strings.Contains(prompt, banned) {
+			t.Fatalf("prompt without world context should not inject %q: %s", banned, prompt)
+		}
+	}
+	if !strings.Contains(prompt, "Do not repeat already established baseline world explanations") {
+		t.Fatalf("prompt missing generic anti-repetition rule: %s", prompt)
+	}
+
+	qaReq := GMRequest{
+		Job:      GMJob{ID: "job_q", StoryID: "story_1", JobType: "question_answer", Question: &Question{Question: "현재 상황은?"}},
+		Manifest: req.Manifest,
+		State:    req.State,
+		Turns:    req.Turns,
+	}
+	qaPrompt := buildCodexGMPrompt(qaReq, "/tmp/context.json")
+	for _, banned := range []string{"Lucera", "루세라"} {
+		if strings.Contains(qaPrompt, banned) {
+			t.Fatalf("QA prompt without world context should not inject %q: %s", banned, qaPrompt)
+		}
+	}
+}
+
+func TestBuildCodexGMPromptKeepsPrologueLuceraAnchor(t *testing.T) {
+	req := GMRequest{
+		Job:      GMJob{ID: "job_1", StoryID: "story_1", JobType: "prologue", TurnID: 1, Setup: &Setup{CharacterName: "르네", Style: "생존극", Traits: "루세라의 간호사"}},
+		Manifest: Manifest{WorldID: "lumen-federation"},
+		State:    State{Location: "미정"},
+	}
+	req.WorldContext = StoryWorldContextSeedForRequest(req.Manifest, req.State, req.Job)
+	prompt := buildCodexGMPrompt(req, "/tmp/context.json")
+	for _, want := range []string{
+		"Use the world context seed as a prologue anchor",
+		"Establish the Lucera / Lumen Federation baseline once",
+		"루멘 연방의 루세라",
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("prologue prompt missing anchor %q: %s", want, prompt)
+		}
+	}
+}
+
 func TestBuildGMRequestKeepsMoreThanFiveTurns(t *testing.T) {
 	root := t.TempDir()
 	store, err := openStoryStore(filepath.Join(root, "stories"), filepath.Join(root, "packs"))

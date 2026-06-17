@@ -32,17 +32,17 @@ func TestStoryRoomShowsLatestTurnFirst(t *testing.T) {
 
 	firstCurrent := strings.Index(html, `class="current-turn-panel" id="turn-2"`)
 	firstPrevious := strings.Index(html, `class="previous-turns-panel panel"`)
-	firstOlder := strings.Index(html, `class="previous-turn" id="turn-1"`)
+	firstOlder := strings.Index(html, `id="turn-1"`)
 	if firstCurrent == -1 || firstPrevious == -1 || firstOlder == -1 {
 		t.Fatalf("missing turn sections in story room: current=%d previous=%d old=%d", firstCurrent, firstPrevious, firstOlder)
 	}
 	if firstCurrent > firstPrevious {
 		t.Fatalf("expected current turn before previous turns, got current at %d after previous section at %d", firstCurrent, firstPrevious)
 	}
-	if strings.Contains(html, `class="previous-turn" id="turn-2"`) {
+	if strings.Contains(html, `class="previous-turn" id="turn-2"`) || strings.Contains(html, `class="previous-turn previous-turn-preview" id="turn-2"`) {
 		t.Fatalf("latest turn should not be rendered inside previous turns")
 	}
-	if strings.Contains(html, `class="previous-turn" id="turn-1" open`) {
+	if strings.Contains(html, `id="turn-1" open`) {
 		t.Fatalf("previous turn should be collapsed by default")
 	}
 	if rawISO := regexp.MustCompile(`\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}`); rawISO.MatchString(html) {

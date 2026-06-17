@@ -42,6 +42,7 @@ func TestStoryRoomFormsWireCSRFAndUniqueIdempotencyKeys(t *testing.T) {
 		`data-story-room`,
 		`story-room-shell`,
 		`story-room-grid`,
+		`grid-template-areas:"current composer" "current dossier" "timeline dossier"`,
 		`current-turn-panel`,
 		`current-turn-body`,
 		`current-turn-flow`,
@@ -59,7 +60,9 @@ func TestStoryRoomFormsWireCSRFAndUniqueIdempotencyKeys(t *testing.T) {
 		`story-composer-actions`,
 		`dossier-stack`,
 		`dossier-panel`,
+		`플레이어에게 공개된 정보만 요약합니다.`,
 		`story-composer`,
+		`mobile-action-dock`,
 		`mode-tabs`,
 		`progress-loader`,
 		`data-story-progress`,
@@ -86,7 +89,7 @@ func TestStoryRoomFormsWireCSRFAndUniqueIdempotencyKeys(t *testing.T) {
 		`이번 턴에서 확인된 정보`,
 		`누적 확인 정보`,
 		`현재 턴`,
-		`입력/질문`,
+		`href="#input-panel" aria-label="입력`,
 	} {
 		if !strings.Contains(htmlOpen, want) {
 			t.Fatalf("missing %q in rendered story room", want)

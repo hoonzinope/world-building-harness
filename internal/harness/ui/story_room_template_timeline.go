@@ -1,8 +1,7 @@
 package ui
 
 const storyRoomTemplateTimeline = `
-    </section>
-    <aside class="turn-sidebar">
+    <aside class="turn-sidebar" id="history-panel" aria-label="기록">
       <section class="turn-timeline-panel panel">
         <h2>턴 타임라인</h2>
         {{if .Turns}}
@@ -20,7 +19,40 @@ const storyRoomTemplateTimeline = `
       </section>
       <section class="previous-turns-panel panel">
         <h2>이전 턴</h2>
-        {{if .PreviousTurns}}
+        {{if .PreviousTurnPreviews}}
+        <div class="previous-turns">
+          {{range .PreviousTurnPreviews}}
+          <details class="previous-turn previous-turn-preview" id="turn-{{.TurnID}}">
+            <summary>
+              <span class="previous-turn-head">
+                <span class="previous-turn-label">
+                  <span class="previous-turn-turn">턴 {{.TurnID}}</span>
+                  <span class="previous-turn-title">{{if .Title}}{{.Title}}{{else}}세션 기록{{end}}</span>
+                </span>
+                <span class="previous-turn-meta">
+                  <span>{{.Timestamp}}</span>
+                  {{if .SourceLabel}}<span>·</span><span>{{.SourceLabel}}</span>{{end}}
+                </span>
+              </span>
+            </summary>
+            <div class="previous-turn-body">
+              {{if .CurrentSituation}}
+              <div class="turn-section">
+                <strong>현재 상황</strong>
+                <p class="previous-turn-preview-text">{{.CurrentSituation}}</p>
+              </div>
+              {{end}}
+              {{if .Excerpt}}
+              <div class="turn-section">
+                <strong>기록 요약</strong>
+                <p class="previous-turn-excerpt">{{.Excerpt}}</p>
+              </div>
+              {{end}}
+            </div>
+          </details>
+          {{end}}
+        </div>
+        {{else if .PreviousTurns}}
         <div class="previous-turns">
           {{range .PreviousTurns}}
           <details class="previous-turn" id="turn-{{.TurnID}}">
@@ -38,32 +70,18 @@ const storyRoomTemplateTimeline = `
               </span>
             </summary>
             <div class="previous-turn-body">
-              <div class="scene">{{.SceneBody}}</div>
               <div class="turn-section">
-                <strong>현재 상황</strong>
-                <p>{{.CurrentSituation}}</p>
+                <strong>기록 요약</strong>
+                {{if .CurrentSituation}}
+                <p class="previous-turn-excerpt">{{.CurrentSituation}}</p>
+                {{else}}
+                <p class="muted">요약 준비 중입니다.</p>
+                {{end}}
               </div>
-              {{if .RevealedFacts}}
-              <div class="turn-section">
-                <strong>이번 턴에서 확인된 정보</strong>
-                <ul>{{range .RevealedFacts}}<li>{{.}}</li>{{end}}</ul>
-              </div>
-              {{end}}
-              {{if .Choices}}
-              <div class="turn-section">
-                <strong>기록된 선택지</strong>
-                <div class="choice-list">
-                  {{range .Choices}}
-                  <div class="choice-card choice-card-archived">
-                    <span class="choice-card-letter">{{.ID}}</span>
-                    <span class="choice-card-copy">
-                      <strong>{{.Text}}</strong>
-                      {{if .RiskHint}}<span class="choice-card-risk">위험: {{.RiskHint}}</span>{{end}}
-                    </span>
-                  </div>
-                  {{end}}
-                </div>
-              </div>
+              {{if or .RevealedFacts .Choices}}
+              <p class="muted previous-turn-counts">
+                확인 정보 {{len .RevealedFacts}}건 · 기록된 선택지 {{len .Choices}}개
+              </p>
               {{end}}
             </div>
           </details>

@@ -110,7 +110,7 @@ const storyRoomTemplateStart = `{{define "content"}}
   </div>
   {{end}}
   <div class="story-room-grid">
-    <section class="current-turn-column">
+    <section class="current-turn-column" id="current-scene">
       {{with .LatestTurn}}
       <section class="current-turn-panel" id="turn-{{.TurnID}}">
         <div class="current-turn-header">
@@ -166,4 +166,5 @@ const storyRoomTemplateStart = `{{define "content"}}
         <p class="muted">최초 턴이 생성되면 여기에서 본문과 선택지가 표시됩니다.</p>
       </div>
       {{end}}
+    </section>
 `
