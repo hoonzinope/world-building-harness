@@ -12,6 +12,8 @@ OpenCrabs는 이 구조에서 하네스이자 오케스트레이터다. 사용�
 - `world-tool` Go 바이너리
 - schema와 validation 규칙
 
+Hermes를 함께 쓸 때도 동일한 원칙을 유지한다. Hermes는 대화/자동화/멀티채널 오케스트레이션 레이어이고, canon source of truth와 validation/diff/approval binding은 `world-tool`이 계속 담당한다. Hermes용 제한 MCP 표면은 [hermes-integration.md](hermes-integration.md)를 따른다.
+
 ## 2. OpenCrabs가 책임지는 것
 - 사용자 대화와 승인 확인
 - Codex OAuth provider 기본 사용

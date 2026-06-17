@@ -367,6 +367,7 @@ internal/audit
 - 기본 provider는 Codex OAuth다. Codex CLI provider는 OAuth provider를 사용할 수 없는 환경에서만 fallback으로 둔다.
 - OpenCrabs credential/config volume은 world root volume과 분리한다.
 - world_id는 logical registry key, registry/provenance가 있으면 `registry_root`는 host canonical root, 없으면 null이며 `root`는 실제 execution/effective root다. Docker에서는 registry_root와 root를 분리해 audit하고, root field는 항상 실행 root 기준으로 해석한다.
+- Hermes를 중간 오케스트레이터로 둘 수 있지만 shell 전체를 주지 말고 `world-tool` 전용 제한 MCP 표면으로만 연결해야 한다. 최소 tool 세트와 운영 계약은 [hermes-integration.md](hermes-integration.md)를 따른다.
 
 ## 13. MVP 준비 상태
 현재 문서는 구현 전 설계 기준이다. 구현이 필요한 산출물은 다음이다.
