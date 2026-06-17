@@ -6,29 +6,29 @@ import (
 )
 
 type GMJob struct {
-	ID                   string         `json:"id"`
-	StoryID              string         `json:"story_id"`
-	JobType              string         `json:"job_type"`
-	Status               string         `json:"status"`
-	Attempt              int            `json:"attempt"`
-	ActorID              string         `json:"actor_id"`
-	ActorRole            string         `json:"actor_role"`
+	ID                   string    `json:"id"`
+	StoryID              string    `json:"story_id"`
+	JobType              string    `json:"job_type"`
+	Status               string    `json:"status"`
+	Attempt              int       `json:"attempt"`
+	ActorID              string    `json:"actor_id"`
+	ActorRole            string    `json:"actor_role"`
 	Input                *Input    `json:"input,omitempty"`
 	Setup                *Setup    `json:"setup,omitempty"`
 	Question             *Question `json:"question,omitempty"`
-	TurnID               int            `json:"turn_id"`
-	ParentTurnID         int            `json:"parent_turn_id"`
-	ContextHash          string         `json:"context_hash"`
-	ErrorCode            string         `json:"error_code,omitempty"`
-	ErrorMessage         string         `json:"error_message,omitempty"`
-	Provider             string         `json:"provider,omitempty"`
-	Model                string         `json:"model,omitempty"`
-	CreatedAt            string         `json:"created_at"`
-	StartedAt            string         `json:"started_at,omitempty"`
-	CompletedAt          string         `json:"completed_at,omitempty"`
-	RawOutputPath        string         `json:"raw_output_path,omitempty"`
-	IdempotencyKey       string         `json:"idempotency_key,omitempty"`
-	ExclusiveProgression bool           `json:"exclusive_progression"`
+	TurnID               int       `json:"turn_id"`
+	ParentTurnID         int       `json:"parent_turn_id"`
+	ContextHash          string    `json:"context_hash"`
+	ErrorCode            string    `json:"error_code,omitempty"`
+	ErrorMessage         string    `json:"error_message,omitempty"`
+	Provider             string    `json:"provider,omitempty"`
+	Model                string    `json:"model,omitempty"`
+	CreatedAt            string    `json:"created_at"`
+	StartedAt            string    `json:"started_at,omitempty"`
+	CompletedAt          string    `json:"completed_at,omitempty"`
+	RawOutputPath        string    `json:"raw_output_path,omitempty"`
+	IdempotencyKey       string    `json:"idempotency_key,omitempty"`
+	ExclusiveProgression bool      `json:"exclusive_progression"`
 }
 
 type Input struct {
@@ -46,11 +46,11 @@ type Setup struct {
 }
 
 type GMRequest struct {
-	Job          GMJob         `json:"job"`
+	Job          GMJob    `json:"job"`
 	Manifest     Manifest `json:"manifest"`
 	State        State    `json:"state"`
 	Turns        []Turn   `json:"recent_turns"`
-	WorldContext string        `json:"world_context,omitempty"`
+	WorldContext string   `json:"world_context,omitempty"`
 }
 
 type GMOutput struct {
@@ -64,7 +64,7 @@ type GMOutput struct {
 	RevealedFacts    []string            `json:"revealed_facts"`
 	StatePatch       GMStatePatch        `json:"state_patch"`
 	Resolution       string              `json:"resolution"`
-	Choices          []Choice       `json:"choices"`
+	Choices          []Choice            `json:"choices"`
 	GMNotes          map[string][]string `json:"gm_notes,omitempty"`
 }
 
@@ -101,6 +101,8 @@ func newGMProvider(name string) GMProvider {
 	switch strings.TrimSpace(name) {
 	case "codex_cli":
 		return codexCLIProvider{}
+	case "hermes_api":
+		return hermesAPIProvider{}
 	default:
 		return mockGMProvider{}
 	}

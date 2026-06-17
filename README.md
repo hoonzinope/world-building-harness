@@ -142,7 +142,16 @@ story 서비스의 런타임 데이터는 Docker volume `world_harness_story_dat
 - 관리자 story lifecycle control
 - Hector story import, recovery, export flow
 
-GM provider는 `WORLD_HARNESS_GM_PROVIDER`로 설정한다. 로컬 deterministic 테스트는 `mock`, 컨테이너에서 Codex home을 마운트해 실제 생성을 돌릴 때는 `codex_cli`를 사용한다.
+GM provider는 `WORLD_HARNESS_GM_PROVIDER`로 설정한다. 로컬 deterministic 테스트는 `mock`, 컨테이너에서 Codex home을 마운트해 실제 생성을 돌릴 때는 `codex_cli`를 사용한다. 별도 Hermes Agent gateway/API server를 story GM으로 쓰려면 `hermes_api`를 사용하고 `WORLD_HARNESS_HERMES_API_BASE_URL`, `WORLD_HARNESS_HERMES_API_KEY`, `WORLD_HARNESS_HERMES_MODEL`을 설정한다.
+
+Docker Desktop에서 host의 Hermes API server에 붙이는 예:
+
+```env
+WORLD_HARNESS_GM_PROVIDER=hermes_api
+WORLD_HARNESS_HERMES_API_BASE_URL=http://host.docker.internal:8642/v1
+WORLD_HARNESS_HERMES_API_KEY=change-me-local-dev
+WORLD_HARNESS_HERMES_MODEL=hermes-agent
+```
 
 ## Telegram
 

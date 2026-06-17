@@ -66,6 +66,7 @@ Use Hermes for:
 - coordinating approvals
 - preparing channel-specific responses
 - triggering world tool calls in order
+- serving as an optional Story UI GM provider through `WORLD_HARNESS_GM_PROVIDER=hermes_api`
 
 Use `world-tool` for:
 - validating draft content
@@ -74,7 +75,21 @@ Use `world-tool` for:
 - accepting or rejecting drafts
 - recovering partial transactions
 
-## 6. Related contracts
+## 6. Story GM provider
+`world-harness-story` can call a separately running Hermes Agent gateway/API server through the OpenAI-compatible `/v1/chat/completions` endpoint.
+
+Required harness settings:
+
+```env
+WORLD_HARNESS_GM_PROVIDER=hermes_api
+WORLD_HARNESS_HERMES_API_BASE_URL=http://127.0.0.1:8642/v1
+WORLD_HARNESS_HERMES_API_KEY=change-me-local-dev
+WORLD_HARNESS_HERMES_MODEL=hermes-agent
+```
+
+For Docker Desktop, use `http://host.docker.internal:8642/v1` as the base URL when Hermes runs on the host. The Hermes gateway must enable its API server and use a matching API key.
+
+## 7. Related contracts
 - [docs/system-design.md](system-design.md)
 - [docs/opencrabs-integration.md](opencrabs-integration.md)
 - [docs/commands.md](commands.md)

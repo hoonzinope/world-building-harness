@@ -46,6 +46,21 @@ Plain text messages that do not start with `/` are stored under `packs/<pack-id>
 
 `/codex` runs `codex exec` inside the container with `CODEX_HOME=/home/node/.codex`. The compose file mounts the host Codex home by default through `${CODEX_HOME:-${HOME}/.codex}`.
 
+## Hermes Story GM
+
+Hermes should run as a separate gateway/API process. `world-harness-story` can call it through the OpenAI-compatible API provider instead of embedding Hermes in the harness container.
+
+Example `.env` for Docker Desktop:
+
+```env
+WORLD_HARNESS_GM_PROVIDER=hermes_api
+WORLD_HARNESS_HERMES_API_BASE_URL=http://host.docker.internal:8642/v1
+WORLD_HARNESS_HERMES_API_KEY=change-me-local-dev
+WORLD_HARNESS_HERMES_MODEL=hermes-agent
+```
+
+The Hermes gateway must have `API_SERVER_ENABLED=true` and a matching `API_SERVER_KEY`. Keep canon mutations on the `world-tool` path described in [docs/hermes-integration.md](hermes-integration.md); do not give Hermes a broad shell surface for world content work.
+
 ## Pack Layout
 
 Migrated packs live under:
