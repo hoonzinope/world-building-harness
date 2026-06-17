@@ -57,6 +57,10 @@ type GMOutput struct {
 	SchemaVersion    string              `json:"schema_version"`
 	StoryID          string              `json:"story_id"`
 	Turn             GMOutputTurn        `json:"turn"`
+	SceneGoal        string              `json:"scene_goal,omitempty"`
+	Conflict         string              `json:"conflict,omitempty"`
+	TurningPoint     string              `json:"turning_point,omitempty"`
+	Consequence      string              `json:"consequence,omitempty"`
 	SceneTitle       string              `json:"scene_title"`
 	SceneBody        string              `json:"scene_body"`
 	Answer           string              `json:"answer,omitempty"`

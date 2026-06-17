@@ -144,6 +144,8 @@ story 서비스의 런타임 데이터는 Docker volume `world_harness_story_dat
 
 GM provider는 `WORLD_HARNESS_GM_PROVIDER`로 설정한다. 로컬 deterministic 테스트는 `mock`, 컨테이너에서 Codex home을 마운트해 실제 생성을 돌릴 때는 `codex_cli`를 사용한다. 별도 Hermes Agent gateway/API server를 story GM으로 쓰려면 `hermes_api`를 사용하고 `WORLD_HARNESS_HERMES_API_BASE_URL`, `WORLD_HARNESS_HERMES_API_KEY`, `WORLD_HARNESS_HERMES_MODEL`을 설정한다.
 
+Story GM 출력 계약은 `scene_goal`, `conflict`, `turning_point`, `consequence`, `scene_title`, `scene_body`, `current_situation`, `revealed_facts`, `state_patch`, `resolution`, `choices`를 최상위 필드로 둔다. `state_patch`는 `location_set`, `active_characters_set`, `facts_add/remove`, `open_threads_add/resolve`, `risks_add/remove`, `flags_add/remove`, `summary_patch`를 사용한다. 각 choice에는 `intent`와 `risk_hint`가 필요하다.
+
 Docker Desktop에서 host의 Hermes API server에 붙이는 예:
 
 ```env

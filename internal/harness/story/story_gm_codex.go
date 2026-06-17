@@ -103,7 +103,7 @@ Embedded context JSON:
 
 Return exactly one JSON object. Do not use Markdown fences. Do not include explanations outside JSON.
 
-Required JSON shape. Keep scene_title, scene_body, current_situation, revealed_facts, state_patch, resolution, and choices as top-level fields, not inside turn:
+Required JSON shape. Keep scene_goal, conflict, turning_point, consequence, scene_title, scene_body, current_situation, revealed_facts, state_patch, resolution, and choices as top-level fields, not inside turn:
 {
   "schema_version": "story-gm-output.v1",
   "story_id": %q,
@@ -115,26 +115,26 @@ Required JSON shape. Keep scene_title, scene_body, current_situation, revealed_f
     "job_id": %q,
     "source": %q
   },
+  "scene_goal": "장면의 즉시 목표",
+  "conflict": "장면에서 막히는 핵심 갈등",
+  "turning_point": "전환점이 되는 사건",
+  "consequence": "이 장면의 비용이나 후과",
   "scene_title": "Korean title",
   "scene_body": "Korean literary prose",
   "current_situation": "Korean current situation",
   "revealed_facts": ["Korean fact"],
   "state_patch": {
-    "add": {
-      "facts": [],
-      "open_threads": [],
-      "risks": []
-    },
-    "set": {
-      "location": "",
-      "active_characters": [],
-      "latest_summary": ""
-    },
-    "remove": {
-      "facts": [],
-      "open_threads": [],
-      "risks": []
-    }
+    "location_set": "",
+    "active_characters_set": [],
+    "facts_add": [],
+    "facts_remove": [],
+    "open_threads_add": [],
+    "open_threads_resolve": [],
+    "risks_add": [],
+    "risks_remove": [],
+    "flags_add": [],
+    "flags_remove": [],
+    "summary_patch": ""
   },
   "resolution": "accepted",
   "choices": [
@@ -147,6 +147,9 @@ Rules:
 - If selected_choice_id is set, resolve it against the latest turn choices and depict that choice.
 - Never write that prior context is unavailable if recent_turns is non-empty.
 - Do not expose job_id, input_id, schema details, or implementation metadata as revealed facts.
+- Make the scene goal, conflict, turning point, and consequence explicit in separate fields and keep them aligned with the prose.
+- Ensure every choice has a distinct intent and a meaningful risk hint; do not leave them generic or empty.
+- Use the state patch to carry forward concrete state updates, not only prose summary changes.
 - Validate your final answer as complete JSON before returning it.
 - The output should be interactive literary Korean prose, 1500-3000 Korean characters when possible. Do not change canon or files.`, contextPath, req.WorldContext, inputSummary, string(contextJSON), req.Job.StoryID, req.Job.TurnID, req.Job.ParentTurnID, inputID, req.Job.ID, source)
 }

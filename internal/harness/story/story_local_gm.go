@@ -40,7 +40,9 @@ func GenerateNextChoices(turn int, st State) []Choice {
 	if len(st.ActiveCharacters) > 0 && strings.TrimSpace(st.ActiveCharacters[0]) != "" {
 		name = strings.TrimSpace(st.ActiveCharacters[0])
 	}
-	return []Choice{{ID: "A", Text: "눈앞의 기록과 사실만 차분히 정리한다.", RiskHint: "안전하지만 느리다."}, {ID: "B", Text: name + "가 가장 불편해하는 지점을 직접 말한다.", RiskHint: "빠르지만 충돌이 커진다."}, {ID: "C", Text: "주변 인물의 반응을 살펴 추가 단서를 확보한다.", RiskHint: "장면 압박이 관계 쪽으로 옮겨간다."}, {ID: "D", Text: fmt.Sprintf("Turn %d의 기록을 정리하고 잠시 관망한다.", turn), RiskHint: "정보는 보존하지만 주도권을 잃을 수 있다."}}
+	choices := []Choice{{ID: "A", Text: "눈앞의 기록과 사실만 차분히 정리한다.", RiskHint: "안전하지만 느리다."}, {ID: "B", Text: name + "가 가장 불편해하는 지점을 직접 말한다.", RiskHint: "빠르지만 충돌이 커진다."}, {ID: "C", Text: "주변 인물의 반응을 살펴 추가 단서를 확보한다.", RiskHint: "장면 압박이 관계 쪽으로 옮겨간다."}, {ID: "D", Text: fmt.Sprintf("Turn %d의 기록을 정리하고 잠시 관망한다.", turn), RiskHint: "정보는 보존하지만 주도권을 잃을 수 있다."}}
+	annotateChoiceIntent(choices)
+	return choices
 }
 
 func GenerateCurrentSituation(st State) string {

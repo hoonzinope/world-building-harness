@@ -44,21 +44,25 @@ type Choice struct {
 }
 
 type Turn struct {
-	TurnID           int           `json:"turn_id"`
-	BranchID         string        `json:"branch_id"`
-	ParentTurnID     int           `json:"parent_turn_id"`
-	ActorID          string        `json:"actor_id"`
-	InputID          string        `json:"input_id"`
-	Source           string        `json:"source"`
-	SelectedChoiceID string        `json:"selected_choice_id,omitempty"`
-	CustomInputMode  string        `json:"custom_input_mode,omitempty"`
-	CustomText       string        `json:"custom_text,omitempty"`
-	SceneTitle       string        `json:"scene_title"`
-	SceneBody        string        `json:"scene_body"`
-	CurrentSituation string        `json:"current_situation"`
-	RevealedFacts    []string      `json:"revealed_facts"`
+	TurnID           int      `json:"turn_id"`
+	BranchID         string   `json:"branch_id"`
+	ParentTurnID     int      `json:"parent_turn_id"`
+	ActorID          string   `json:"actor_id"`
+	InputID          string   `json:"input_id"`
+	Source           string   `json:"source"`
+	SelectedChoiceID string   `json:"selected_choice_id,omitempty"`
+	CustomInputMode  string   `json:"custom_input_mode,omitempty"`
+	CustomText       string   `json:"custom_text,omitempty"`
+	SceneGoal        string   `json:"scene_goal,omitempty"`
+	Conflict         string   `json:"conflict,omitempty"`
+	TurningPoint     string   `json:"turning_point,omitempty"`
+	Consequence      string   `json:"consequence,omitempty"`
+	SceneTitle       string   `json:"scene_title"`
+	SceneBody        string   `json:"scene_body"`
+	CurrentSituation string   `json:"current_situation"`
+	RevealedFacts    []string `json:"revealed_facts"`
 	Choices          []Choice `json:"choices"`
-	CreatedAt        string        `json:"created_at"`
+	CreatedAt        string   `json:"created_at"`
 }
 
 type Question struct {

@@ -45,7 +45,7 @@ func (s *Store) appendChoice(storyID string, u *Actor, choiceID, customMode, cus
 	scene := GenerateLocalGMScene(prev, st, inputLabel, customMode)
 	nextChoices := GenerateNextChoices(prev.TurnID+1, st)
 	situation := GenerateCurrentSituation(st)
-	t := Turn{TurnID: prev.TurnID + 1, BranchID: "branch_main", ParentTurnID: prev.TurnID, ActorID: u.ID, InputID: "input_" + randomID(), Source: "choice", SelectedChoiceID: choiceID, CustomInputMode: customMode, CustomText: customText, SceneTitle: fmt.Sprintf("Turn %d의 여파", prev.TurnID+1), SceneBody: scene, CurrentSituation: situation, RevealedFacts: []string{"이번 입력은 runtime story 이벤트로만 저장되며 canon에 반영되지 않았다."}, Choices: nextChoices, CreatedAt: now}
+	t := Turn{TurnID: prev.TurnID + 1, BranchID: "branch_main", ParentTurnID: prev.TurnID, ActorID: u.ID, InputID: "input_" + randomID(), Source: "choice", SelectedChoiceID: choiceID, CustomInputMode: customMode, CustomText: customText, SceneGoal: "지금까지의 단서와 압박을 종합해 다음 선택의 기준을 정한다.", Conflict: "시간과 불확실성으로 판단 우선순위가 동시에 흔들린다.", TurningPoint: "방금 선택이 다음 장면의 위험 경로를 가르는 분기점이 된다.", Consequence: "선택의 추적이 다음 회차의 사실·문장·위험 평가를 바꾼다.", SceneTitle: fmt.Sprintf("Turn %d의 여파", prev.TurnID+1), SceneBody: scene, CurrentSituation: situation, RevealedFacts: []string{"이번 입력은 runtime story 이벤트로만 저장되며 canon에 반영되지 않았다."}, Choices: nextChoices, CreatedAt: now}
 	dir := s.storyDir(storyID)
 	if err := appendJSONL(filepath.Join(dir, "events.jsonl"), map[string]any{"type": "turn_committed", "at": now, "turn": t}); err != nil {
 		return err

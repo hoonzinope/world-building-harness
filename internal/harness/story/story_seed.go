@@ -15,7 +15,7 @@ func (s *Store) createDemoStory(actorID, title, style, characterName, traits str
 	location, scene, summary, facts, openThreads, risks, choices := luceraPrologueSeed(name, traits)
 	m := Manifest{ID: id, Title: firstNonEmpty(strings.TrimSpace(title), name+"의 이야기"), WorldID: "lumen-federation", Status: "active", Phase: "waiting_for_choice", CurrentTurn: 1, ActiveDriverID: actorID, CreatedBy: actorID, CreatedAt: now, UpdatedAt: now, LatestSummary: summary}
 	st := State{Location: location, ActiveCharacters: []string{name}, Facts: facts, OpenThreads: openThreads, Risks: risks, Flags: []string{"runtime_story_created"}}
-	turn := Turn{TurnID: 1, BranchID: "branch_main", ActorID: actorID, InputID: "setup_" + randomID(), Source: "setup", SceneTitle: style + "의 시작", SceneBody: scene, CurrentSituation: m.LatestSummary, RevealedFacts: st.Facts, Choices: choices, CreatedAt: now, CustomText: traits}
+	turn := Turn{TurnID: 1, BranchID: "branch_main", ActorID: actorID, InputID: "setup_" + randomID(), Source: "setup", SceneGoal: "병동의 첫 위기를 정리하고 주인공의 역할을 세운다.", Conflict: "새 환자와 기존 환자의 처치가 동시에 필요하지만 자원이 부족하다.", TurningPoint: "긴급 장부 확인으로 우선순위를 다시 정해야 한다.", Consequence: "한쪽을 택하면 다른 쪽의 회복이 늦어지고 다음 사건의 부담이 남는다.", SceneTitle: style + "의 시작", SceneBody: scene, CurrentSituation: m.LatestSummary, RevealedFacts: st.Facts, Choices: choices, CreatedAt: now, CustomText: traits}
 	return id, s.createStory(m, st, []Turn{turn})
 }
 
@@ -33,7 +33,7 @@ func luceraPrologueSeed(name, traits string) (string, string, string, []string, 
 	}
 	openThreads := []string{"새 환자와 기존 환자 중 누구를 먼저 살릴지 결정", "병동의 부족한 자원을 어떻게 배분할지 판단", "공공 수선과 행정 장부를 어떻게 맞출지 정리"}
 	risks := []string{"어느 쪽을 선택해도 다른 쪽의 상태가 악화될 수 있다.", "과로와 저안개 절차 때문에 판단 여력이 흔들릴 수 있다.", "장부상 허가가 늦어지면 회복 공공재 배분이 밀릴 수 있다."}
-	choices := []Choice{{ID: "A", Text: "새로 쓰러진 환자의 상태를 직접 확인한다.", RiskHint: "즉시 위험을 볼 수 있지만 기존 처치가 더 밀린다."}, {ID: "B", Text: "기존 아이 환자의 처치를 먼저 이어간다.", RiskHint: "약속된 처치를 지키지만 새 환자를 놓칠 수 있다."}, {ID: "C", Text: "보호자에게 짧게 설명하고 동료를 호출한다.", RiskHint: "시간을 벌 수 있지만 항의가 커질 수 있다."}, {ID: "D", Text: "기록판과 펜으로 우선순위를 빠르게 다시 계산한다.", RiskHint: "근거는 남지만 현장 반응이 늦어진다."}}
+	choices := []Choice{{ID: "A", Text: "새로 쓰러진 환자의 상태를 직접 확인한다.", Intent: "즉시 위험을 먼저 파악해 생존 가능성을 높인다.", RiskHint: "즉시 위험을 볼 수 있지만 기존 처치가 더 밀린다."}, {ID: "B", Text: "기존 아이 환자의 처치를 먼저 이어간다.", Intent: "약속된 처치를 끝내 현장의 신뢰를 지킨다.", RiskHint: "약속된 처치를 지키지만 새 환자를 놓칠 수 있다."}, {ID: "C", Text: "보호자에게 짧게 설명하고 동료를 호출한다.", Intent: "갈등을 낮추면서 도움 인력을 모은다.", RiskHint: "시간을 벌 수 있지만 항의가 커질 수 있다."}, {ID: "D", Text: "기록판과 펜으로 우선순위를 빠르게 다시 계산한다.", Intent: "기록과 근거를 다시 정리해 판단 기준을 만든다.", RiskHint: "근거는 남지만 현장 반응이 늦어진다."}}
 	return location, scene, summary, facts, openThreads, risks, choices
 }
 

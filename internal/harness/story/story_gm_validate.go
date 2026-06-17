@@ -5,7 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 )
+
+const minChoiceMetaRunes = 10
 
 func ValidateGMOutput(job GMJob, out GMOutput) error {
 	if out.SchemaVersion != "story-gm-output.v1" {
@@ -21,8 +24,15 @@ func ValidateGMOutput(job GMJob, out GMOutput) error {
 	if strings.TrimSpace(out.SceneBody) == "" || strings.TrimSpace(out.SceneTitle) == "" || strings.TrimSpace(out.CurrentSituation) == "" {
 		return errors.New("empty required scene field")
 	}
+	if strings.TrimSpace(out.SceneGoal) == "" || strings.TrimSpace(out.Conflict) == "" || strings.TrimSpace(out.TurningPoint) == "" || strings.TrimSpace(out.Consequence) == "" {
+		return errors.New("empty required scene quality field")
+	}
 	if len(out.SceneBody) < 200 {
 		return errors.New("scene_body too short")
+	}
+	patch := out.StatePatch
+	if !hasEffectiveStatePatchUpdate(patch) {
+		return errors.New("state_patch must include at least one update")
 	}
 	blocked := []string{"맥락을 확인할 수 없", "이전 장면의 구체적 내용이 확인되지", "input_id", "job_id", "작업 ID", "입력 ID"}
 	joined := out.SceneBody + "\n" + out.CurrentSituation + "\n" + strings.Join(out.RevealedFacts, "\n")
@@ -36,12 +46,29 @@ func ValidateGMOutput(job GMJob, out GMOutput) error {
 	}
 	seen := map[string]bool{}
 	for _, c := range out.Choices {
-		if c.ID == "" || c.Text == "" || seen[c.ID] {
+		id := strings.TrimSpace(c.ID)
+		if id == "" || strings.TrimSpace(c.Text) == "" || strings.TrimSpace(c.Intent) == "" || strings.TrimSpace(c.RiskHint) == "" || utf8.RuneCountInString(strings.TrimSpace(c.Text)) < 6 || utf8.RuneCountInString(strings.TrimSpace(c.Intent)) < minChoiceMetaRunes || utf8.RuneCountInString(strings.TrimSpace(c.RiskHint)) < minChoiceMetaRunes || seen[id] {
 			return errors.New("invalid choice")
 		}
-		seen[c.ID] = true
+		seen[id] = true
 	}
 	return nil
+}
+
+func hasEffectiveStatePatchUpdate(p GMStatePatch) bool {
+	if strings.TrimSpace(p.LocationSet) != "" || strings.TrimSpace(p.SummaryPatch) != "" {
+		return true
+	}
+	return hasAnyNonEmptyString(p.ActiveCharactersSet) || hasAnyNonEmptyString(p.FactsAdd) || hasAnyNonEmptyString(p.FactsRemove) || hasAnyNonEmptyString(p.OpenThreadsAdd) || hasAnyNonEmptyString(p.OpenThreadsResolve) || hasAnyNonEmptyString(p.RisksAdd) || hasAnyNonEmptyString(p.RisksRemove) || hasAnyNonEmptyString(p.FlagsAdd) || hasAnyNonEmptyString(p.FlagsRemove)
+}
+
+func hasAnyNonEmptyString(values []string) bool {
+	for _, v := range values {
+		if strings.TrimSpace(v) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func ApplyGMStatePatch(st State, p GMStatePatch, revealed []string) State {

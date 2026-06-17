@@ -128,6 +128,7 @@ func (s *Store) applyGMOutput(job GMJob, out GMOutput, raw, providerName, model 
 	turn := Turn{
 		TurnID: job.TurnID, BranchID: out.Turn.BranchID, ParentTurnID: job.ParentTurnID, ActorID: job.ActorID,
 		InputID: out.Turn.InputID, Source: outputSourceForJob(job),
+		SceneGoal: out.SceneGoal, Conflict: out.Conflict, TurningPoint: out.TurningPoint, Consequence: out.Consequence,
 		SceneTitle: out.SceneTitle, SceneBody: out.SceneBody, CurrentSituation: out.CurrentSituation,
 		RevealedFacts: out.RevealedFacts, Choices: out.Choices, CreatedAt: now,
 	}
@@ -256,8 +257,8 @@ func (s *Store) buildGMRequest(job GMJob) (GMRequest, error) {
 	}
 	st, _ := s.readState(job.StoryID)
 	turns, _ := s.readTurns(job.StoryID)
-	if len(turns) > 5 {
-		turns = turns[len(turns)-5:]
+	if len(turns) > 8 {
+		turns = turns[len(turns)-8:]
 	}
 	return GMRequest{Job: job, Manifest: m, State: st, Turns: turns, WorldContext: StoryWorldContextSeedForRequest(m, st, job)}, nil
 }
